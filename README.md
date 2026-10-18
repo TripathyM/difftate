@@ -12,6 +12,16 @@ Review a diff in [diffity](https://www.npmjs.com/package/diffity), comment on an
 
 ## Install
 
+**With an agent:** paste this into Claude Code (or any coding agent):
+
+```
+Install difftate by following https://raw.githubusercontent.com/TripathyM/difftate/main/INSTALL.md
+```
+
+It checks requirements, installs diffity, clones the repo, and asks before editing `~/.zshrc`. See [INSTALL.md](INSTALL.md).
+
+**By hand:**
+
 ```bash
 git clone https://github.com/TripathyM/difftate.git ~/difftate   # any folder works
 echo 'source ~/difftate/difftate.zsh' >> ~/.zshrc
