@@ -194,7 +194,7 @@ Agent invocation:
 
 ## Known limitations
 
-- A follow-up you post on a thread **while the agent is working on that same thread** can be missed (the agent's reply lands after it, so the thread looks answered).
+- A follow-up you post on a thread **while the agent is working on that same thread** can be missed (the agent's reply lands after it, so the thread looks answered). Reply again after the agent's answer. Tracked in [#3](https://github.com/TripathyM/difftate/issues/3).
 - `diffity` already running for the repo is reused as-is, including its old refs. Run `diffity kill` first to change refs.
 - An open Claude/OpenCode terminal on the same session doesn't live-refresh with the watcher's turns.
 
@@ -207,6 +207,10 @@ Agent invocation:
 | Wrong diff shown | `diffity kill`, then rerun `difftate <ref>` |
 | Answer from the wrong model / 🧠 far from `/context` | Check the `Model:` line; force it with `difftate --model <model>` |
 | Thread ignored | Its last comment starts with `[dt-reply]` or `[dt-status]`; reply again to re-trigger |
+
+## Roadmap
+
+Planned work and known bugs are tracked in [GitHub issues](https://github.com/TripathyM/difftate/issues).
 
 ## License
 
