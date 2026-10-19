@@ -39,7 +39,9 @@ difftate                    # Claude Code, whole branch vs master (short: dtc)
 difftate main               # whole branch vs main
 difftate HEAD~1             # the last commit
 difftate HEAD~3             # the last 3 commits
-difftate HEAD               # only uncommitted changes
+difftate HEAD               # only uncommitted changes (capital HEAD: `head` breaks in worktrees on macOS)
+difftate unstaged           # only unstaged changes
+difftate staged             # only staged changes
 dto                         # OpenCode, same arguments
 difftate --session <uuid>   # attach a specific session
 difftate --no-session       # headless, no session context

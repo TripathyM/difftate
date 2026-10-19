@@ -104,9 +104,12 @@ First, open a new terminal (or run `source ~/.zshrc`). Then `cd` into a git repo
 | The whole branch, against main | `difftate main` |
 | The last commit | `difftate HEAD~1` |
 | The last 3 commits (any number) | `difftate HEAD~3` |
-| Only uncommitted changes | `difftate HEAD` |
+| Only uncommitted changes (staged, unstaged, new files) | `difftate HEAD` |
+| Only unstaged changes | `difftate unstaged` |
+| Only staged changes | `difftate staged` |
 
-- Each diff also includes uncommitted changes: it compares the given commit with the files on disk.
+- Write `HEAD` in capitals. In a worktree on macOS, `head` points to the main checkout's HEAD and shows the wrong diff.
+- Each diff except `unstaged` and `staged` also includes uncommitted changes: it compares the given commit with the files on disk.
 - Use `dto` in place of `difftate` for OpenCode, with the same arguments.
 - The diff opens in the browser. Comment on a line, and the agent replies in the same thread.
 - Refresh the page to see new changes.
