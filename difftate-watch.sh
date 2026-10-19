@@ -480,6 +480,7 @@ Rules:
 - Questions: answer. Suggestions, 'should we…?', nits: give your take and ask before changing anything. Unclear: ask for clarification. Never skip a thread silently.
 - NEVER resolve or dismiss threads. Never edit or delete comments starting with '${DT_STATUS_MARKER}' or '${DT_QUEUED_MARKER}' (watcher status).
 - Lines starting 'you:' are your earlier replies. Read files as needed for context.
+- Write replies in ASD-STE100 Simplified Technical English.
 Summarize briefly what you handled."
 
   # Run the agent in the background so new comments get a "🕒 Queued" status
