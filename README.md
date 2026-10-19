@@ -35,9 +35,12 @@ source ~/.zshrc
 Run from inside the repo, **on the branch you want reviewed**:
 
 ```bash
-difftate                    # Claude Code, diff vs master (short: dtc)
-dto                         # OpenCode
-difftate HEAD~3             # diff the last 3 commits instead of master
+difftate                    # Claude Code, whole branch vs master (short: dtc)
+difftate main               # whole branch vs main
+difftate HEAD~1             # the last commit
+difftate HEAD~3             # the last 3 commits
+difftate HEAD               # only uncommitted changes
+dto                         # OpenCode, same arguments
 difftate --session <uuid>   # attach a specific session
 difftate --no-session       # headless, no session context
 difftate --model <model>    # force the agent's model (default: the session's model)
@@ -196,7 +199,6 @@ Agent invocation:
 ## Known limitations
 
 - A follow-up you post on a thread **while the agent is working on that same thread** can be missed (the agent's reply lands after it, so the thread looks answered). Reply again after the agent's answer. Tracked in [#3](https://github.com/TripathyM/difftate/issues/3).
-- `diffity` already running for the repo is reused as-is, including its old refs. Run `diffity kill` first to change refs.
 - An open Claude/OpenCode terminal on the same session doesn't live-refresh with the watcher's turns.
 
 ## Troubleshooting
@@ -205,7 +207,7 @@ Agent invocation:
 |---|---|
 | No status comment appears | Watcher terminal for `could not post status comment`; is diffity on the port shown? |
 | Agent never finishes | Run the agent command by hand with `< /dev/null`; look for auth or stdin hangs |
-| Wrong diff shown | `diffity kill`, then rerun `difftate <ref>` |
+| Wrong diff shown | Check `?ref=` in the page URL; rerun `difftate <ref>` |
 | Answer from the wrong model / 🧠 far from `/context` | Check the `Model:` line; force it with `difftate --model <model>` |
 | Thread ignored | Its last comment starts with `[dt-reply]` or `[dt-status]`; reply again to re-trigger |
 

@@ -92,13 +92,25 @@ dtcp() { CLAUDE_CONFIG_DIR=~/.claude-personal difftate --cmd ccp "$@"; }   # own
 2. `diffity --version`: prints `0.9.5`.
 3. If shortcuts were added: `zsh -ic 'type <name>'` for each, and the output contains "is a shell function".
 
-Report what passed. Then tell the user how to start:
+Report what passed. Then show the user the quick guide below, as written. If shortcuts were added, also show one line per shortcut (e.g. `dtcw HEAD~1`): shortcuts take the same arguments as `difftate`.
 
-```bash
-source ~/.zshrc        # or open a new terminal
-cd <a git repo>        # on the branch to review
-difftate               # diff vs master; use `difftate main` if the base branch is main
-```
+## Quick guide (show after install)
+
+First, open a new terminal (or run `source ~/.zshrc`). Then `cd` into a git repo, on the branch you want reviewed.
+
+| To review | Run |
+|---|---|
+| The whole branch, against master | `difftate` |
+| The whole branch, against main | `difftate main` |
+| The last commit | `difftate HEAD~1` |
+| The last 3 commits (any number) | `difftate HEAD~3` |
+| Only uncommitted changes | `difftate HEAD` |
+
+- Each diff also includes uncommitted changes: it compares the given commit with the files on disk.
+- Use `dto` in place of `difftate` for OpenCode, with the same arguments.
+- The diff opens in the browser. Comment on a line, and the agent replies in the same thread.
+- Refresh the page to see new changes.
+- To review a different range, stop the watcher (Ctrl+C) and run the new command.
 
 ## Questions
 
