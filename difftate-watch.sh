@@ -125,9 +125,15 @@ print(interactive or any_model)
 PY
 }
 
+# `diffity agent reply` writes to diffity's database in ~/.diffity. With Claude's
+# sandbox on, that write is blocked unless the folder is allowed, so allow it for
+# the watcher's runs only. Merged into the user's settings; ignored when the
+# sandbox is off. Not needed once the watcher posts replies itself (issue #6).
+CLAUDE_RUN_SETTINGS='{"sandbox":{"filesystem":{"allowWrite":["~/.diffity/"]}}}'
+
 send_claude() {
   local prompt="$1"
-  local args=(--allowedTools Edit Write Read Bash --output-format stream-json --verbose)
+  local args=(--allowedTools Edit Write Read Bash --settings "$CLAUDE_RUN_SETTINGS" --output-format stream-json --verbose)
   local model="$MODEL" source="--model"
   if [[ -z "$model" && -n "$SESSION_ID" ]]; then
     model=$(session_model_claude)

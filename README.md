@@ -187,7 +187,8 @@ user: yes
 followed by the rules (reply format, change code only when asked, never resolve). "Other open threads" lets the agent see a related comment elsewhere ("this also fixes your comment on api.ts") at a fraction of the full JSON's size.
 
 Agent invocation:
-- Claude: `claude -p … --resume <session> --model <model> --output-format stream-json --verbose < /dev/null`
+- Claude: `claude -p … --resume <session> --model <model> --settings <sandbox allow> --output-format stream-json --verbose < /dev/null`
+  - `--settings '{"sandbox":{"filesystem":{"allowWrite":["~/.diffity/"]}}}'` lets the agent's `diffity agent reply` write to diffity's database when Claude's sandbox is on. It's added to your own settings for these runs only, and ignored when the sandbox is off.
 - OpenCode: `opencode run … --session <session> [--model <model>] --auto --format json < /dev/null`
 
 `< /dev/null` matters: `opencode run` hangs waiting on stdin otherwise.
