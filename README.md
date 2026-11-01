@@ -102,10 +102,12 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 
 | File | What it does |
 |---|---|
-| `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the session, then call `difftate-watch.sh` |
+| `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the session, then call `difftate-watch.sh` (or `difftate-watch.py` with `DT_WATCHER=python`) |
 | `difftate-watch.sh` | Starts (or reuses) diffity, polls for open comment threads, dispatches them to the agent, posts "ðŸ•’ Queued" status while the agent is busy |
+| `difftate-watch.py`, `lib/difftate/` | The Python watcher (opt-in): the same loop, plus the review API. See [Python watcher](#python-watcher-opt-in) |
 | `lib/threads.py` | Picks the threads waiting on the agent, and turns open threads into the prompt text (status comments removed) |
-| `lib/stream_fmt.py` | Reads the agent's JSON event stream; prints live progress lines and keeps the diffity status comment updated |
+| `lib/stream_fmt.py` | Reads the agent's JSON event stream; prints live progress lines and keeps the progress note updated |
+| `tests/` | Watcher tests: a temporary repository, the real watcher, a fake agent. See [Tests](#tests) |
 | `herdr/mods/difftate/` | The Herdr Review tab (optional): code view, keys, threads, editing. See [Review in Herdr](#review-in-herdr-optional) |
 | `herdr/keys.json`, `herdr/RECIPE.md`, `herdr/preview.png` | Herdr's sharing files: the optional key binding, the build brief, the screenshot |
 | `herdr/screenshots/` | More screenshots of the Review tab, shown in the mod's README |
@@ -172,6 +174,7 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the ðŸš
 | `DT_CONTEXT_WINDOW` | unset (Claude auto-detects) | Context window in tokens, for the % when the tool doesn't report it. E.g. `export DT_CONTEXT_WINDOW=200000` for OpenCode |
 | `DT_OPEN` | `browser` | Where the review opens: `browser`, `herdr` or `both`. `--open` overrides it for one run. See [Review in Herdr](#review-in-herdr-optional) |
 | `DT_HERDR` | unset (`herdr-app` on `PATH`) | Path to the Herdr app's binary, for `DT_OPEN=herdr` when `herdr-app` isn't on `PATH` |
+| `DT_WATCHER` | unset (bash) | `python` starts the [Python watcher](#python-watcher-opt-in) instead of `difftate-watch.sh` |
 
 ### Constants (edit the file)
 
@@ -195,7 +198,8 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the ðŸš
 
 | Variable | Purpose |
 |---|---|
-| `DT_PORT` | diffity port, for the status-comment API |
+| `DT_PORT` | diffity port, for the status-comment API (bash watcher) |
+| `DT_API`, `DT_TOKEN_FILE` | Review API address and token file, for the progress notes (Python watcher; given to `lib/stream_fmt.py` only, never to the agent) |
 | `DT_THREAD_IDS` | Comma-separated threads the current agent run handles |
 | `DT_THREADS_JSON` | Those threads as JSON, used to reuse "Queued" comments |
 | `DT_REPLY_MARKER`, `DT_STATUS_MARKER`, `DT_QUEUED_MARKER` | Passed through to `lib/stream_fmt.py` |
@@ -237,6 +241,30 @@ Agent invocation:
 
 `< /dev/null` matters: `opencode run` hangs waiting on stdin otherwise.
 
+## Python watcher (opt-in)
+
+`export DT_WATCHER=python` (or `DT_WATCHER=python difftate` for one run) starts `difftate-watch.py` instead of `difftate-watch.sh`. It needs Python 3.9 or later and nothing else. It takes the same flags, prints the same lines and writes the same notes. It's the first step of [#14](https://github.com/TripathyM/difftate/issues/14); the bash watcher stays the default until the Python one replaces it.
+
+It also serves the **review API** on `127.0.0.1`, for viewers and the progress notes. Every request needs the header `Authorization: Bearer <token>`, with the token from `.git/difftate/token` (readable only by you; a new one each start). `.git/difftate/api.json` gives the port. Threads are still in diffity's JSON for now.
+
+| Request | What it does |
+|---|---|
+| `GET /api/review` | Start or reuse the review |
+| `GET /api/threads?status=open` | List threads |
+| `POST /api/threads` | Open a thread: `filePath`, `side` (`old`/`new`), `startLine`, `endLine`, `body`, `anchorContent` |
+| `POST /api/threads/<id>/comments` | Add a comment: `body` |
+| `POST /api/threads/<id>/notes` | Add a note: `kind` (`queued`/`progress`), `body` |
+| `PATCH /api/notes/<id>` | Edit a note: `kind`, `body` |
+| `PATCH /api/threads/<id>/status` | Set the thread status: `open`, `resolved` or `dismissed` |
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+Each test makes a temporary git repository, starts the real Python watcher with a fake agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. They need diffity 0.9.5, and skip without it. CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and `shellcheck` on `difftate-watch.sh`, on every push and pull request.
+
 ## Known limitations
 
 - A follow-up you post on a thread **while the agent is working on that same thread** can be missed (the agent's reply lands after it, so the thread looks answered). Reply again after the agent's answer. Tracked in [#3](https://github.com/TripathyM/difftate/issues/3).
@@ -246,7 +274,7 @@ Agent invocation:
 
 | Symptom | Check |
 |---|---|
-| No status comment appears | Watcher terminal for `could not post status comment`; is diffity on the port shown? |
+| No status comment appears | Watcher terminal for `could not post the progress note`; is diffity on the port shown? |
 | Agent never finishes | Run the agent command by hand with `< /dev/null`; look for auth or stdin hangs |
 | Wrong diff shown | Check `?ref=` in the page URL; rerun `difftate <ref>` |
 | Answer from the wrong model / ðŸ§  far from `/context` | Check the `Model:` line; force it with `difftate --model <model>` |
