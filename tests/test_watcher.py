@@ -151,36 +151,73 @@ class WatcherTest(unittest.TestCase):
         with urllib.request.urlopen(req, timeout=10) as r:
             return json.loads(r.read() or b"null")
 
-    def open_thread(self, body, line=2):
-        return self.api("POST", "/api/threads", {
-            "filePath": "app.py", "side": "new", "startLine": line, "endLine": line, "body": body,
-            "anchorContent": "    return f'hello {name}'"})
+    def open_thread(self, body, line=2, **payload):
+        return self.api("POST", "/api/threads", dict({
+            "anchor": {"file": "app.py", "side": "new", "startLine": line, "endLine": line,
+                       "code": "    return f'hello {name}'"}, "body": body}, **payload))
 
     def thread(self, tid):
         return next(t for t in self.api("GET", "/api/threads") if t["id"] == tid)
 
+    def comments(self, tid):
+        return [(c["kind"], c["body"]) for c in self.thread(tid)["comments"]]
+
     def bodies(self, tid):
-        return [c["body"] for c in self.thread(tid)["comments"]]
+        return [body for _, body in self.comments(tid)]
+
+    def note(self, tid, kind, containing=""):
+        """The body of the thread's first note of <kind> that contains <containing>, or None."""
+        return next((b for k, b in self.comments(tid) if k == kind and containing in b), None)
+
+    def state(self, tid):
+        return self.thread(tid)["state"]
 
     def release_agent(self):
+        os.makedirs(self.agent_dir, exist_ok=True)
         with open(os.path.join(self.agent_dir, "go"), "w"):
             pass
+
+    def silence_agent(self, silent=True, runs=()):
+        """The agent replies to no thread (in every run, or only in <runs>)."""
+        path = os.path.join(self.agent_dir, "silent")
+        if silent:
+            os.makedirs(self.agent_dir, exist_ok=True)
+            with open(path, "w") as f:
+                f.write(",".join(str(n) for n in runs))
+        else:
+            os.remove(path)
+
+    def prompts(self):
+        """The prompt of every run so far."""
+        try:
+            with open(os.path.join(self.agent_dir, "prompts")) as f:
+                return [json.loads(line) for line in f]
+        except FileNotFoundError:
+            return []
+
+    def dispatches(self):
+        return self.terminal().count("New/changed threads detected")
 
     # ── Tests ────────────────────────────────────────────────────────────────
     def test_comment_gets_working_note_then_reply(self):
         self.start_watcher()
-        tid = self.open_thread("Why an f-string here?")["id"]
+        thread = self.open_thread("Why an f-string here?")
+        tid = thread["id"]
+        self.assertIn(thread["state"], ("waiting", "working"), "the watcher may dispatch it at once")
+        self.assertEqual(thread["comments"][0]["author"], "reviewer")
 
-        working = wait_for("a working progress note", lambda: next(
-            (b for b in self.bodies(tid) if b.startswith("[dt-status]") and "Working" in b), None))
+        working = wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
         self.assertIn("`Read app.py`", working)
+        self.assertEqual(self.state(tid), "working")
 
         self.release_agent()
-        wait_for("the agent's reply", lambda: any(b.startswith("[dt-reply]") for b in self.bodies(tid)))
-        final = wait_for("the done note", lambda: next(
-            (b for b in self.bodies(tid) if b.startswith("[dt-status]") and "Done" in b), None))
-        self.assertTrue(final.startswith("[dt-status] ✅ **Done** in "), final)
-        self.assertEqual(len(self.bodies(tid)), 3, "comment, one progress note (edited in place), reply")
+        wait_for("the done note", lambda: self.note(tid, "progress", "Done"))
+        self.assertEqual([k for k, _ in self.comments(tid)], ["comment", "progress", "reply"],
+                         "comment, one progress note (edited in place), reply")
+        self.assertTrue(self.bodies(tid)[1].startswith("✅ **Done** in "), self.bodies(tid))
+        self.assertEqual(self.bodies(tid)[2], f"Fake answer to {tid[:8]}.")
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        self.assertEqual([c["author"] for c in self.thread(tid)["comments"]], ["reviewer", "difftate", "agent"])
 
         out = self.terminal()
         self.assertRegex(out, r"\[\d\d:\d\d:\d\d\] New/changed threads detected — dispatching to claude")
@@ -190,21 +227,113 @@ class WatcherTest(unittest.TestCase):
     def test_thread_written_during_a_run_is_queued_then_answered_next(self):
         self.start_watcher()
         first = self.open_thread("Why an f-string here?")["id"]
-        wait_for("a working progress note", lambda: any("Working" in b for b in self.bodies(first)))
+        wait_for("a working progress note", lambda: self.note(first, "progress", "Working"))
 
         second = self.open_thread("Rename greet to welcome?", line=1)["id"]
-        queued = wait_for("a queued note", lambda: next(
-            (b for b in self.bodies(second) if b.startswith("[dt-queued]")), None))
-        self.assertEqual(queued, "[dt-queued] 🕒 **Queued** — agent is busy with another comment, "
-                                 "will pick this up next.")
+        queued = wait_for("a queued note", lambda: self.note(second, "queued"))
+        self.assertEqual(queued, "🕒 **Queued** — agent is busy with another comment, will pick this up next.")
+        self.assertEqual(self.state(second), "queued")
         self.assertIn(f"Queued thread {second[:8]} (agent busy)", self.terminal())
 
         self.release_agent()
-        wait_for("a reply on the queued thread", lambda: any(b.startswith("[dt-reply]") for b in self.bodies(second)))
-        wait_for("the done note", lambda: any("Done" in b for b in self.bodies(second)))
-        bodies = self.bodies(second)
-        self.assertEqual(len(bodies), 3, f"the queued note becomes the progress note: {bodies}")
-        self.assertTrue(bodies[1].startswith("[dt-status] ✅ **Done**"), bodies)
+        wait_for("the done note", lambda: self.note(second, "progress", "Done"))
+        self.assertEqual([k for k, _ in self.comments(second)], ["comment", "progress", "reply"],
+                         "the queued note becomes the progress note")
+        wait_for("both threads replied", lambda: self.state(first) == self.state(second) == "replied")
+
+    def test_a_follow_up_during_a_run_on_the_same_thread_is_answered_in_the_next_run(self):
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
+
+        self.api("POST", f"/api/threads/{tid}/comments", {"body": "And why not str.format?"})
+        self.assertEqual(self.state(tid), "working")
+        self.release_agent()
+
+        wait_for("a second run", lambda: len(self.prompts()) == 2)
+        self.assertNotIn("And why not str.format?", self.prompts()[0])
+        self.assertIn("reviewer (new): And why not str.format?", self.prompts()[1])
+        self.assertIn("reviewer: Why an f-string here?", self.prompts()[1])
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        self.assertEqual([k for k, _ in self.comments(tid)],
+                         ["comment", "progress", "comment", "reply", "progress", "reply"])
+
+    def test_a_run_sent_only_a_follow_up_fails_when_it_doesnt_reply(self):
+        self.silence_agent(runs=[2])
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
+        self.api("POST", f"/api/threads/{tid}/comments", {"body": "And why not str.format?"})
+        self.release_agent()
+
+        wait_for("a second run", lambda: len(self.prompts()) == 2)
+        final = wait_for("the failed progress note", lambda: self.note(tid, "progress", "no reply"))
+        self.assertTrue(final.startswith("❌ **Failed** after "), final)
+        self.assertEqual(self.state(tid), "failed")
+        self.assertEqual([k for k, _ in self.comments(tid)], ["comment", "progress", "comment", "reply", "progress"])
+
+    def test_a_reviewing_agents_comment_is_dispatched_like_the_users(self):
+        self.release_agent()
+        self.start_watcher()
+
+        # A separate reviewing agent writes its findings to diffity as an agent
+        subprocess.run(["diffity", "agent", "comment", "--file", "app.py", "--line", "2",
+                        "--body", "Missing a type hint."], cwd=self.repo, env=self.env, check=True,
+                       capture_output=True)
+        [thread] = self.api("GET", "/api/threads")
+        self.assertEqual(thread["comments"][0]["author"], "reviewer")
+
+        wait_for("the replied state", lambda: self.state(thread["id"]) == "replied")
+        self.assertIn("reviewer (new): Missing a type hint.", self.prompts()[0])
+
+    def test_a_run_with_no_reply_leaves_the_thread_failed_until_a_new_comment(self):
+        self.silence_agent()
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+
+        final = wait_for("the failed progress note", lambda: self.note(tid, "progress", "no reply"))
+        self.assertEqual(self.state(tid), "failed")
+        self.assertTrue(final.startswith("❌ **Failed** after "), final)
+        self.assertIn("no reply", final)
+        self.assertIn(f"No reply to thread {tid[:8]}", self.terminal())
+        time.sleep(1.5)  # several polls
+        self.assertEqual((self.dispatches(), len(self.prompts())), (1, 1), "not dispatched again")
+        self.assertEqual(self.state(tid), "failed")
+
+        self.silence_agent(False)
+        self.api("POST", f"/api/threads/{tid}/comments", {"body": "Please try again."})
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        self.assertEqual(self.dispatches(), 2)
+        self.assertIn("reviewer (new): Please try again.", self.prompts()[1])
+        self.assertIn("reviewer: Why an f-string here?", self.prompts()[1])
+
+    def test_a_failed_thread_stays_failed_after_a_restart(self):
+        self.silence_agent()
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the failed progress note", lambda: self.note(tid, "progress", "no reply"))
+        self.stop_watcher()
+
+        self.output.clear()
+        self.start_watcher()
+        time.sleep(1.5)  # several polls
+
+        self.assertEqual(self.state(tid), "failed")
+        self.assertEqual((self.dispatches(), len(self.prompts())), (0, 1), "not dispatched again")
+
+    def test_a_run_stopped_by_ctrl_c_leaves_its_threads_failed(self):
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
+        self.stop_watcher()
+
+        self.start_watcher()
+        self.assertEqual(self.state(tid), "failed")
+        final = self.note(tid, "progress")
+        self.assertTrue(final.startswith("❌ **Failed** after "), final)
+        self.assertRegex(final, r"[Nn]o reply \(the watcher stopped\)")
 
     def test_closing_the_terminal_stops_the_run_and_every_process_it_started(self):
         self.start_watcher()
@@ -248,6 +377,30 @@ class WatcherTest(unittest.TestCase):
         with open(os.path.join(self.repo, ".git", "difftate", "token")) as f:
             self.assertEqual(f.read().strip(), self.token, "the first watcher's token is kept")
         self.assertEqual(self.api("GET", "/api/threads"), [])
+
+    def refused(self, method, path, payload):
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            self.api(method, path, payload)
+        refused.exception.close()
+        return refused.exception.code
+
+    def test_only_a_reviewer_opens_a_thread_or_changes_its_status(self):
+        self.silence_agent()  # keep the agent out of the thread
+        self.start_watcher()
+        anchor = {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2}
+        for author in ("agent", "difftate"):
+            self.assertEqual(self.refused("POST", "/api/threads",
+                                          {"anchor": anchor, "body": "Hi", "author": author}), 403, author)
+        self.assertEqual(self.api("GET", "/api/threads"), [])
+
+        tid = self.open_thread("Why an f-string here?", author="reviewer")["id"]
+        for author in ("agent", "difftate"):
+            self.assertEqual(self.refused("PATCH", f"/api/threads/{tid}/status",
+                                          {"status": "resolved", "author": author}), 403, author)
+        self.assertEqual(self.thread(tid)["status"], "open")
+
+        self.api("PATCH", f"/api/threads/{tid}/status", {"status": "resolved"})
+        self.assertEqual((self.thread(tid)["status"], self.thread(tid)["state"]), ("resolved", None))
 
     def test_only_notes_can_be_edited_as_notes(self):
         self.start_watcher()

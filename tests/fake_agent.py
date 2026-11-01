@@ -8,8 +8,11 @@ threads" the way the prompt asks today (with `diffity agent reply`).
 Controlled through FAKE_AGENT_DIR (a folder the test owns):
   pid      written at start: this process's id
   prompt   written at start: the prompt it was sent
+  prompts  one line appended per run: the prompt as JSON
   go       the agent waits for this file before it replies, so a test can see
            the thread while the run is working
+  silent   while this file exists, the agent replies to no thread; when it
+           lists run numbers ("2" or "1,3"), only in those runs
 """
 import json
 import os
@@ -35,6 +38,8 @@ def main():
             f.write(str(os.getpid()))
         with open(os.path.join(folder, "prompt"), "w") as f:
             f.write(prompt)
+        with open(os.path.join(folder, "prompts"), "a") as f:
+            f.write(json.dumps(prompt) + "\n")
 
     mine = prompt.split("## Other open threads")[0]
     ids = re.findall(r"^### Thread ([0-9a-f]{8})", mine, re.M)
@@ -48,6 +53,14 @@ def main():
     while gate and not os.path.exists(gate) and time.time() < deadline:
         time.sleep(0.05)
 
+    silent = os.path.join(folder, "silent") if folder else ""
+    if silent and os.path.exists(silent):
+        with open(silent) as f:
+            runs = [int(n) for n in f.read().split(",") if n.strip()]
+        with open(os.path.join(folder, "prompts")) as f:
+            this_run = sum(1 for _ in f)
+        if not runs or this_run in runs:
+            ids = []
     for tid in ids:
         subprocess.run(["diffity", "agent", "reply", tid, "--body", f"[dt-reply] Fake answer to {tid}."],
                        check=True, stdout=subprocess.DEVNULL)

@@ -13,6 +13,7 @@ from . import diffity, viewer
 from .agent import AGENTS
 from .api import ReviewApi, running_watcher
 from .dispatch import Dispatch
+from .review import Review
 
 USAGE = """difftate-watch.py — Start diffity and poll for comments, dispatching to an AI coding session.
 (Normally run via the difftate / dtc / dto shell functions, with DT_WATCHER=python.)
@@ -162,7 +163,9 @@ class Watcher:
         except diffity.DiffityStartError as e:
             raise Exit(1, str(e))
         store = self.diffity.store()
-        self.api = ReviewApi(store, self.folder, self.root)
+        review = Review(store)
+        review.recover_runs()
+        self.api = ReviewApi(review, self.folder, self.root)
         self.api.start()
 
         url = self.diffity.viewer_url(o["ref"])
@@ -178,8 +181,8 @@ class Watcher:
         print()
         print("Press Ctrl+C to stop")
         print()
-        self.dispatch = Dispatch(store, self.agent, o["cwd"], o["interval"], self.api.address(),
-                                 self.diffity.problem)
+        self.dispatch = Dispatch(review, store.how_agent_replies(), self.agent, o["cwd"], o["interval"],
+                                 self.api.address(), self.diffity.problem)
 
     def stop(self, say=True):
         """Stop the run, every process it started, diffity (when started here) and the API."""

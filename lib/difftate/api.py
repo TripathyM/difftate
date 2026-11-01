@@ -4,13 +4,29 @@ Viewers and the progress notes reach the review only through it. Every request
 needs the token from the repository's difftate folder (`<git dir>/difftate/token`,
 readable only by the user); a request without it gets 401.
 
-  GET   /api/review                     start or reuse the review
+  GET   /api/review                     start or reuse the review: {"id"}
   GET   /api/threads[?status=open]      list threads
-  POST  /api/threads                    open a thread (reviewer)
-  POST  /api/threads/<id>/comments      add a comment (reviewer)
-  POST  /api/threads/<id>/notes         add a note: {"kind": "queued"|"progress", "body"}
+  POST  /api/threads                    open a thread: {"anchor", "body", "author"?}
+  POST  /api/threads/<id>/comments      add a comment: {"kind"?, "body"}
   PATCH /api/notes/<id>                 edit a note: {"kind", "body"}
-  PATCH /api/threads/<id>/status        set thread status: {"status": "open"|"resolved"|"dismissed"}
+  PATCH /api/threads/<id>/status        set thread status: {"status", "author"?}
+
+A thread (difftate's thread format):
+  {"id",
+   "anchor": {"file", "side": "old"|"new", "startLine", "endLine",
+              "code" (the code when written), "commit" (the commit when written)}
+             or null for a general thread,
+   "outdated": true when the anchored code changed after the thread was written,
+   "status": "open"|"resolved"|"dismissed",
+   "state": "waiting"|"queued"|"working"|"replied"|"failed" (null unless open),
+   "comments": [{"id", "author": "reviewer"|"agent"|"difftate",
+                 "kind": "comment"|"reply"|"queued"|"progress", "body", "time"}]}
+
+A comment's kind says who wrote it: a comment is the reviewer's (the default), a
+reply the agent's, and a queued or progress note difftate's. "author" says who
+opens a thread or sets its status, and must be "reviewer" (the default): anyone
+else gets 403. Only notes can be edited (403 otherwise). Errors are
+{"error": <message>} with status 400, 403, 404 or 502.
 
 `<git dir>/difftate/api.json` says where the API runs: {"port", "pid", "root"}.
 """
@@ -71,8 +87,8 @@ def _write_private(path, text):
 
 
 class ReviewApi:
-    def __init__(self, store, folder, root):
-        self.store = store
+    def __init__(self, review, folder, root):
+        self.review = review
         self.folder = folder
         self.root = root
         self.token = secrets.token_urlsafe(32)
@@ -86,7 +102,7 @@ class ReviewApi:
     def start(self):
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
         os.chmod(self.folder, 0o700)
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self.store, self.token))
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self.review, self.token))
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         _write_private(self.token_file, self.token + "\n")
@@ -113,7 +129,7 @@ class ReviewApi:
                     pass
 
 
-def _handler(store, token):
+def _handler(review, token):
     expected = f"Bearer {token}".encode()
 
     def need(payload, key):
@@ -121,15 +137,23 @@ def _handler(store, token):
             raise StoreError(400, f"missing {key}")
         return payload[key]
 
+    def fields(payload):
+        if payload is None:
+            return {}
+        if not isinstance(payload, dict):
+            raise StoreError(400, "need a JSON object")
+        return payload
+
     routes = [
-        ("GET", r"/api/review", lambda q, p: store.review()),
-        ("GET", r"/api/threads", lambda q, p: store.threads((q.get("status") or [None])[0])),
-        ("POST", r"/api/threads", lambda q, p: store.open_thread(p if isinstance(p, dict) else {})),
-        ("POST", r"/api/threads/([^/]+)/comments", lambda q, p, tid: store.add_comment(tid, need(p, "body"))),
-        ("POST", r"/api/threads/([^/]+)/notes",
-         lambda q, p, tid: store.add_note(tid, need(p, "kind"), need(p, "body"))),
-        ("PATCH", r"/api/notes/([^/]+)", lambda q, p, nid: store.edit_note(nid, need(p, "kind"), need(p, "body"))),
-        ("PATCH", r"/api/threads/([^/]+)/status", lambda q, p, tid: store.set_status(tid, need(p, "status"))),
+        ("GET", r"/api/review", lambda q, p: review.review()),
+        ("GET", r"/api/threads", lambda q, p: review.threads((q.get("status") or [None])[0])),
+        ("POST", r"/api/threads", lambda q, p: review.open_thread(
+            fields(p).get("anchor"), need(p, "body"), fields(p).get("author", "reviewer"))),
+        ("POST", r"/api/threads/([^/]+)/comments",
+         lambda q, p, tid: review.add_comment(tid, fields(p).get("kind", "comment"), need(p, "body"))),
+        ("PATCH", r"/api/notes/([^/]+)", lambda q, p, nid: review.edit_note(nid, need(p, "kind"), need(p, "body"))),
+        ("PATCH", r"/api/threads/([^/]+)/status",
+         lambda q, p, tid: review.set_status(tid, need(p, "status"), fields(p).get("author", "reviewer"))),
     ]
     routes = [(m, re.compile(f"^{path}$"), fn) for m, path, fn in routes]
 
