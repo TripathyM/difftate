@@ -30,7 +30,7 @@ export const Editing = {
   // Runs fn in the editable full-file view. From the diff, switches there at the cursor's line first;
   // keys typed during the switch are replayed after it.
   withEditable(cx, fn) {
-    if (this.editable()) { fn(); return; }
+    if (this.editable()) { fn(cx); return; }
     const r = this.rows[this.cur.row];
     if (!this.view || !r || r.new == null || r.kind === "del" || r.kind === "hunk" || r.kind === "meta") {
       this.msg = r?.kind === "del" ? "Deleted lines can't be edited (they're not in the file any more)" : "Nothing to edit here";
@@ -42,7 +42,7 @@ export const Editing = {
     cx.spawn(async (cx) => {
       try {
         await this.openFile(path, "file", { line, col }, false);
-        if (this.editable()) fn();
+        if (this.editable()) fn(cx);
         else this.msg = "This file can't be edited here (binary, deleted, or over 1 MiB)";
       } finally {
         this.switching = false;
@@ -288,10 +288,27 @@ export const Editing = {
     this.endChange();
   },
 
-  deleteLines(a, n) {
+  // The line register mirrors the system clipboard (like vim's clipboard=unnamedplus):
+  // yanks and deletes copy to it, and p / P put what it holds when something else
+  // copied there since.
+  setRegister(lines, cx) {
+    this.register = lines;
+    this.clip = lines.join("\n") + "\n";
+    try { cx?.write_to_clipboard(this.clip); } catch {}
+  },
+
+  syncRegister(cx) {
+    let text;
+    try { text = cx?.read_from_clipboard(); } catch {}
+    if (text == null || text === "" || text === this.clip) return;
+    this.clip = text;
+    this.register = text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n");
+  },
+
+  deleteLines(a, n, cx) {
     n = Math.max(1, Math.min(n, this.rows.length - a));
     this.beginChange();
-    this.register = this.rows.slice(a, a + n).map((r) => r.raw ?? r.text);
+    this.setRegister(this.rows.slice(a, a + n).map((r) => r.raw ?? r.text), cx);
     this.spliceRows(a, n, []);
     this.cur.row = Math.min(a, this.rows.length - 1);
     this.cur.col = this.firstNonBlank(this.rows[this.cur.row].raw ?? "");
@@ -300,14 +317,15 @@ export const Editing = {
     this.reveal();
   },
 
-  yankLines(a, n) {
+  yankLines(a, n, cx) {
     const rows = this.rows.slice(a, a + Math.max(1, n)).filter((r) => r.kind !== "hunk" && r.kind !== "meta");
     if (!rows.length) return;
-    this.register = rows.map((r) => r.raw ?? r.text);
-    this.msg = `${rows.length} line${rows.length === 1 ? "" : "s"} yanked`;
+    this.setRegister(rows.map((r) => r.raw ?? r.text), cx);
+    this.msg = `${rows.length} line${rows.length === 1 ? "" : "s"} yanked (also in the clipboard)`;
   },
 
-  put(below, n) {
+  put(below, n, cx) {
+    this.syncRegister(cx);
     if (!this.register?.length) { this.msg = "Nothing to put: yy or dd first"; return; }
     this.beginChange();
     const lines = Array.from({ length: n }, () => this.register).flat();
@@ -322,22 +340,22 @@ export const Editing = {
     return [Math.min(this.anchor, this.cur.row), Math.max(this.anchor, this.cur.row)];
   },
 
-  visualYank() {
+  visualYank(cx) {
     const [a, b] = this.visualRange();
     this.mode = "normal";
-    this.yankLines(a, b - a + 1);
+    this.yankLines(a, b - a + 1, cx);
   },
 
   visualDelete(cx) {
     const [a, b] = this.visualRange();
     this.mode = "normal";
-    if (this.editable()) { this.deleteLines(a, b - a + 1); return; }
+    if (this.editable()) { this.deleteLines(a, b - a + 1, cx); return; }
     // From the diff: delete the file lines the selection covers.
     const nums = this.rows.slice(a, b + 1).filter((r) => r.new != null && (r.kind === "add" || r.kind === "ctx")).map((r) => r.new);
     if (!nums.length) { this.msg = "Only deleted lines selected: nothing in the file to delete"; return; }
     const lo = Math.min(...nums), hi = Math.max(...nums);
     this.cur.row = this.rowOfNew.get(lo) ?? this.cur.row;
-    this.withEditable(cx, () => this.deleteLines(lo - 1, hi - lo + 1));
+    this.withEditable(cx, (c) => this.deleteLines(lo - 1, hi - lo + 1, c));
   },
 
   // ---------- save, reload, : commands ----------

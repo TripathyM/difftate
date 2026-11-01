@@ -82,9 +82,9 @@ Edits happen in the full-file view. Pressing an edit key on a diff line switches
 | insert_line_start / append_line_end | I A | Insert at the first non-blank / end of line |
 | open_below / open_above | o O | New line below / above, same indent, in insert mode |
 | delete_char | x | Delete the character under the cursor (counts work) |
-| delete_line | dd (visual: d x) | Delete lines; they go in the register |
-| yank_line | yy (visual: y) | Copy lines; in the diff this copies deleted lines too |
-| put_below / put_above | p P | Put the register's lines below / above |
+| delete_line | dd (visual: d x) | Delete lines; they go in the register and the clipboard |
+| yank_line | yy (visual: y) | Copy lines to the register and the clipboard; in the diff this copies deleted lines too |
+| put_below / put_above | p P | Put lines below / above: the clipboard's, if something else copied there since, else the register's |
 | undo / redo | u, C-r | One step per command or per insert session |
 | save | C-s, Cmd-S, `:w` | Write the file |
 | save_force | `:w!` | Write even though the file changed on disk |
@@ -99,5 +99,5 @@ meanwhile, the save is refused: `:w!` overwrites, `:e!` takes the disk version. 
 blocks switching files until you save or drop it. Saves keep the file's permissions and follow symlinks.
 After a save, diffity sees the change and the diff refreshes by itself.
 
-Not supported: pasting from the system clipboard (Herdr mods can't read it), multi-key insert
+Not supported: Cmd-V in insert mode (use `p` in normal mode), multi-key insert
 mappings like `jk`, text objects (`ciw`, `dw`), and registers other than the one line register.
