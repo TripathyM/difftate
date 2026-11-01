@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Thread helpers for difftate-watch.sh.
+"""Thread helpers for the watchers (difftate-watch.sh runs this file; the
+Python watcher imports it).
 
 Reads `diffity agent list --status open --json` on stdin.
 
@@ -94,22 +95,38 @@ def render_summary(t):
     return "\n".join([f"- {t['id'][:8]} — {location(t)}", *parts])
 
 
+def waiting(threads):
+    return [t for t in threads if awaiting_agent(t)]
+
+
+def has_queued_note(t):
+    """The thread's last comment is the watcher's "🕒 Queued" note."""
+    comments = t.get("comments") or []
+    return bool(comments) and body(comments[-1]).startswith(QUEUED)
+
+
+def prompt(threads, ids):
+    """The threads part of the prompt: <ids> in full, the other threads summarized."""
+    ids = set(ids)
+    mine = [t for t in threads if t.get("id") in ids]
+    others = [s for s in (render_summary(t) for t in threads if t.get("id") not in ids) if s]
+    out = [f"## Reply to these threads ({len(mine)})", ""]
+    out += ["\n\n".join(render_full(t) for t in mine)]
+    if others:
+        out += ["", f"## Other open threads ({len(others)}) — context only", "", *others]
+    return "\n".join(out)
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     threads = json.load(sys.stdin)
     if mode == "pending":
-        print(json.dumps([t for t in threads if awaiting_agent(t)]))
+        print(json.dumps(waiting(threads)))
     elif mode == "prompt":
-        ids = set(i for i in (sys.argv[2] if len(sys.argv) > 2 else "").split(",") if i)
-        mine = [t for t in threads if t.get("id") in ids]
-        others = [s for s in (render_summary(t) for t in threads if t.get("id") not in ids) if s]
-        out = [f"## Reply to these threads ({len(mine)})", ""]
-        out += ["\n\n".join(render_full(t) for t in mine)]
-        if others:
-            out += ["", f"## Other open threads ({len(others)}) — context only", "", *others]
-        print("\n".join(out))
+        print(prompt(threads, (i for i in (sys.argv[2] if len(sys.argv) > 2 else "").split(",") if i)))
     else:
         sys.exit(__doc__)
 
 
-main()
+if __name__ == "__main__":
+    main()

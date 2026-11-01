@@ -108,6 +108,7 @@ validate_session_claude() {
 # model and keep its thinking blocks (other models drop them).
 session_model_claude() {
   local file
+  # shellcheck disable=SC2012  # session ids are UUIDs
   file=$(ls "$CLAUDE_HOME"/projects/*/"${SESSION_ID}.jsonl" 2>/dev/null | head -1)
   [[ -z "$file" ]] && return 0
   python3 - "$file" <<'PY' 2>/dev/null || true
@@ -270,7 +271,7 @@ fi
 if ! command -v "$CMD" &>/dev/null; then
   raw=$(zsh -ic "which $CMD" 2>/dev/null | tail -1 || true)
   if [[ "$raw" == *"aliased to "* ]]; then
-    resolved=$(echo "$raw" | sed 's/.*aliased to //')
+    resolved="${raw##*aliased to }"
   elif [[ "$raw" == /* ]]; then
     resolved="$raw"
   else
@@ -359,14 +360,14 @@ for s in json.load(sys.stdin).get("spaces", []):
         if t.get("name") == os.environ["NAME"]:
             print(t["id"]); sys.exit()
 ' <<<"$tabs" 2>/dev/null || true)
-  if [[ -n "$existing" ]] && "$cli" do tab.select "{\"id\":\"$existing\"}" >/dev/null 2>&1; then
+  if [[ -n "$existing" ]] && "$cli" "do" tab.select "{\"id\":\"$existing\"}" >/dev/null 2>&1; then
     echo "  Herdr: switched to the \"$name\" tab"
     return 0
   fi
   args=$(NAME="$name" FOLDER="$root" python3 -c '
 import json, os
 print(json.dumps({"name": os.environ["NAME"], "mod": "difftate", "props": {"folder": os.environ["FOLDER"]}}))')
-  if ! "$cli" do tab.new "$args" >/dev/null 2>&1; then
+  if ! "$cli" "do" tab.new "$args" >/dev/null 2>&1; then
     echo "  Herdr: could not open a Review tab (is the difftate mod installed?)"
     return 1
   fi
@@ -415,7 +416,7 @@ else
 
   # Wait for diffity to print the URL (up to 10 seconds)
   port=""
-  for i in $(seq 1 20); do
+  for _ in $(seq 1 20); do
     if grep -qo 'localhost:[0-9]*' "$diffity_output" 2>/dev/null; then
       port=$(grep -o 'localhost:[0-9]*' "$diffity_output" | head -1 | grep -o '[0-9]*$')
       break

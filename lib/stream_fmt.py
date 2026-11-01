@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn an agent's JSON event stream into live progress for difftate-watch.sh.
+"""Turn an agent's JSON event stream into live progress for the watcher.
 
 Usage: <agent> ... | python3 -u lib/stream_fmt.py <claude|opencode>
 
@@ -8,10 +8,13 @@ opencode: `opencode run --format json`
 
 Progress goes to two places:
   - the terminal, one line per event
-  - the diffity UI, as one status comment per thread that is edited in place
-    (a live checklist) and ends as one "✅ Done" line. Enabled when DT_PORT and
-    DT_THREAD_IDS (comma-separated) are set. If DT_THREADS_JSON shows a
-    thread ending in the watcher's "🕒 Queued" comment, that comment is reused.
+  - the review, as one progress note per thread that is edited in place
+    (a live checklist) and ends as one "✅ Done" line. Enabled when
+    DT_THREAD_IDS (comma-separated) is set, and either:
+      DT_API + DT_TOKEN_FILE   the review API (the Python watcher)
+      DT_PORT                  diffity's own API (the bash watcher)
+    If DT_THREADS_JSON shows a thread ending in the watcher's "🕒 Queued"
+    note, that note is reused.
 
 Non-JSON lines are passed through unchanged so errors stay visible.
 """
@@ -76,34 +79,87 @@ class Context:
 CONTEXT = Context()
 
 
-# ── Diffity status comment ───────────────────────────────────────────────────
+# ── Progress notes ───────────────────────────────────────────────────────────
+def _request(url, method, payload, headers=None):
+    req = urllib.request.Request(
+        url, method=method, data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", **(headers or {})})
+    try:
+        with urllib.request.urlopen(req, timeout=3) as r:
+            return json.loads(r.read() or b"null")
+    except Exception:
+        return None
+
+
+class ReviewApiNotes:
+    """Posts and edits progress notes through the review API (the Python watcher)."""
+
+    def __init__(self, url, token_file):
+        self.url = url.rstrip("/")
+        with open(token_file) as f:
+            self.headers = {"Authorization": f"Bearer {f.read().strip()}"}
+
+    def post(self, tid, body):
+        note = _request(f"{self.url}/api/threads/{tid}/notes", "POST",
+                        {"kind": "progress", "body": body}, self.headers)
+        return (note or {}).get("id")
+
+    def edit(self, note_id, body):
+        _request(f"{self.url}/api/notes/{note_id}", "PATCH", {"kind": "progress", "body": body}, self.headers)
+
+
+class DiffityNotes:
+    """Posts and edits progress notes in diffity directly (the bash watcher; goes with it)."""
+
+    def __init__(self, port):
+        self.url = f"http://localhost:{port}"
+        self.marker = os.environ.get("DT_STATUS_MARKER", "[dt-status]")
+
+    def post(self, tid, body):
+        c = _request(f"{self.url}/api/threads/{tid}/reply", "POST",
+                     {"body": f"{self.marker} {body}", "author": {"name": "Agent", "type": "agent"}})
+        return (c or {}).get("id")
+
+    def edit(self, note_id, body):
+        _request(f"{self.url}/api/comments/{note_id}", "PATCH", {"body": f"{self.marker} {body}"})
+
+
+def notes_client():
+    try:
+        if os.environ.get("DT_API") and os.environ.get("DT_TOKEN_FILE"):
+            return ReviewApiNotes(os.environ["DT_API"], os.environ["DT_TOKEN_FILE"])
+    except OSError:
+        return None
+    if os.environ.get("DT_PORT"):
+        return DiffityNotes(os.environ["DT_PORT"])
+    return None
+
+
 class Status:
-    """One live checklist comment per thread, edited via diffity's local API."""
+    """One live checklist note per thread, edited in place."""
 
     def __init__(self):
-        self.port = os.environ.get("DT_PORT")
-        self.marker = os.environ.get("DT_STATUS_MARKER", "[dt-status]")
+        self.notes = notes_client()
         tids = [t for t in os.environ.get("DT_THREAD_IDS", "").split(",") if t]
-        self.enabled = bool(self.port and tids)
+        self.enabled = bool(self.notes and tids)
         self.steps = []  # [label, done]
         self.state = "thinking"  # thinking | working | done | failed
         self.note = ""
         self.lock = threading.Lock()
-        self.comment_ids = []
+        self.note_ids = []
         if self.enabled:
             queued = self._queued_comments()
             for tid in tids:
                 if tid in queued:
                     # Reuse the watcher's "🕒 Queued" comment as the live checklist
-                    self.comment_ids.append(queued[tid])
+                    self.note_ids.append(queued[tid])
                     continue
-                c = self._api("POST", f"/api/threads/{tid}/reply",
-                              {"body": self.render(), "author": {"name": "Agent", "type": "agent"}})
-                if c and c.get("id"):
-                    self.comment_ids.append(c["id"])
+                note_id = self.notes.post(tid, self.render())
+                if note_id:
+                    self.note_ids.append(note_id)
             self.push()
-            if not self.comment_ids:
-                out("⚠️", "could not post status comment to diffity")
+            if not self.note_ids:
+                out("⚠️", "could not post the progress note")
             threading.Thread(target=self._ticker, daemon=True).start()
 
     @staticmethod
@@ -121,16 +177,6 @@ class Status:
                 found[t["id"]] = comments[-1]["id"]
         return found
 
-    def _api(self, method, path, payload):
-        req = urllib.request.Request(
-            f"http://localhost:{self.port}{path}", method=method,
-            data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=3) as r:
-                return json.loads(r.read() or b"null")
-        except Exception:
-            return None
-
     def render(self):
         secs = int(time.time() - START)
         head = {
@@ -140,7 +186,7 @@ class Status:
             "failed": f"❌ **Failed** after {secs}s",
         }[self.state]
         ctx = CONTEXT.label()
-        lines = [f"{self.marker} {head}" + (f" · {ctx}" if ctx else "")]
+        lines = [head + (f" · {ctx}" if ctx else "")]
         if self.state == "done":
             # Finished: one line is enough, the agent's own reply has the details
             return lines[0]
@@ -154,12 +200,12 @@ class Status:
         return "\n".join(lines)
 
     def push(self):
-        if not self.comment_ids:
+        if not self.note_ids:
             return
         with self.lock:
             body = self.render()
-        for cid in self.comment_ids:
-            self._api("PATCH", f"/api/comments/{cid}", {"body": body})
+        for cid in self.note_ids:
+            self.notes.edit(cid, body)
 
     def _ticker(self):
         while self.state in ("thinking", "working"):
