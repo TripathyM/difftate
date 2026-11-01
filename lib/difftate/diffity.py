@@ -27,7 +27,7 @@ REQUEST_TIMEOUT_S = 5
 MARKERS = {"reply": "[dt-reply]", "queued": "[dt-queued]", "progress": "[dt-status]"}
 assert set(MARKERS) | {"comment"} == set(AUTHOR_OF)
 REVIEWER = {"name": "You", "type": "user"}
-# The author `diffity agent reply` writes as; the bash watcher writes its notes as it too
+# The author difftate writes replies and notes as (the one `diffity agent reply` uses)
 AGENT = {"name": "Agent", "type": "agent"}
 GENERAL = "__general__"  # diffity's file path for a general thread
 ID = re.compile(r"^[A-Za-z0-9-]+$")
@@ -148,7 +148,7 @@ def _check_id(value):
 def _comment(c):
     """A diffity comment in difftate's format. Only a text prefix tells a reply or
     a note from a comment; anything without one is a reviewer's, whoever wrote it
-    (a reviewing agent writes to diffity as an agent, with no prefix)."""
+    (a reviewing agent writes to diffity with diffity's agent author, but no prefix)."""
     body = c.get("body") or ""
     kind = next((k for k, m in MARKERS.items() if body == m or body.startswith(m + " ")), "comment")
     if kind != "comment":
@@ -212,15 +212,6 @@ class DiffityStore:
 
     def review(self):
         return {"id": self._session()["id"]}
-
-    @staticmethod
-    def how_agent_replies():
-        """The prompt's rule for how the agent replies: with diffity's own command,
-        until the agent answers with dt-reply (#18)."""
-        return (f"Reply to EVERY thread under 'Reply to these threads', with: "
-                f"diffity agent reply <id> --body \"{MARKERS['reply']} <answer>\"\n"
-                f"  The body MUST start with '{MARKERS['reply']} ' — that's how the watcher knows the thread "
-                f"is answered. Do NOT run 'diffity agent list': everything you need is below.")
 
     def threads(self, status=None):
         session = self._session()

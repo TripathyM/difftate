@@ -8,7 +8,7 @@ A review loop: a reviewer comments on lines of a changeset, and the coding agent
 
 **Review**:
 The review of one branch in one repository, against its base, like a pull request: its threads, and where each one stands. Commits don't end it, and every view shows the same review.
-_Avoid_: session (that word belongs to the agent), diff, pull request
+_Avoid_: session (that word belongs to the coding agent), diff, pull request
 
 **View**:
 The part of a review's changes that the reviewer looks at: all of them, one commit, the last few commits, or only the staged or unstaged changes. A thread written in any view belongs to the review.
@@ -33,15 +33,15 @@ _Avoid_: location, position
 The version of a file that an anchor points into: old (before the change) or new (after it).
 
 **Reviewer**:
-Whoever writes comments that the agent must answer: the user, or a separate reviewing agent.
+Whoever writes comments that the coding agent must answer: the user, or a separate reviewing agent.
 _Avoid_: user (as a role)
 
 **Comment**:
 A reviewer's message in a thread.
-_Avoid_: reply (that is the agent's), message
+_Avoid_: reply (that is the coding agent's), message
 
 **Reply**:
-The agent's answer in a thread.
+The coding agent's answer in a thread.
 _Avoid_: response, comment
 
 **Note**:
@@ -53,7 +53,7 @@ Open, resolved or dismissed. Only a reviewer changes it.
 _Avoid_: state (that is where the thread stands in the loop)
 
 **Thread state**:
-Where an open thread stands in the loop: **waiting** (it has a reviewer's comment that no run has been sent yet), **queued** (waiting while a run handles other threads), **working** (a run has it), **replied** (the agent spoke last) or **failed** (its run ended with no reply to it).
+Where an open thread stands in the loop: **waiting** (it has a reviewer's comment that no run has been sent yet), **queued** (waiting while a run handles other threads), **working** (a run has it), **replied** (the coding agent spoke last) or **failed** (its run ended with no reply to it).
 _Avoid_: pending, status
 
 ### Changes
@@ -69,14 +69,14 @@ _Avoid_: patch, diff (fine in speech; the model's word is changeset)
 ### Dispatch
 
 **Dispatch**:
-Sending the waiting threads to the agent, as one run.
+Sending the waiting threads to the coding agent, as one run.
 
 **Run**:
-One time the agent works on a set of threads. It ends replied or failed.
+One time the coding agent works on a set of threads. It ends replied or failed.
 _Avoid_: job, call
 
 **Step**:
-One action the agent takes during a run, such as reading a file or running a command.
+One action the coding agent takes during a run, such as reading a file or running a command.
 _Avoid_: tool, tool call
 
 **Queued note**:
@@ -89,18 +89,18 @@ _Avoid_: status comment, checklist
 **Watcher**:
 The difftate process for one review: it opens the review, watches its threads, and dispatches runs until it is stopped.
 
-### Agent
+### Coding agent
 
-**Agent**:
-The coding agent that wrote the code and replies to threads, such as Claude Code or OpenCode.
-_Avoid_: tool, bot, AI, model
+**Coding agent**:
+The agent that wrote the code and replies to threads, such as Claude Code or OpenCode.
+_Avoid_: agent (alone: a reviewing agent is an agent too), tool, bot, AI, model
 
 **Agent session**:
-The agent's conversation that each run continues, so replies have the context in which the code was written.
+The coding agent's conversation that each run continues, so replies have the context in which the code was written.
 _Avoid_: session (alone), conversation
 
 **Headless**:
-Runs with no agent session: the agent starts each run with no earlier context.
+Runs with no agent session: the coding agent starts each run with no earlier context.
 
 ### Viewing
 
