@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Thread helpers for the watchers (difftate-watch.sh runs this file; the
-Python watcher imports it).
+"""Thread helpers for the bash watcher (difftate-watch.sh runs this file). The
+Python watcher uses lib/difftate/review.py and prompt.py instead.
 
 Reads `diffity agent list --status open --json` on stdin.
 
@@ -97,12 +97,6 @@ def render_summary(t):
 
 def waiting(threads):
     return [t for t in threads if awaiting_agent(t)]
-
-
-def has_queued_note(t):
-    """The thread's last comment is the watcher's "🕒 Queued" note."""
-    comments = t.get("comments") or []
-    return bool(comments) and body(comments[-1]).startswith(QUEUED)
 
 
 def prompt(threads, ids):

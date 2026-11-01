@@ -2,58 +2,39 @@
 
 While a run works, threads that become waiting get a queued note right away.
 The run's progress notes are kept by lib/stream_fmt.py through the review API.
+When the run ends, a thread it didn't reply to is failed ("no reply"): its
+progress note says so, and it isn't sent again until the reviewer comments.
 """
-import hashlib
 import json
 import os
 import time
 
-import threads as thread_rules  # lib/threads.py: which threads wait, and the threads part of the prompt
-
+from . import prompt
 from .agent import Run
 from .store import StoreError
 
 QUEUED_NOTE = "🕒 **Queued** — agent is busy with another comment, will pick this up next."
-
-PROMPT = """New diffity review comments. Everything you need is below — do NOT run 'diffity agent list'.
-
-{threads}
-
-Rules:
-- Reply to EVERY thread under 'Reply to these threads', with: diffity agent reply <id> --body "{reply} <answer>"
-  The body MUST start with '{reply} ' — that's how the watcher knows the thread is answered.
-- 'Other open threads' are context only, to spot related comments. Reply there only if what you do in this run also addresses it.
-- Change code ONLY when the user explicitly asks ('fix this', 'rename X to Y', 'add X'). Then reply with what you changed (file:line).
-- Questions: answer. Suggestions, 'should we…?', nits: give your take and ask before changing anything. Unclear: ask for clarification. Never skip a thread silently.
-- NEVER resolve or dismiss threads. Never edit or delete comments starting with '{status}' or '{queued}' (watcher status).
-- Lines starting 'you:' are your earlier replies. Read files as needed for context.
-- Write replies in ASD-STE100 Simplified Technical English.
-Summarize briefly what you handled."""
 
 
 def now():
     return time.strftime("%H:%M:%S")
 
 
-def build_prompt(open_threads, ids):
-    return PROMPT.format(threads=thread_rules.prompt(open_threads, ids), reply=thread_rules.REPLY,
-                         status=thread_rules.STATUS, queued=thread_rules.QUEUED)
-
-
 class Dispatch:
-    def __init__(self, store, agent, cwd, interval, api, problem):
-        self.store = store
+    def __init__(self, review, how_to_reply, agent, cwd, interval, api, problem):
+        self.review = review
+        self.how_to_reply = how_to_reply  # the prompt's rule for how the agent replies
         self.agent = agent
         self.cwd = cwd
         self.interval = interval
         self.api = api  # ApiAddress, for the progress notes
         self.problem = problem  # () -> None, or why the watcher must exit
         self.run = None
-        self.last_hash = None
+        self.started = None  # when the run in progress started
 
     def _open_threads(self):
         try:
-            return self.store.threads("open")
+            return self.review.threads("open")
         except StoreError:
             return []
 
@@ -68,33 +49,46 @@ class Dispatch:
 
     def once(self):
         open_threads = self._open_threads()
-        waiting = thread_rules.waiting(open_threads)
+        waiting = [t for t in open_threads if t["state"] == "waiting"]
         if not waiting:
             return
-        digest = hashlib.sha256(json.dumps(waiting, sort_keys=True).encode()).hexdigest()
-        if digest == self.last_hash:
-            return
         print(f"[{now()}] New/changed threads detected — dispatching to {self.agent.name}")
-        self.last_hash = digest
 
-        ids = [t["id"] for t in waiting if t.get("id")]
-        argv, said = self.agent.command(build_prompt(open_threads, ids))
+        ids = [t["id"] for t in waiting]
+        new_ids = [cid for t in waiting for cid in self.review.unsent(t)]
+        argv, said = self.agent.command(prompt.build(open_threads, ids, new_ids, self.how_to_reply))
         for line in said:
             print(line)
+        # A thread that ends in its queued note gets that note back as its progress note
+        queued = {t["id"]: t["comments"][-1]["id"] for t in waiting if t["comments"][-1]["kind"] == "queued"}
         # The progress notes go through the review API. Only the formatter gets the
         # token file, never the agent.
         fmt_env = dict(os.environ, **self.api.env(), DT_THREAD_IDS=",".join(ids),
-                       DT_THREADS_JSON=json.dumps(waiting))
+                       DT_QUEUED_NOTES=json.dumps(queued))
+        self.started = time.time()
+        self.review.start_run(waiting)
         self.run = Run(self.agent.name, argv, self.cwd, fmt_env)
         # Threads that arrive meanwhile get a queued note right away. Runs stay one at a time.
         while self.run.running():
-            for tid in self.post_queued_notes(set(ids)):
+            for tid in self.post_queued_notes():
                 print(f"[{now()}] Queued thread {tid[:8]} (agent busy)")
             time.sleep(self.interval)
         code = self.run.exit_code()
         if code:
             print(f"[{now()}] Warning: dispatch to {self.agent.name} failed (exit {code})")
         self.run = None
+        self.end_run()
+
+    def end_run(self, why="", say=True):
+        """The run ended: the threads it didn't reply to are failed, and their progress notes say so."""
+        try:
+            failed = self.review.end_run()
+        except StoreError:
+            return
+        for t in failed:
+            if say:
+                print(f"[{now()}] No reply to thread {t['id'][:8]} — it waits for your next comment")
+            self.note_no_reply(t, int(time.time() - self.started), why)
 
     def stop_run(self, say=True):
         """Stop the run in progress, and every process it started."""
@@ -102,15 +96,39 @@ class Dispatch:
             if say:
                 print(f"Stopping running agent (pid {self.run.pid})...")
             self.run.stop()
+            self.run = None
+            self.end_run(" (the watcher stopped)", say=False)
 
-    def post_queued_notes(self, busy):
+    def post_queued_notes(self):
         posted = []
-        for t in thread_rules.waiting(self._open_threads()):
-            if t["id"] in busy or thread_rules.has_queued_note(t):
+        for t in self._open_threads():
+            if t["state"] != "queued" or self._has_queued_note(t):
                 continue
             try:
-                self.store.add_note(t["id"], "queued", QUEUED_NOTE)
+                self.review.add_comment(t["id"], "queued", QUEUED_NOTE)
                 posted.append(t["id"])
             except StoreError:
                 pass
         return posted
+
+    @staticmethod
+    def _has_queued_note(thread):
+        """A queued note was posted since the thread's last run."""
+        kinds = [c["kind"] for c in thread["comments"]]
+        since = len(kinds) - kinds[::-1].index("progress") if "progress" in kinds else 0
+        return "queued" in kinds[since:]
+
+    def note_no_reply(self, thread, secs, why=""):
+        """The run's progress note on <thread> ends as failed, with "no reply" (and <why>)."""
+        note = next((c for c in reversed(thread["comments"]) if c["kind"] == "progress"), None)
+        failed = f"❌ **Failed** after {secs}s — no reply{why}"
+        try:
+            if note is None:
+                self.review.add_comment(thread["id"], "progress", failed)
+            elif note["body"].startswith("❌"):
+                # The run already failed: keep why, and add that this thread got no reply
+                self.review.edit_note(note["id"], "progress", f"{note['body']}\n\nNo reply{why}.")
+            else:
+                self.review.edit_note(note["id"], "progress", failed)
+        except StoreError:
+            pass

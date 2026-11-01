@@ -13,8 +13,9 @@ Progress goes to two places:
     DT_THREAD_IDS (comma-separated) is set, and either:
       DT_API + DT_TOKEN_FILE   the review API (the Python watcher)
       DT_PORT                  diffity's own API (the bash watcher)
-    If DT_THREADS_JSON shows a thread ending in the watcher's "🕒 Queued"
-    note, that note is reused.
+    A thread's queued note becomes its progress note: DT_QUEUED_NOTES
+    ({thread id: note id}) gives them for the review API; for diffity,
+    DT_THREADS_JSON shows the threads that end in the "🕒 Queued" note.
 
 Non-JSON lines are passed through unchanged so errors stay visible.
 """
@@ -100,9 +101,18 @@ class ReviewApiNotes:
             self.headers = {"Authorization": f"Bearer {f.read().strip()}"}
 
     def post(self, tid, body):
-        note = _request(f"{self.url}/api/threads/{tid}/notes", "POST",
+        note = _request(f"{self.url}/api/threads/{tid}/comments", "POST",
                         {"kind": "progress", "body": body}, self.headers)
         return (note or {}).get("id")
+
+    @staticmethod
+    def queued_notes():
+        """{thread id: queued note id}, from the watcher."""
+        try:
+            found = json.loads(os.environ.get("DT_QUEUED_NOTES") or "{}")
+        except ValueError:
+            return {}
+        return found if isinstance(found, dict) else {}
 
     def edit(self, note_id, body):
         _request(f"{self.url}/api/notes/{note_id}", "PATCH", {"kind": "progress", "body": body}, self.headers)
@@ -122,6 +132,21 @@ class DiffityNotes:
 
     def edit(self, note_id, body):
         _request(f"{self.url}/api/comments/{note_id}", "PATCH", {"body": f"{self.marker} {body}"})
+
+    @staticmethod
+    def queued_notes():
+        """{thread id: comment id} for the threads whose last comment is the watcher's queued note."""
+        marker = os.environ.get("DT_QUEUED_MARKER", "[dt-queued]")
+        try:
+            threads = json.loads(os.environ.get("DT_THREADS_JSON") or "[]")
+        except ValueError:
+            return {}
+        found = {}
+        for t in threads:
+            comments = t.get("comments") or []
+            if comments and (comments[-1].get("body") or "").startswith(marker):
+                found[t["id"]] = comments[-1]["id"]
+        return found
 
 
 def notes_client():
@@ -148,7 +173,7 @@ class Status:
         self.lock = threading.Lock()
         self.note_ids = []
         if self.enabled:
-            queued = self._queued_comments()
+            queued = self.notes.queued_notes()
             for tid in tids:
                 if tid in queued:
                     # Reuse the watcher's "🕒 Queued" comment as the live checklist
@@ -161,21 +186,6 @@ class Status:
             if not self.note_ids:
                 out("⚠️", "could not post the progress note")
             threading.Thread(target=self._ticker, daemon=True).start()
-
-    @staticmethod
-    def _queued_comments():
-        """{thread_id: comment_id} for threads whose last comment is the watcher's queued marker."""
-        marker = os.environ.get("DT_QUEUED_MARKER", "[dt-queued]")
-        try:
-            threads = json.loads(os.environ.get("DT_THREADS_JSON") or "[]")
-        except ValueError:
-            return {}
-        found = {}
-        for t in threads:
-            comments = t.get("comments") or []
-            if comments and (comments[-1].get("body") or "").startswith(marker):
-                found[t["id"]] = comments[-1]["id"]
-        return found
 
     def render(self):
         secs = int(time.time() - START)

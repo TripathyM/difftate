@@ -245,17 +245,39 @@ Agent invocation:
 
 `export DT_WATCHER=python` (or `DT_WATCHER=python difftate` for one run) starts `difftate-watch.py` instead of `difftate-watch.sh`. It needs Python 3.9 or later and nothing else. It takes the same flags, prints the same lines and writes the same notes. It's the first step of [#14](https://github.com/TripathyM/difftate/issues/14); the bash watcher stays the default until the Python one replaces it.
 
-It also serves the **review API** on `127.0.0.1`, for viewers and the progress notes. Every request needs the header `Authorization: Bearer <token>`, with the token from `.git/difftate/token` (readable only by you; a new one each start). `.git/difftate/api.json` gives the port. Threads are still in diffity's JSON for now.
+It also serves the **review API** on `127.0.0.1`, for viewers and the progress notes. Every request needs the header `Authorization: Bearer <token>`, with the token from `.git/difftate/token` (readable only by you; a new one each start). `.git/difftate/api.json` gives the port.
 
 | Request | What it does |
 |---|---|
 | `GET /api/review` | Start or reuse the review |
 | `GET /api/threads?status=open` | List threads |
-| `POST /api/threads` | Open a thread: `filePath`, `side` (`old`/`new`), `startLine`, `endLine`, `body`, `anchorContent` |
-| `POST /api/threads/<id>/comments` | Add a comment: `body` |
-| `POST /api/threads/<id>/notes` | Add a note: `kind` (`queued`/`progress`), `body` |
-| `PATCH /api/notes/<id>` | Edit a note: `kind`, `body` |
+| `POST /api/threads` | Open a thread: `anchor` (`file`, `side` `old`/`new`, `startLine`, `endLine`, `code`; `null` for a general thread), `body` |
+| `POST /api/threads/<id>/comments` | Add a comment: `kind` (`comment`, the default; `reply`; `queued` or `progress` for a note), `body` |
+| `PATCH /api/notes/<id>` | Edit a note: `kind`, `body`. Anything that isn't a note gets 403 |
 | `PATCH /api/threads/<id>/status` | Set the thread status: `open`, `resolved` or `dismissed` |
+
+Opening a thread and setting its status take an optional `author`, which must be `reviewer`: anyone else gets 403. That enforces the review's rules for difftate's own callers; it isn't a security check (the token is). Threads come back in difftate's own format, the same for every store:
+
+```json
+{"id": "…", "anchor": {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2,
+                       "code": "    return f'hello {name}'", "commit": "<sha>"},
+ "outdated": false, "status": "open", "state": "replied",
+ "comments": [{"id": "…", "author": "reviewer", "kind": "comment", "body": "Why an f-string?", "time": "…"},
+              {"id": "…", "author": "difftate", "kind": "progress", "body": "✅ **Done** in 12s", "time": "…"},
+              {"id": "…", "author": "agent", "kind": "reply", "body": "It reads better.", "time": "…"}]}
+```
+
+The **thread state** of an open thread (`null` otherwise) is the one rule the watcher dispatches by:
+
+| State | Meaning |
+|---|---|
+| `waiting` | It has a reviewer's comment that no run has been sent yet |
+| `queued` | Waiting while a run handles other threads |
+| `working` | The run in progress has it |
+| `replied` | The agent spoke last, and every reviewer comment was sent to a run |
+| `failed` | Its run ended with no reply to it. Its progress note says "no reply", and it isn't sent again until you comment |
+
+So a follow-up you write while the agent works on the same thread is answered in the next run ([#3](https://github.com/TripathyM/difftate/issues/3)). A comment from a separate reviewing agent (written to diffity as an agent, without `[dt-reply]`) counts as yours. diffity's `[dt-…]` prefixes stay inside the diffity store: the API has comment kinds instead.
 
 ## Tests
 
@@ -263,7 +285,7 @@ It also serves the **review API** on `127.0.0.1`, for viewers and the progress n
 python3 -m unittest discover -s tests -v
 ```
 
-Each test makes a temporary git repository, starts the real Python watcher with a fake agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. They need diffity 0.9.5, and skip without it. CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and `shellcheck` on `difftate-watch.sh`, on every push and pull request.
+`tests/test_watcher.py` makes a temporary git repository, starts the real Python watcher with a fake agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_stores.py` runs one test suite against every store (memory and diffity). Tests that need diffity 0.9.5 skip without it. CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and `shellcheck` on `difftate-watch.sh`, on every push and pull request.
 
 ## Known limitations
 
