@@ -2,6 +2,8 @@
 
 While a run works, threads that become waiting get a queued note right away.
 The run's progress notes are kept by lib/stream_fmt.py through the review API.
+The agent answers with dt-reply into the run's folder, and Dispatch posts each
+answer as a reply, during the run and when it ends.
 When the run ends, a thread it didn't reply to is failed ("no reply"): its
 progress note says so, and it isn't sent again until the reviewer comments.
 """
@@ -10,7 +12,8 @@ import os
 import time
 
 from . import prompt
-from .agent import Run
+from .agent import Run, RunAccess
+from .runfolder import RunFolder
 from .store import StoreError
 
 QUEUED_NOTE = "🕒 **Queued** — agent is busy with another comment, will pick this up next."
@@ -22,15 +25,16 @@ def now():
 
 
 class Dispatch:
-    def __init__(self, review, how_to_reply, agent, cwd, interval, api, problem):
+    def __init__(self, review, agent, cwd, review_folder, interval, api, problem):
         self.review = review
-        self.how_to_reply = how_to_reply  # the prompt's rule for how the agent replies
         self.agent = agent
         self.cwd = cwd
+        self.review_folder = review_folder  # the store and the token: kept out of the agent's reach
         self.interval = interval
         self.api = api  # ApiAddress, for the progress notes
         self.problem = problem  # () -> None, or why the watcher must exit
         self.run = None
+        self.run_folder = None  # where the agent leaves its replies
         self.started = None  # when the run in progress started
 
     def _open_threads(self):
@@ -57,7 +61,9 @@ class Dispatch:
 
         ids = [t["id"] for t in waiting]
         new_ids = [cid for t in waiting for cid in self.review.unsent(t)]
-        argv, said = self.agent.command(prompt.build(open_threads, ids, new_ids, self.how_to_reply))
+        self.run_folder = RunFolder.create(t["id"] for t in open_threads)
+        access = RunAccess(write=[self.run_folder.path], deny_write=[self.review_folder], deny_read=[self.api.token_file])
+        argv, said = self.agent.command(prompt.build(open_threads, ids, new_ids), access)
         for line in said:
             print(line)
         # A thread that ends in its queued note gets that note back as its progress note
@@ -67,11 +73,13 @@ class Dispatch:
         # token file, never the agent.
         fmt_env = dict(os.environ, **self.api.env(), DT_THREAD_IDS=",".join(ids),
                        DT_QUEUED_NOTES=json.dumps(queued))
+        agent_env = dict(os.environ, DT_RUN_DIR=self.run_folder.path)
         self.started = time.time()
         self.review.start_run(waiting)
-        self.run = Run(self.agent.name, argv, self.cwd, fmt_env)
+        self.run = Run(self.agent.name, argv, self.cwd, fmt_env, agent_env)
         # Threads that arrive meanwhile get a queued note right away. Runs stay one at a time.
         while self.run.running():
+            self.post_replies()
             for tid in self.post_queued_notes():
                 print(f"[{now()}] Queued thread {tid[:8]} (agent busy)")
             time.sleep(self.interval)
@@ -81,8 +89,21 @@ class Dispatch:
         self.run = None
         self.end_run()
 
+    def post_replies(self):
+        """Post the answers the agent left in the run's folder as replies."""
+        for tid, body in self.run_folder.take_replies() if self.run_folder else []:
+            try:
+                self.review.add_comment(tid, "reply", body)
+            except StoreError as e:
+                print(f"[{now()}] Warning: could not post the reply to thread {tid[:8]}: {e}")
+
     def end_run(self, why="", say=True):
-        """The run ended: the threads it didn't reply to are failed, and their progress notes say so."""
+        """The run ended: its last replies are posted, the threads it didn't reply
+        to are failed, and their progress notes say so."""
+        self.post_replies()
+        if self.run_folder:
+            self.run_folder.remove()
+            self.run_folder = None
         try:
             failed = self.review.end_run()
         except StoreError:

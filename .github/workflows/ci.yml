@@ -25,9 +25,11 @@ jobs:
       - run: npm install -g diffity@0.9.5
       - run: python -m unittest discover -s tests -v
 
-  shellcheck:
-    name: ShellCheck
+  # ShellCheck has no zsh support, so the one shell file gets zsh's own syntax check
+  zsh-syntax:
+    name: zsh syntax
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck difftate-watch.sh
+      - run: sudo apt-get update -q && sudo apt-get install -yq zsh
+      - run: zsh -n difftate.zsh

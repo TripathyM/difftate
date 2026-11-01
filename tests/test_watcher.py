@@ -195,6 +195,11 @@ class WatcherTest(unittest.TestCase):
         except FileNotFoundError:
             return []
 
+    def agent_args(self):
+        """The command-line arguments of the latest run."""
+        with open(os.path.join(self.agent_dir, "args")) as f:
+            return json.load(f)
+
     def dispatches(self):
         return self.terminal().count("New/changed threads detected")
 
@@ -211,7 +216,7 @@ class WatcherTest(unittest.TestCase):
         self.assertEqual(self.state(tid), "working")
 
         self.release_agent()
-        wait_for("the done note", lambda: self.note(tid, "progress", "Done"))
+        wait_for("the done note and the reply", lambda: self.note(tid, "progress", "Done") and self.note(tid, "reply"))
         self.assertEqual([k for k, _ in self.comments(tid)], ["comment", "progress", "reply"],
                          "comment, one progress note (edited in place), reply")
         self.assertTrue(self.bodies(tid)[1].startswith("✅ **Done** in "), self.bodies(tid))
@@ -223,6 +228,48 @@ class WatcherTest(unittest.TestCase):
         self.assertRegex(out, r"\[\d\d:\d\d:\d\d\] New/changed threads detected — dispatching to claude")
         self.assertIn("🔧 Read  app.py", out)
         self.assertRegex(out, r"✅ done in \d+s, \$0\.0123")
+
+    def test_the_agent_answers_with_dt_reply_and_difftate_marks_it_a_reply(self):
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+        reply = self.thread(tid)["comments"][-1]
+        self.assertEqual((reply["author"], reply["kind"], reply["body"]),
+                         ("agent", "reply", f"Fake answer to {tid[:8]}."),
+                         "the agent wrote only its answer: no marker")
+        self.assertRegex(self.prompts()[0], r"\S*dt-reply <thread> \"<answer>\"")
+
+    def test_the_prompt_and_the_run_settings_name_no_diffity(self):
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+        self.assertNotIn("diffity", self.prompts()[0].lower())
+        self.assertNotIn("diffity", " ".join(self.agent_args()).lower())
+
+    def test_each_claude_run_may_write_only_its_folder_not_the_store_or_read_the_token(self):
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
+
+        args = self.agent_args()
+        sandbox = json.loads(args[args.index("--settings") + 1])["sandbox"]["filesystem"]
+        with open(os.path.join(self.agent_dir, "run_dir")) as f:
+            run_dir = f.read()
+        store = os.path.realpath(os.path.join(self.repo, ".git", "difftate"))
+        self.assertTrue(run_dir and os.path.isdir(run_dir), "the run has its own folder")
+        self.assertEqual(sandbox["allowWrite"], [run_dir])
+        self.assertEqual(sandbox["denyWrite"], [store])
+        self.assertEqual(sandbox["denyRead"], [os.path.join(store, "token")])
+        self.assertFalse(os.path.realpath(run_dir).startswith(store + os.sep), "the run's folder is outside the store")
+
+        self.release_agent()
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        self.assertFalse(os.path.exists(run_dir), "the run's folder goes when the run ends")
 
     def test_thread_written_during_a_run_is_queued_then_answered_next(self):
         self.start_watcher()
@@ -236,7 +283,8 @@ class WatcherTest(unittest.TestCase):
         self.assertIn(f"Queued thread {second[:8]} (agent busy)", self.terminal())
 
         self.release_agent()
-        wait_for("the done note", lambda: self.note(second, "progress", "Done"))
+        wait_for("the done note and the reply",
+                 lambda: self.note(second, "progress", "Done") and self.note(second, "reply"))
         self.assertEqual([k for k, _ in self.comments(second)], ["comment", "progress", "reply"],
                          "the queued note becomes the progress note")
         wait_for("both threads replied", lambda: self.state(first) == self.state(second) == "replied")

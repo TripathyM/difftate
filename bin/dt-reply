@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""dt-reply: the agent's answer to a review thread.
+
+Usage:
+  dt-reply <thread> "<answer>"
+  dt-reply <thread> <<'EOF'        (the answer from stdin, for quotes or several lines)
+
+<thread> is the thread's id, or its first 8 characters as the prompt shows them.
+Write only the answer: difftate posts it as a reply. Works only inside a
+difftate run, which sets DT_RUN_DIR.
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
+
+from difftate.runfolder import ReplyError, RunFolder  # noqa: E402
+
+
+def main(argv):
+    if argv[:1] in (["-h"], ["--help"]):
+        print(__doc__.strip())
+        return 0
+    if len(argv) not in (1, 2):
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    run_dir = os.environ.get("DT_RUN_DIR")
+    if not run_dir:
+        print("dt-reply: DT_RUN_DIR is not set: dt-reply works only during a difftate run", file=sys.stderr)
+        return 1
+    body = argv[1] if len(argv) == 2 and argv[1] != "-" else sys.stdin.read()
+    try:
+        tid = RunFolder(run_dir).write_reply(argv[0], body)
+    except (ReplyError, OSError) as e:
+        print(f"dt-reply: {e}", file=sys.stderr)
+        return 1
+    print(f"Replied to thread {tid[:8]}.")
+    return 0
+
+
+sys.exit(main(sys.argv[1:]))

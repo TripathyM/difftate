@@ -9,13 +9,10 @@ opencode: `opencode run --format json`
 Progress goes to two places:
   - the terminal, one line per event
   - the review, as one progress note per thread that is edited in place
-    (a live checklist) and ends as one "✅ Done" line. Enabled when
-    DT_THREAD_IDS (comma-separated) is set, and either:
-      DT_API + DT_TOKEN_FILE   the review API (the Python watcher)
-      DT_PORT                  diffity's own API (the bash watcher)
-    A thread's queued note becomes its progress note: DT_QUEUED_NOTES
-    ({thread id: note id}) gives them for the review API; for diffity,
-    DT_THREADS_JSON shows the threads that end in the "🕒 Queued" note.
+    (a live checklist) and ends as one "✅ Done" line, through the review API.
+    Enabled when DT_THREAD_IDS (comma-separated), DT_API and DT_TOKEN_FILE are
+    set. A thread's queued note becomes its progress note: DT_QUEUED_NOTES
+    ({thread id: note id}) gives them.
 
 Non-JSON lines are passed through unchanged so errors stay visible.
 """
@@ -93,7 +90,7 @@ def _request(url, method, payload, headers=None):
 
 
 class ReviewApiNotes:
-    """Posts and edits progress notes through the review API (the Python watcher)."""
+    """Posts and edits progress notes through the review API."""
 
     def __init__(self, url, token_file):
         self.url = url.rstrip("/")
@@ -118,45 +115,12 @@ class ReviewApiNotes:
         _request(f"{self.url}/api/notes/{note_id}", "PATCH", {"kind": "progress", "body": body}, self.headers)
 
 
-class DiffityNotes:
-    """Posts and edits progress notes in diffity directly (the bash watcher; goes with it)."""
-
-    def __init__(self, port):
-        self.url = f"http://localhost:{port}"
-        self.marker = os.environ.get("DT_STATUS_MARKER", "[dt-status]")
-
-    def post(self, tid, body):
-        c = _request(f"{self.url}/api/threads/{tid}/reply", "POST",
-                     {"body": f"{self.marker} {body}", "author": {"name": "Agent", "type": "agent"}})
-        return (c or {}).get("id")
-
-    def edit(self, note_id, body):
-        _request(f"{self.url}/api/comments/{note_id}", "PATCH", {"body": f"{self.marker} {body}"})
-
-    @staticmethod
-    def queued_notes():
-        """{thread id: comment id} for the threads whose last comment is the watcher's queued note."""
-        marker = os.environ.get("DT_QUEUED_MARKER", "[dt-queued]")
-        try:
-            threads = json.loads(os.environ.get("DT_THREADS_JSON") or "[]")
-        except ValueError:
-            return {}
-        found = {}
-        for t in threads:
-            comments = t.get("comments") or []
-            if comments and (comments[-1].get("body") or "").startswith(marker):
-                found[t["id"]] = comments[-1]["id"]
-        return found
-
-
 def notes_client():
     try:
         if os.environ.get("DT_API") and os.environ.get("DT_TOKEN_FILE"):
             return ReviewApiNotes(os.environ["DT_API"], os.environ["DT_TOKEN_FILE"])
     except OSError:
-        return None
-    if os.environ.get("DT_PORT"):
-        return DiffityNotes(os.environ["DT_PORT"])
+        pass
     return None
 
 

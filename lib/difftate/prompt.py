@@ -2,8 +2,13 @@
 open threads, and the rules.
 
 Notes are left out: they cost tokens on every run and say nothing about the code.
-(lib/threads.py builds the same prompt for the bash watcher, from diffity's JSON.)
+The agent answers with dt-reply (bin/dt-reply), and nothing in the prompt names
+the store.
 """
+import shlex
+
+from .runfolder import DT_REPLY
+
 ANCHOR_MAX_LINES = 20
 SUMMARY_MAX = 200  # chars per comment in the "other open threads" section
 
@@ -12,7 +17,9 @@ PROMPT = """New review comments. Everything you need is below.
 {threads}
 
 Rules:
-- {reply}
+- Reply to EVERY thread under 'Reply to these threads', with: {dt_reply} <thread> "<answer>"
+  <thread> is the 8 characters after 'Thread'. Write only the answer: difftate marks it as your reply.
+  For an answer with quotes or several lines, pass it on stdin: {dt_reply} <thread> <<'EOF' … EOF
 - 'Other open threads' are context only, to spot related comments. Reply there only if what you do in this run also addresses it.
 - Lines starting 'reviewer (new):' are the comments to answer now. Lines starting 'you:' are your earlier replies.
 - Change code ONLY when the reviewer explicitly asks ('fix this', 'rename X to Y', 'add X'). Then reply with what you changed (file:line).
@@ -23,10 +30,10 @@ Rules:
 Summarize briefly what you handled."""
 
 
-def build(open_threads, ids, new_ids, reply):
+def build(open_threads, ids, new_ids):
     """The prompt for a run on the threads <ids>. <new_ids> holds the ids of the
-    comments no run has been sent yet; <reply> says how the agent replies."""
-    return PROMPT.format(threads=threads_part(open_threads, ids, new_ids), reply=reply)
+    comments no run has been sent yet."""
+    return PROMPT.format(threads=threads_part(open_threads, ids, new_ids), dt_reply=shlex.quote(DT_REPLY))
 
 
 def location(t):

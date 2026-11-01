@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""difftate's Python watcher (Python 3.9+, standard library only).
+"""difftate's watcher (Python 3.9+, standard library only).
 
-Opt-in: DT_WATCHER=python makes difftate / dtc / dto start this instead of
-difftate-watch.sh. Same options; run with --help for them.
+The difftate / dtc / dto shell functions start it. Run with --help for its options.
 """
 import os
 import sys

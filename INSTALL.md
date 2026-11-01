@@ -25,7 +25,7 @@ Run each check. Report all results together, then stop if anything **required** 
 |---|---|---|
 | zsh (required) | `command -v zsh` | difftate is zsh-only; stop |
 | git (required) | `git --version` | macOS: `xcode-select --install` |
-| python3 (required) | `python3 --version` | macOS: `xcode-select --install`, or `brew install python` |
+| python3 3.9 or later (required, for the watcher) | `python3 --version` | macOS: `xcode-select --install`, or `brew install python` |
 | Node.js + npm (required, for diffity) | `node --version && npm --version` | Install Node 18+ (e.g. via nvm or `brew install node`) |
 | An agent CLI (one is required) | `zsh -c 'whence -p claude'` and `zsh -c 'whence -p opencode'`, run separately | Install [Claude Code](https://docs.claude.com/en/docs/claude-code) or [OpenCode](https://opencode.ai) |
 

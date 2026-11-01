@@ -2,7 +2,8 @@
 # Source this file from ~/.zshrc. See README.md in this folder.
 
 # ── difftate ─────────────────────────────────────────────────────────────────
-# Polls diffity for review comments and dispatches to an AI coding session.
+# Starts the watcher (difftate-watch.py): it serves the review and dispatches
+# waiting threads to the agent, in its agent session when one is found.
 # Defaults: --ref master, --interval 1s. Auto-attaches latest session.
 #
 # Usage:
@@ -16,7 +17,6 @@
 #   difftate --model <model>       # force the agent's model (default: session's model)
 #   difftate --cmd <binary>        # run the agent through another command or alias
 #   difftate --open herdr          # open the review in Herdr (browser|herdr|both; default $DT_OPEN, else browser)
-#   DT_WATCHER=python difftate     # use the Python watcher instead of difftate-watch.sh (opt-in)
 #
 # Claude sessions are looked up in $CLAUDE_CONFIG_DIR (default ~/.claude).
 # Your own shortcuts go in ~/.zshrc, e.g. for a wrapper with its own config:
@@ -83,10 +83,7 @@ _dt_run() {
     fi
   fi
 
-  # DT_WATCHER=python opts in to the Python watcher (same options and output)
-  local watcher="$_DT_DIR/difftate-watch.sh"
-  [[ "${DT_WATCHER:-}" == "python" ]] && watcher="$_DT_DIR/difftate-watch.py"
-  "$watcher" --tool "$tool" --cmd "$cmd" --ref "$ref" --interval 1 "${session_args[@]}" "${extra_args[@]}"
+  "$_DT_DIR/difftate-watch.py" --tool "$tool" --cmd "$cmd" --ref "$ref" --interval 1 "${session_args[@]}" "${extra_args[@]}"
 }
 
 difftate() { _dt_run claude claude "$@"; }

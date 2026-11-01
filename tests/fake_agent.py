@@ -3,10 +3,12 @@
 
 Called like `claude -p <prompt> ... --output-format stream-json --verbose`.
 It prints Claude-style events, then answers every thread under "Reply to these
-threads" the way the prompt asks today (with `diffity agent reply`).
+threads" with the `dt-reply` command the prompt names (and no other way).
 
 Controlled through FAKE_AGENT_DIR (a folder the test owns):
   pid      written at start: this process's id
+  args     written at start: its command-line arguments, as JSON
+  run_dir  written at start: the run's folder it was given ($DT_RUN_DIR)
   prompt   written at start: the prompt it was sent
   prompts  one line appended per run: the prompt as JSON
   go       the agent waits for this file before it replies, so a test can see
@@ -36,6 +38,10 @@ def main():
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, "pid"), "w") as f:
             f.write(str(os.getpid()))
+        with open(os.path.join(folder, "args"), "w") as f:
+            json.dump(args, f)
+        with open(os.path.join(folder, "run_dir"), "w") as f:
+            f.write(os.environ.get("DT_RUN_DIR", ""))
         with open(os.path.join(folder, "prompt"), "w") as f:
             f.write(prompt)
         with open(os.path.join(folder, "prompts"), "a") as f:
@@ -61,9 +67,10 @@ def main():
             this_run = sum(1 for _ in f)
         if not runs or this_run in runs:
             ids = []
-    for tid in ids:
-        subprocess.run(["diffity", "agent", "reply", tid, "--body", f"[dt-reply] Fake answer to {tid}."],
-                       check=True, stdout=subprocess.DEVNULL)
+    # The reply command, as the prompt's rules name it: `<path>/dt-reply <thread> "<answer>"`
+    found = re.search(r"(\S*dt-reply) <thread>", prompt)
+    for tid in ids if found else []:
+        subprocess.run([found.group(1), tid, f"Fake answer to {tid}."], check=True, stdout=subprocess.DEVNULL)
     emit({"type": "assistant", "message": {"content": [{"type": "text", "text": f"Replied to {len(ids)} thread(s)."}]}})
     emit({"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.0123, "modelUsage": {}})
 

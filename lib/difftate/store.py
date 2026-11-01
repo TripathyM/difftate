@@ -12,9 +12,6 @@ The store port:
   edit_note(note_id, kind, body)        change a note's kind and body
   set_status(thread_id, status)         open, resolved or dismissed
 
-A store the watcher runs on also has how_agent_replies(): the prompt's rule for
-how the agent replies (diffity's own command, until dt-reply in #18).
-
 A thread:
   {"id", "anchor": {"file", "side", "startLine", "endLine", "code", "commit"} or None
    for a general thread, "outdated", "status", "comments": [{"id", "author", "kind",

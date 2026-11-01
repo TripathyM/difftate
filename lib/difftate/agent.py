@@ -10,18 +10,21 @@ import json
 import os
 import subprocess
 import sys
+from collections import namedtuple
 
 from . import procs
 
 LIB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STREAM_FMT = os.path.join(LIB, "stream_fmt.py")
 
-# `diffity agent reply` writes to diffity's database in ~/.diffity. With Claude's
-# sandbox on, that write is blocked unless the folder is allowed, so allow it for
-# the watcher's runs only. Merged into the user's settings; ignored when the
-# sandbox is off. Not needed once the agent answers with dt-reply (#18).
 NONE_FOUND = "    (none found)"
-CLAUDE_RUN_SETTINGS = json.dumps({"sandbox": {"filesystem": {"allowWrite": ["~/.diffity/"]}}}, separators=(",", ":"))
+
+
+class RunAccess(namedtuple("RunAccess", "write deny_write deny_read")):
+    """What one run may touch: it may write the folders in <write> (its run's
+    folder), and may not write <deny_write> (the store) or read <deny_read> (the
+    API token). An agent with a sandbox enforces it; one without relies on the
+    watcher's checks."""
 
 
 class Agent:
@@ -88,9 +91,17 @@ class Claude(Agent):
             return ""
         return interactive or any_model
 
-    def command(self, prompt):
+    @staticmethod
+    def run_settings(access):
+        """Claude's sandbox setting for one run. Merged into the user's settings;
+        ignored when the sandbox is off."""
+        return json.dumps({"sandbox": {"filesystem": {
+            "allowWrite": list(access.write), "denyWrite": list(access.deny_write),
+            "denyRead": list(access.deny_read)}}}, separators=(",", ":"))
+
+    def command(self, prompt, access):
         """The command line for one run, and the lines to print about it."""
-        args = ["--allowedTools", "Edit", "Write", "Read", "Bash", "--settings", CLAUDE_RUN_SETTINGS,
+        args = ["--allowedTools", "Edit", "Write", "Read", "Bash", "--settings", self.run_settings(access),
                 "--output-format", "stream-json", "--verbose"]
         model, source = self.model, "--model"
         if not model and self.session:
@@ -123,7 +134,8 @@ class OpenCode(Agent):
         code, out = self._list()
         return out.rstrip("\n").split("\n") if code == 0 else [NONE_FOUND]
 
-    def command(self, prompt):
+    def command(self, prompt, access):
+        """OpenCode has no sandbox setting: <access> isn't enforced for it."""
         args = ["--auto", "--format", "json"]
         if self.model:
             args += ["--model", self.model]
@@ -138,9 +150,9 @@ AGENTS = {a.name: a for a in (Claude, OpenCode)}
 class Run:
     """One run: the agent, piped into lib/stream_fmt.py."""
 
-    def __init__(self, tool, argv, cwd, fmt_env):
-        self.agent = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                      start_new_session=True)
+    def __init__(self, tool, argv, cwd, fmt_env, agent_env):
+        self.agent = subprocess.Popen(argv, cwd=cwd, env=agent_env, stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.PIPE, start_new_session=True)
         try:
             self.fmt = subprocess.Popen([sys.executable, "-u", STREAM_FMT, tool], stdin=self.agent.stdout,
                                         env=fmt_env, start_new_session=True)
