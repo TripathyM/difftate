@@ -95,8 +95,14 @@ def render_summary(t):
     return "\n".join([f"- {t['id'][:8]} — {location(t)}", *parts])
 
 
-def pending(threads):
+def waiting(threads):
     return [t for t in threads if awaiting_agent(t)]
+
+
+def has_queued_note(t):
+    """The thread's last comment is the watcher's "🕒 Queued" note."""
+    comments = t.get("comments") or []
+    return bool(comments) and body(comments[-1]).startswith(QUEUED)
 
 
 def prompt(threads, ids):
@@ -115,7 +121,7 @@ def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     threads = json.load(sys.stdin)
     if mode == "pending":
-        print(json.dumps(pending(threads)))
+        print(json.dumps(waiting(threads)))
     elif mode == "prompt":
         print(prompt(threads, (i for i in (sys.argv[2] if len(sys.argv) > 2 else "").split(",") if i)))
     else:

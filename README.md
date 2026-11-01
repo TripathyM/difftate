@@ -198,7 +198,7 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the ðŸš
 
 | Variable | Purpose |
 |---|---|
-| `DT_PORT` | diffity port, for the status-comment API (bash watcher) |
+| `DT_PORT` | diffity port, for the progress notes (bash watcher) |
 | `DT_API`, `DT_TOKEN_FILE` | Review API address and token file, for the progress notes (Python watcher; given to `lib/stream_fmt.py` only, never to the agent) |
 | `DT_THREAD_IDS` | Comma-separated threads the current agent run handles |
 | `DT_THREADS_JSON` | Those threads as JSON, used to reuse "Queued" comments |
@@ -274,7 +274,7 @@ Each test makes a temporary git repository, starts the real Python watcher with 
 
 | Symptom | Check |
 |---|---|
-| No status comment appears | Watcher terminal for `could not post the progress note`; is diffity on the port shown? |
+| No progress note appears | Watcher terminal for `could not post the progress note`; is diffity on the port shown? |
 | Agent never finishes | Run the agent command by hand with `< /dev/null`; look for auth or stdin hangs |
 | Wrong diff shown | Check `?ref=` in the page URL; rerun `difftate <ref>` |
 | Answer from the wrong model / ðŸ§  far from `/context` | Check the `Model:` line; force it with `difftate --model <model>` |

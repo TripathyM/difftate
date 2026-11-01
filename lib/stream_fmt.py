@@ -146,19 +146,19 @@ class Status:
         self.state = "thinking"  # thinking | working | done | failed
         self.note = ""
         self.lock = threading.Lock()
-        self.comment_ids = []
+        self.note_ids = []
         if self.enabled:
             queued = self._queued_comments()
             for tid in tids:
                 if tid in queued:
                     # Reuse the watcher's "🕒 Queued" comment as the live checklist
-                    self.comment_ids.append(queued[tid])
+                    self.note_ids.append(queued[tid])
                     continue
                 note_id = self.notes.post(tid, self.render())
                 if note_id:
-                    self.comment_ids.append(note_id)
+                    self.note_ids.append(note_id)
             self.push()
-            if not self.comment_ids:
+            if not self.note_ids:
                 out("⚠️", "could not post the progress note")
             threading.Thread(target=self._ticker, daemon=True).start()
 
@@ -200,11 +200,11 @@ class Status:
         return "\n".join(lines)
 
     def push(self):
-        if not self.comment_ids:
+        if not self.note_ids:
             return
         with self.lock:
             body = self.render()
-        for cid in self.comment_ids:
+        for cid in self.note_ids:
             self.notes.edit(cid, body)
 
     def _ticker(self):

@@ -106,13 +106,19 @@ class WatcherTest(unittest.TestCase):
         with open(os.path.join(self.repo, path), "w") as f:
             f.write(text)
 
-    def start_watcher(self):
+    def watcher_command(self):
+        return [sys.executable, WATCHER, "--ref", "HEAD", "--tool", "claude", "--cmd", FAKE_AGENT,
+                "--cwd", self.repo, "--interval", "0.2"]
+
+    def launch_watcher(self):
         self.watcher = subprocess.Popen(
-            [sys.executable, WATCHER, "--ref", "HEAD", "--tool", "claude", "--cmd", FAKE_AGENT,
-             "--cwd", self.repo, "--interval", "0.2"],
-            cwd=self.repo, env=self.env, stdin=subprocess.DEVNULL,
+            self.watcher_command(), cwd=self.repo, env=self.env, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.addCleanup(self.watcher.stdout.close)
         threading.Thread(target=self._read_output, daemon=True).start()
+
+    def start_watcher(self):
+        self.launch_watcher()
         api_file = os.path.join(self.repo, ".git", "difftate", "api.json")
         wait_for("the review API", lambda: os.path.exists(api_file) or self.watcher.poll() is not None)
         self.assertIsNone(self.watcher.poll(), "watcher exited:\n" + self.terminal())
@@ -200,6 +206,61 @@ class WatcherTest(unittest.TestCase):
         self.assertEqual(len(bodies), 3, f"the queued note becomes the progress note: {bodies}")
         self.assertTrue(bodies[1].startswith("[dt-status] ✅ **Done**"), bodies)
 
+    def test_closing_the_terminal_stops_the_run_and_every_process_it_started(self):
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: any("Working" in b for b in self.bodies(tid)))
+        started = descendants(self.watcher.pid)
+
+        self.watcher.send_signal(signal.SIGHUP)
+        self.watcher.wait(timeout=15)
+
+        wait_for("every started process to stop", lambda: not [p for p in started if alive(p)], timeout=10)
+
+    def test_ctrl_c_while_diffity_starts_stops_diffity(self):
+        # A diffity that never says where it listens, so the watcher is still waiting for it
+        bin_dir = os.path.join(self.tmp, "slow-bin")
+        os.makedirs(bin_dir)
+        pid_file = os.path.join(self.tmp, "diffity.pid")
+        with open(os.path.join(bin_dir, "diffity"), "w") as f:
+            f.write(f'#!/bin/sh\n[ "$1" = list ] && {{ echo "[]"; exit 0; }}\necho $$ > {pid_file}\nexec sleep 60\n')
+        os.chmod(os.path.join(bin_dir, "diffity"), 0o755)
+        self.env["PATH"] = bin_dir + os.pathsep + self.env["PATH"]
+
+        self.launch_watcher()
+        wait_for("diffity to start", lambda: os.path.exists(pid_file) and open(pid_file).read().strip())
+        with open(pid_file) as f:
+            diffity_pid = int(f.read())
+        self.stop_watcher()
+
+        wait_for("diffity to stop", lambda: not alive(diffity_pid), timeout=10)
+
+    def test_a_second_watcher_on_the_same_repository_is_refused(self):
+        self.start_watcher()
+        first = (self.watcher, self.port, self.token)
+
+        second = subprocess.run(self.watcher_command(), cwd=self.repo, env=self.env, stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, timeout=30)
+
+        self.assertEqual(second.returncode, 1, second.stdout)
+        self.assertIn("already running for this repository", second.stdout)
+        self.assertEqual((self.watcher, self.port, self.token), first)
+        with open(os.path.join(self.repo, ".git", "difftate", "token")) as f:
+            self.assertEqual(f.read().strip(), self.token, "the first watcher's token is kept")
+        self.assertEqual(self.api("GET", "/api/threads"), [])
+
+    def test_only_notes_can_be_edited_as_notes(self):
+        self.start_watcher()
+        thread = self.open_thread("Why an f-string here?")
+        comment_id = thread["comments"][0]["id"]
+
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            self.api("PATCH", f"/api/notes/{comment_id}", {"kind": "progress", "body": "✅ **Done**"})
+        refused.exception.close()
+
+        self.assertEqual(refused.exception.code, 403)
+        self.assertEqual(self.bodies(thread["id"])[0], "Why an f-string here?", "the comment is unchanged")
+
     def test_review_api_refuses_requests_without_the_token(self):
         self.start_watcher()
         token_file = os.path.join(self.repo, ".git", "difftate", "token")
@@ -209,6 +270,7 @@ class WatcherTest(unittest.TestCase):
             req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/threads", headers=headers)
             with self.assertRaises(urllib.error.HTTPError) as refused:
                 urllib.request.urlopen(req, timeout=10)
+            refused.exception.close()
             self.assertEqual(refused.exception.code, 401, headers)
         self.assertEqual(self.api("GET", "/api/threads"), [])
 

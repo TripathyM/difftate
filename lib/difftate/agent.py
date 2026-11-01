@@ -20,17 +20,27 @@ STREAM_FMT = os.path.join(LIB, "stream_fmt.py")
 # sandbox on, that write is blocked unless the folder is allowed, so allow it for
 # the watcher's runs only. Merged into the user's settings; ignored when the
 # sandbox is off. Not needed once the agent answers with dt-reply (#18).
+NONE_FOUND = "    (none found)"
 CLAUDE_RUN_SETTINGS = json.dumps({"sandbox": {"filesystem": {"allowWrite": ["~/.diffity/"]}}}, separators=(",", ":"))
 
 
-class Claude:
-    name = "claude"
-    default_cmd = "claude"
+class Agent:
+    """An agent, and how this watcher runs it: the command, the agent session
+    (empty for headless) and a model override (empty for the default)."""
+    name = default_cmd = ""
 
     def __init__(self, cmd, session, model):
         self.cmd = cmd
         self.session = session
         self.model = model
+
+
+class Claude(Agent):
+    name = "claude"
+    default_cmd = "claude"
+
+    def __init__(self, cmd, session, model):
+        super().__init__(cmd, session, model)
         # Same rule as claude itself. A wrapper that sets its own config dir needs
         # CLAUDE_CONFIG_DIR exported for the watcher too.
         self.home = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
@@ -45,7 +55,7 @@ class Claude:
     def list_sessions(self):
         files = sorted(glob.glob(os.path.join(glob.escape(self.home), "projects", "*", "*.jsonl")))
         if not files:
-            return ["    (none found)"]
+            return [NONE_FOUND]
         return [os.path.basename(f)[: -len(".jsonl")] for f in files][-5:]
 
     def session_model(self):
@@ -95,14 +105,9 @@ class Claude:
         return [self.cmd, "-p", prompt, *args], [said]
 
 
-class OpenCode:
+class OpenCode(Agent):
     name = "opencode"
     default_cmd = "opencode"
-
-    def __init__(self, cmd, session, model):
-        self.cmd = cmd
-        self.session = session
-        self.model = model
 
     def _list(self):
         try:
@@ -116,7 +121,7 @@ class OpenCode:
 
     def list_sessions(self):
         code, out = self._list()
-        return out.rstrip("\n").split("\n") if code == 0 else ["    (none found)"]
+        return out.rstrip("\n").split("\n") if code == 0 else [NONE_FOUND]
 
     def command(self, prompt):
         args = ["--auto", "--format", "json"]
@@ -136,9 +141,15 @@ class Run:
     def __init__(self, tool, argv, cwd, fmt_env):
         self.agent = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                       start_new_session=True)
-        self.fmt = subprocess.Popen([sys.executable, "-u", STREAM_FMT, tool], stdin=self.agent.stdout,
-                                    env=fmt_env, start_new_session=True)
-        self.agent.stdout.close()
+        try:
+            self.fmt = subprocess.Popen([sys.executable, "-u", STREAM_FMT, tool], stdin=self.agent.stdout,
+                                        env=fmt_env, start_new_session=True)
+        except BaseException:
+            # Ctrl+C (or a failure) between the two: the agent has its own session, so stop it here
+            procs.stop_tree(self.agent)
+            raise
+        finally:
+            self.agent.stdout.close()
         self.pid = self.agent.pid
 
     def running(self):

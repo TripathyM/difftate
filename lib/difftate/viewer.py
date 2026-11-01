@@ -4,7 +4,7 @@ import os
 import shutil
 import subprocess
 
-WHERE = ("browser", "herdr", "both")
+OPEN_IN = ("browser", "herdr", "both")
 
 
 def _run(argv):
@@ -26,9 +26,9 @@ def _herdr_cli():
     return os.environ.get("DT_HERDR") or shutil.which("herdr-app") or ""
 
 
-def open_in_herdr(cwd):
-    """Switch to the repository's Review tab in Herdr, or open one (Herdr's
-    `difftate` mod). False when Herdr can't be reached."""
+def open_in_herdr(root):
+    """Switch to the Review tab of the repository at <root> in Herdr, or open
+    one (Herdr's `difftate` mod). False when Herdr can't be reached."""
     cli = _herdr_cli()
     if not cli or not os.access(cli, os.X_OK):
         print("  Herdr: herdr-app not found (set DT_HERDR to the Herdr app's binary)")
@@ -37,8 +37,6 @@ def open_in_herdr(cwd):
     if not tabs or tabs.returncode != 0:
         print("  Herdr: not running")
         return False
-    top = _run(["git", "-C", cwd, "rev-parse", "--show-toplevel"])
-    root = top.stdout.strip() if top and top.returncode == 0 else cwd
     name = f"Review · {os.path.basename(root)}"
     try:
         spaces = json.loads(tabs.stdout).get("spaces", [])
@@ -59,13 +57,13 @@ def open_in_herdr(cwd):
     return True
 
 
-def open_review(where, url, cwd):
+def open_review(where, url, root):
     if where == "browser":
         open_browser(url)
     elif where == "herdr":
-        if not open_in_herdr(cwd):
+        if not open_in_herdr(root):
             print("  Falling back to the browser")
             open_browser(url)
     elif where == "both":
-        open_in_herdr(cwd)
+        open_in_herdr(root)
         open_browser(url)

@@ -19,13 +19,46 @@ import json
 import os
 import re
 import secrets
+import socket
 import threading
 import urllib.parse
+from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .diffity import StoreError
+from .store import StoreError
 
 MAX_BODY = 1 << 20
+
+
+class ApiAddress(namedtuple("ApiAddress", "url token_file")):
+    """Where a client finds the review API, and the file with its token."""
+
+    def env(self):
+        return {"DT_API": self.url, "DT_TOKEN_FILE": self.token_file}
+
+
+def running_watcher(folder):
+    """The pid of another live watcher serving this repository's review API, or None."""
+    try:
+        with open(os.path.join(folder, "api.json")) as f:
+            info = json.load(f)
+        pid, port = int(info["pid"]), int(info["port"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if pid == os.getpid():
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        pass
+    # The pid may have been reused: only a watcher still answers on its port
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=1).close()
+    except OSError:
+        return None
+    return pid
 
 
 def _write_private(path, text):
@@ -47,9 +80,8 @@ class ReviewApi:
         self.token_file = os.path.join(folder, "token")
         self.api_file = os.path.join(folder, "api.json")
 
-    @property
-    def url(self):
-        return f"http://127.0.0.1:{self.server.server_address[1]}"
+    def address(self):
+        return ApiAddress(f"http://127.0.0.1:{self.server.server_address[1]}", self.token_file)
 
     def start(self):
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
@@ -131,12 +163,16 @@ def _handler(store, token):
                 return self._send(405, {"error": "method not allowed"})
             try:
                 length = int(self.headers.get("Content-Length") or 0)
-                if length > MAX_BODY:
-                    raise StoreError(413, "request too large")
+            except ValueError:
+                return self._send(400, {"error": "bad Content-Length"})
+            if length > MAX_BODY:
+                return self._send(413, {"error": "request too large"})
+            try:
                 payload = json.loads(self.rfile.read(length) or b"null") if length else None
-                result = fn(urllib.parse.parse_qs(url.query), payload, *match.groups())
             except ValueError:
                 return self._send(400, {"error": "bad JSON"})
+            try:
+                result = fn(urllib.parse.parse_qs(url.query), payload, *match.groups())
             except StoreError as e:
                 return self._send(e.status, {"error": str(e)})
             self._send(200, result)

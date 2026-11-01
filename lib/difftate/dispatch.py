@@ -11,7 +11,7 @@ import time
 import threads as thread_rules  # lib/threads.py: which threads wait, and the threads part of the prompt
 
 from .agent import Run
-from .diffity import StoreError
+from .store import StoreError
 
 QUEUED_NOTE = "🕒 **Queued** — agent is busy with another comment, will pick this up next."
 
@@ -41,14 +41,13 @@ def build_prompt(open_threads, ids):
 
 
 class Dispatch:
-    def __init__(self, store, agent, cwd, interval, api_url, token_file, healthy):
+    def __init__(self, store, agent, cwd, interval, api, problem):
         self.store = store
         self.agent = agent
         self.cwd = cwd
         self.interval = interval
-        self.api_url = api_url
-        self.token_file = token_file
-        self.healthy = healthy  # () -> None, or an error message to exit with
+        self.api = api  # ApiAddress, for the progress notes
+        self.problem = problem  # () -> None, or why the watcher must exit
         self.run = None
         self.last_hash = None
 
@@ -61,7 +60,7 @@ class Dispatch:
     def forever(self):
         """Runs until the store goes away (returns its message) or Ctrl+C."""
         while True:
-            problem = self.healthy()
+            problem = self.problem()
             if problem:
                 return problem
             self.once()
@@ -69,7 +68,7 @@ class Dispatch:
 
     def once(self):
         open_threads = self._open_threads()
-        waiting = thread_rules.pending(open_threads)
+        waiting = thread_rules.waiting(open_threads)
         if not waiting:
             return
         digest = hashlib.sha256(json.dumps(waiting, sort_keys=True).encode()).hexdigest()
@@ -84,8 +83,8 @@ class Dispatch:
             print(line)
         # The progress notes go through the review API. Only the formatter gets the
         # token file, never the agent.
-        fmt_env = dict(os.environ, DT_API=self.api_url, DT_TOKEN_FILE=self.token_file,
-                       DT_THREAD_IDS=",".join(ids), DT_THREADS_JSON=json.dumps(waiting))
+        fmt_env = dict(os.environ, **self.api.env(), DT_THREAD_IDS=",".join(ids),
+                       DT_THREADS_JSON=json.dumps(waiting))
         self.run = Run(self.agent.name, argv, self.cwd, fmt_env)
         # Threads that arrive meanwhile get a queued note right away. Runs stay one at a time.
         while self.run.running():
@@ -97,11 +96,17 @@ class Dispatch:
             print(f"[{now()}] Warning: dispatch to {self.agent.name} failed (exit {code})")
         self.run = None
 
+    def stop_run(self, say=True):
+        """Stop the run in progress, and every process it started."""
+        if self.run and self.run.running():
+            if say:
+                print(f"Stopping running agent (pid {self.run.pid})...")
+            self.run.stop()
+
     def post_queued_notes(self, busy):
         posted = []
-        for t in thread_rules.pending(self._open_threads()):
-            comments = t.get("comments") or []
-            if t["id"] in busy or (comments and (comments[-1].get("body") or "").startswith(thread_rules.QUEUED)):
+        for t in thread_rules.waiting(self._open_threads()):
+            if t["id"] in busy or thread_rules.has_queued_note(t):
                 continue
             try:
                 self.store.add_note(t["id"], "queued", QUEUED_NOTE)

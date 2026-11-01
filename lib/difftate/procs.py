@@ -46,7 +46,7 @@ def _alive(pid):
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
+        pass  # it exists, owned by someone else
     return True
 
 

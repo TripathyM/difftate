@@ -9,10 +9,9 @@ import signal
 import subprocess
 import sys
 
-from . import viewer
+from . import diffity, viewer
 from .agent import AGENTS
-from .api import ReviewApi
-from .diffity import DiffityProcess, DiffityStartError, DiffityStore, running_port
+from .api import ReviewApi, running_watcher
 from .dispatch import Dispatch
 
 USAGE = """difftate-watch.py — Start diffity and poll for comments, dispatching to an AI coding session.
@@ -78,7 +77,7 @@ def parse(argv):
     if not opts["tool"]:
         raise Exit(1, "Error: --tool is required")
     opts["cwd"] = opts["cwd"] or os.getcwd()
-    if opts["open"] not in viewer.WHERE:
+    if opts["open"] not in viewer.OPEN_IN:
         raise Exit(1, f"Error: --open (or DT_OPEN) must be browser, herdr or both, not '{opts['open']}'")
     if opts["tool"] not in AGENTS:
         raise Exit(1, f"Error: unsupported tool '{opts['tool']}'. Supported: {' '.join(AGENTS)}")
@@ -121,8 +120,16 @@ def review_folder(cwd):
     return os.path.realpath(os.path.join(git_dir, "difftate")), os.path.realpath(top.stdout.strip() or cwd)
 
 
+class Hangup(BaseException):
+    """The terminal closed: stop everything, quietly (there's no one to print to)."""
+
+
 def _terminate(signum, frame):
     raise KeyboardInterrupt
+
+
+def _hangup(signum, frame):
+    raise Hangup
 
 
 class Watcher:
@@ -135,10 +142,7 @@ class Watcher:
     def setup(self):
         o = self.opts
         agent_cls = AGENTS[o["tool"]]
-        cmd = o["cmd"] or agent_cls.default_cmd
-        if not shutil.which("diffity"):
-            raise Exit(1, "Error: diffity not found. Install with: npm install -g diffity")
-        cmd = resolve_cmd(cmd)
+        cmd = resolve_cmd(o["cmd"] or agent_cls.default_cmd)
         self.agent = agent_cls(cmd, o["session"], o["model"])
         if o["session"] and not self.agent.session_exists():
             raise Exit(1, "\n".join([
@@ -146,27 +150,24 @@ class Watcher:
                 f"  Make sure the {o['tool']} session is running in this project directory ({o['cwd']}).",
                 "  Available sessions:", *self.agent.list_sessions()]))
         self.folder, self.root = review_folder(o["cwd"])
+        other = running_watcher(self.folder)
+        if other:
+            raise Exit(1, f"Error: a watcher is already running for this repository (pid {other}). "
+                          "Stop it first, or use its review.")
 
     def start(self):
         o = self.opts
-        port = running_port(o["cwd"])
-        if port:
-            print(f"Diffity already running for this repo on port {port}")
-            self.diffity = DiffityProcess(port)
-        else:
-            print(f"Starting diffity --base {o['ref']} ...")
-            try:
-                self.diffity = DiffityProcess.start(o["ref"], o["cwd"])
-            except DiffityStartError as e:
-                raise Exit(1, str(e))
-        store = DiffityStore(self.diffity.port)
+        try:
+            self.diffity = diffity.launch(o["ref"], o["cwd"])
+        except diffity.DiffityStartError as e:
+            raise Exit(1, str(e))
+        store = self.diffity.store()
         self.api = ReviewApi(store, self.folder, self.root)
         self.api.start()
 
-        url = f"http://localhost:{self.diffity.port}/diff?ref={o['ref']}"
-        print(f"Diffity running on port {self.diffity.port}")
+        url = self.diffity.viewer_url(o["ref"])
         print(f"  → {url}")
-        viewer.open_review(o["open"], url, o["cwd"])
+        viewer.open_review(o["open"], url, self.root)
         print()
         print(f"Watching for comments every {o['interval']:g}s")
         print(f"  Tool: {o['tool']} (cmd: {self.agent.cmd})")
@@ -177,30 +178,20 @@ class Watcher:
         print()
         print("Press Ctrl+C to stop")
         print()
-        self.dispatch = Dispatch(store, self.agent, o["cwd"], o["interval"], self.api.url,
-                                 self.api.token_file, self.healthy)
-
-    def healthy(self):
-        if self.diffity.alive():
-            return None
-        return "Diffity process died. Exiting." if self.diffity.owned else "Diffity is no longer reachable. Exiting."
+        self.dispatch = Dispatch(store, self.agent, o["cwd"], o["interval"], self.api.address(),
+                                 self.diffity.problem)
 
     def stop(self, say=True):
         """Stop the run, every process it started, diffity (when started here) and the API."""
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, signal.SIG_IGN)
         if say:
             print()
             print("Stopping watcher...")
-        run = self.dispatch.run if self.dispatch else None
-        if run and run.running():
-            if say:
-                print(f"Stopping running agent (pid {run.pid})...")
-            run.stop()
-        if self.diffity and self.diffity.owned and self.diffity.alive():
-            if say:
-                print(f"Killing diffity (pid {self.diffity.proc.pid})...")
-            self.diffity.stop()
+        if self.dispatch:
+            self.dispatch.stop_run(say)
+        if self.diffity:
+            self.diffity.stop(say)
         if self.api:
             self.api.stop()
         if say:
@@ -213,6 +204,7 @@ def main(argv):
     except AttributeError:
         pass
     signal.signal(signal.SIGTERM, _terminate)
+    signal.signal(signal.SIGHUP, _hangup)
     watcher = None
     try:
         opts = parse(argv)
@@ -235,6 +227,10 @@ def main(argv):
         else:
             print()
         return 0
+    except Hangup:
+        if watcher:
+            watcher.stop(say=False)
+        return 129
     except BaseException:
         if watcher:
             watcher.stop(say=False)
