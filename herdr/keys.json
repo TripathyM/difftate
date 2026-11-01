@@ -1,0 +1,5 @@
+{
+  "global": {
+    "cmd-shift-r": "mod.open:difftate"
+  }
+}

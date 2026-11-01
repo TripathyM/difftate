@@ -15,6 +15,7 @@
 #   difftate --no-session          # force headless (skip auto-detect)
 #   difftate --model <model>       # force the agent's model (default: session's model)
 #   difftate --cmd <binary>        # run the agent through another command or alias
+#   difftate --open herdr          # open the review in Herdr (browser|herdr|both; default $DT_OPEN, else browser)
 #
 # Claude sessions are looked up in $CLAUDE_CONFIG_DIR (default ~/.claude).
 # Your own shortcuts go in ~/.zshrc, e.g. for a wrapper with its own config:
@@ -53,7 +54,7 @@ _dt_run() {
     elif [[ "$1" == "--session" ]]; then
       has_explicit_session=true
       extra_args+=("$1" "$2"); shift 2
-    elif [[ "$1" == "--model" ]]; then
+    elif [[ "$1" == "--model" || "$1" == "--open" ]]; then
       extra_args+=("$1" "$2"); shift 2
     elif [[ "$1" == "--cmd" ]]; then
       cmd="$2"; shift 2

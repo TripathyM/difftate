@@ -70,6 +70,7 @@ Build one block of lines to add, back up once, confirm once.
      ```
 
 3. Only if question 2 was yes, add one line per Claude setup (see [Shortcuts](#shortcuts-for-several-claude-setups)). First check each name: `grep -n '^<name>()' ~/.zshrc`. If it is already defined, leave it out.
+   Only if question 3 was yes, add the Herdr lines (see [Herdr](#5-herdr-only-if-question-3-was-yes), step 2) unless `grep -n '^[^#]*DT_OPEN=' ~/.zshrc` already finds one.
 4. If the block is empty, skip to step 5. Otherwise back up: `cp ~/.zshrc ~/.zshrc.bak-difftate-$(date +%Y%m%d%H%M%S)` and tell the user the backup path.
 5. Show the user the full block, with `DT_HOME` filled in, and wait for a yes.
 6. Append the block to the end of `~/.zshrc`. Shortcut lines must come after the `source` line.
@@ -86,11 +87,33 @@ dtcp() { CLAUDE_CONFIG_DIR=~/.claude-personal difftate --cmd ccp "$@"; }   # own
 - Set `CLAUDE_CONFIG_DIR` only when the setup uses a non-default dir. Never set it to `~/.claude`: leave it unset for the default.
 - For each shortcut being added (not ones already defined), check its command with `zsh -ic 'type <cmd>'` (an alias or wrapper is fine here). If it prints "not found", tell the user and ask for the right command. Don't write that line until they answer.
 
-## 5. Verify
+## 5. Herdr (only if question 3 was yes)
+
+Do steps 1 and 2 before showing the `~/.zshrc` block in step 4: the block needs their result.
+
+1. **Find Herdr's command line.** Try `zsh -ic 'command -v herdr-app'` (Herdr adds it to `~/.local/bin` when it starts), then `/Applications/Herdr.app/Contents/MacOS/Herdr`. A candidate is right only if `"<candidate>" --help | head -1` starts with `herdr-app` (another app can be named Herdr). If neither is right, ask the user for the path of the Herdr app's binary. Call it `HERDR_BIN`, and note whether it came from the `herdr-app` check.
+2. **Lines for the `~/.zshrc` block** (step 4). Add the `DT_HERDR` line only if `HERDR_BIN` did **not** come from the `herdr-app` check:
+
+   ```zsh
+   export DT_OPEN=herdr                 # difftate opens a Review tab in Herdr
+   export DT_HERDR="HERDR_BIN"          # only when herdr-app isn't on PATH
+   ```
+
+3. **Link the mod.** Check `ls -la ~/.config/herdr-app/mods/difftate`:
+   - A link to `DT_HOME/herdr/mods/difftate`: done, skip.
+   - Missing: `ln -s DT_HOME/herdr/mods/difftate ~/.config/herdr-app/mods/difftate` (use the full path for `DT_HOME`).
+   - Anything else: show it, and ask before replacing it.
+   - `~/.config/herdr-app` missing: Herdr hasn't run yet; ask the user to open it once, then retry.
+4. **Key (optional).** Ask whether to bind `cmd-shift-r` to open the Review tab. If yes: in `~/.config/herdr-app/keys.json`, if `global` already binds `cmd-shift-r` to something else, ask before replacing it. Otherwise back the file up, then add `"cmd-shift-r": "mod.open:difftate"` to `global` (as in `DT_HOME/herdr/keys.json`), keeping the rest. Then check that `~/.config/herdr-app/keys.error` doesn't exist.
+5. **Check:** `"HERDR_BIN" check ~/.config/herdr-app/mods/difftate` prints `check passed` (needs Herdr running; if it isn't, say so and skip).
+6. **ripgrep:** `command -v rg`. If missing, tell the user that go to definition in the Review tab needs it (`brew install ripgrep`); everything else works without it. Don't install it yourself.
+
+## 6. Verify
 
 1. `zsh -ic 'type difftate dtc dto'`: each output line contains "is a shell function".
 2. `diffity --version`: prints `0.9.5`.
 3. If shortcuts were added: `zsh -ic 'type <name>'` for each, and the output contains "is a shell function".
+4. If Herdr was set up: `zsh -ic 'echo $DT_OPEN'` prints `herdr`.
 
 Report what passed. Then show the user the quick guide below, as written. If shortcuts were added, also show one line per shortcut (e.g. `dtcw HEAD~1`): shortcuts take the same arguments as `difftate`.
 
@@ -111,22 +134,24 @@ First, open a new terminal (or run `source ~/.zshrc`). Then `cd` into a git repo
 - Write `HEAD` in capitals. In a worktree on macOS, `head` points to the main checkout's HEAD and shows the wrong diff.
 - Each diff except `unstaged` and `staged` also includes uncommitted changes: it compares the given commit with the files on disk.
 - Use `dto` in place of `difftate` for OpenCode, with the same arguments.
-- The diff opens in the browser. Comment on a line, and the agent replies in the same thread.
-- Refresh the page to see new changes.
+- The diff opens in the browser (with Herdr set up: in a **Review · ‹repo›** tab; press `?` there for its keys). Comment on a line, and the agent replies in the same thread.
+- Refresh the page to see new changes (the Herdr tab refreshes by itself).
 - To review a different range, stop the watcher (Ctrl+C) and run the new command.
 
 ## Questions
 
-Ask these, together, before step 3. If `~/.zshrc` already sources `difftate.zsh` (an earlier install), ask only question 1, unless the user asked to add shortcuts.
+Ask these, together, before step 3. If `~/.zshrc` already sources `difftate.zsh` (an earlier install), ask only question 1, unless the user asked to add shortcuts or Herdr.
 
 1. **Where should difftate be cloned?** Default: `~/difftate`.
 2. **Do you run more than one Claude Code setup** (for example separate work and personal accounts, with different commands or config dirs)? Default: no. If yes, for each setup ask for:
    - a shortcut name (e.g. `dtcw`)
    - the command that starts that Claude (e.g. an alias or wrapper like `ccw`)
    - its config dir, if it isn't the default `~/.claude`
+3. **Do you use the [Herdr](https://herdr.dev) app, and want reviews to open there?** Ask only if `~/.config/herdr-app` exists. Default: no. Yes adds a Review tab in Herdr (see the README's "Review in Herdr").
 
 ## Uninstall
 
-1. Remove the difftate lines (the `source` line and any shortcuts) from `~/.zshrc`.
-2. `rm -rf ~/difftate` (or your `DT_HOME`).
-3. Optional: `npm uninstall -g diffity`.
+1. Remove the difftate lines (the `source` line, any shortcuts, and `DT_OPEN` / `DT_HERDR`) from `~/.zshrc`.
+2. If Herdr was set up: `rm ~/.config/herdr-app/mods/difftate` (the link only), and the `cmd-shift-r` line from `~/.config/herdr-app/keys.json` if you added it.
+3. `rm -rf ~/difftate` (or your `DT_HOME`).
+4. Optional: `npm uninstall -g diffity`.
