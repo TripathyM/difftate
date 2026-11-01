@@ -187,6 +187,12 @@ class WatcherTest(unittest.TestCase):
         else:
             os.remove(path)
 
+    def agent_edits(self, files):
+        """The agent writes <files> ({path: text}) in its run."""
+        os.makedirs(self.agent_dir, exist_ok=True)
+        with open(os.path.join(self.agent_dir, "edits"), "w") as f:
+            json.dump(files, f)
+
     def prompts(self):
         """The prompt of every run so far."""
         try:
@@ -223,6 +229,31 @@ class WatcherTest(unittest.TestCase):
         self.assertRegex(out, r"\[\d\d:\d\d:\d\d\] New/changed threads detected — dispatching to claude")
         self.assertIn("🔧 Read  app.py", out)
         self.assertRegex(out, r"✅ done in \d+s, \$0\.0123")
+
+    def test_the_final_progress_note_lists_the_files_changed_during_the_run(self):
+        # app.py already has the reviewer's uncommitted edit; util.py is new
+        self.agent_edits({"app.py": "def greet(name: str):\n    return f'hello {name}'\n",
+                          "util.py": "def shout(s):\n    return s.upper()\n"})
+        self.write("notes.txt", "the reviewer's own file, untouched by the run\n")
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Add a type hint?")["id"]
+
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        final = wait_for("the changed files", lambda: self.note(tid, "progress", "Changed during this run"))
+        self.assertTrue(final.startswith("✅ **Done** in "), final)
+        self.assertTrue(final.endswith("**Changed during this run:**\n- `app.py`\n- `util.py`"), final)
+        self.assertRegex(self.terminal(), r"\[\d\d:\d\d:\d\d\] Changed during this run:\n  - app.py\n  - util.py\n")
+
+    def test_a_run_that_changes_nothing_lists_no_changed_files(self):
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        time.sleep(0.5)  # the watcher has finished with the run
+        self.assertRegex(self.note(tid, "progress"), r"^✅ \*\*Done\*\* in \d+s$")
+        self.assertNotIn("Changed during this run", self.terminal())
 
     def test_thread_written_during_a_run_is_queued_then_answered_next(self):
         self.start_watcher()

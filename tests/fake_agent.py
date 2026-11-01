@@ -13,6 +13,8 @@ Controlled through FAKE_AGENT_DIR (a folder the test owns):
            the thread while the run is working
   silent   while this file exists, the agent replies to no thread; when it
            lists run numbers ("2" or "1,3"), only in those runs
+  edits    JSON {path: text}: the agent writes these files (relative to its
+           working directory) before it replies
 """
 import json
 import os
@@ -52,6 +54,13 @@ def main():
     deadline = time.time() + GATE_TIMEOUT_S
     while gate and not os.path.exists(gate) and time.time() < deadline:
         time.sleep(0.05)
+
+    edits = os.path.join(folder, "edits") if folder else ""
+    if edits and os.path.exists(edits):
+        with open(edits) as f:
+            for path, text in json.load(f).items():
+                with open(path, "w") as out:
+                    out.write(text)
 
     silent = os.path.join(folder, "silent") if folder else ""
     if silent and os.path.exists(silent):

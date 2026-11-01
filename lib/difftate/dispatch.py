@@ -4,12 +4,14 @@ While a run works, threads that become waiting get a queued note right away.
 The run's progress notes are kept by lib/stream_fmt.py through the review API.
 When the run ends, a thread it didn't reply to is failed ("no reply"): its
 progress note says so, and it isn't sent again until the reviewer comments.
+The final progress notes, and the terminal, list the files changed during the
+run (by anyone: the reviewer may edit too).
 """
 import json
 import os
 import time
 
-from . import prompt
+from . import changes, prompt
 from .agent import Run
 from .store import StoreError
 
@@ -32,6 +34,8 @@ class Dispatch:
         self.problem = problem  # () -> None, or why the watcher must exit
         self.run = None
         self.started = None  # when the run in progress started
+        self.run_thread_ids = []  # the threads in the run in progress
+        self.tree_before = None  # the working tree's state when the run started
 
     def _open_threads(self):
         try:
@@ -68,6 +72,8 @@ class Dispatch:
         fmt_env = dict(os.environ, **self.api.env(), DT_THREAD_IDS=",".join(ids),
                        DT_QUEUED_NOTES=json.dumps(queued))
         self.started = time.time()
+        self.run_thread_ids = ids
+        self.tree_before = changes.snapshot(self.cwd)
         self.review.start_run(waiting)
         self.run = Run(self.agent.name, argv, self.cwd, fmt_env)
         # Threads that arrive meanwhile get a queued note right away. Runs stay one at a time.
@@ -86,11 +92,32 @@ class Dispatch:
         try:
             failed = self.review.end_run()
         except StoreError:
-            return
+            failed = []
         for t in failed:
             if say:
                 print(f"[{now()}] No reply to thread {t['id'][:8]} — it waits for your next comment")
             self.note_no_reply(t, int(time.time() - self.started), why)
+        self.list_changed_files()
+
+    def list_changed_files(self):
+        """The files changed during the run, in the terminal and at the end of its progress notes."""
+        files = changes.changed_files(self.cwd, self.tree_before, changes.snapshot(self.cwd))
+        if not files:
+            return
+        print(f"[{now()}] Changed during this run:")
+        for path in files:
+            print(f"  - {path}")
+        listed = "**Changed during this run:**\n" + "\n".join(f"- `{path}`" for path in files)
+        for t in self._open_threads():
+            note = self._progress_note(t)
+            # Only a final note ("✅ Done" or "❌ Failed") gets the list, never a live checklist
+            # (a run stopped by Ctrl+C can leave one behind)
+            if t["id"] not in self.run_thread_ids or note is None or not note["body"].startswith(("✅", "❌")):
+                continue
+            try:
+                self.review.edit_note(note["id"], "progress", f"{note['body']}\n\n{listed}")
+            except StoreError:
+                pass
 
     def stop_run(self, say=True):
         """Stop the run in progress, and every process it started."""
@@ -126,6 +153,11 @@ class Dispatch:
                         pass
 
     @staticmethod
+    def _progress_note(thread):
+        """The thread's latest progress note, or None."""
+        return next((c for c in reversed(thread["comments"]) if c["kind"] == "progress"), None)
+
+    @staticmethod
     def _has_queued_note(thread):
         """A queued note was posted since the thread's last run."""
         kinds = [c["kind"] for c in thread["comments"]]
@@ -134,7 +166,7 @@ class Dispatch:
 
     def note_no_reply(self, thread, secs, why=""):
         """The run's progress note on <thread> ends as failed, with "no reply" (and <why>)."""
-        note = next((c for c in reversed(thread["comments"]) if c["kind"] == "progress"), None)
+        note = self._progress_note(thread)
         failed = f"❌ **Failed** after {secs}s — no reply{why}"
         try:
             if note is None:
