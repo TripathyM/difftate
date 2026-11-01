@@ -10,6 +10,8 @@ MODEL=""
 CWD=""
 INTERVAL=1
 CMD=""
+# Where the review opens: browser, herdr (a Review tab in the Herdr app), or both.
+OPEN="${DT_OPEN:-browser}"
 DIFFITY_PID=""
 LAST_HASH=""
 # Prefix on the agent's answers. Threads ending in one are waiting on the user.
@@ -46,6 +48,9 @@ Optional:
   --cmd <binary>         Override the CLI binary or shell alias (e.g. a wrapper around claude)
   --model <model>        Model for the agent (default: Claude with --session matches the
                          session's latest interactive model)
+  --open <where>         browser, herdr or both (default: $DT_OPEN, else browser).
+                         herdr opens a Review tab in the Herdr app, or switches to it;
+                         if Herdr can't be reached it falls back to the browser
   --help                 Show this help
 
 Examples:
@@ -226,6 +231,7 @@ while [[ $# -gt 0 ]]; do
     --cwd)          CWD="$2"; shift 2 ;;
     --interval)     INTERVAL="$2"; shift 2 ;;
     --cmd)          CMD="$2"; shift 2 ;;
+    --open)         OPEN="$2"; shift 2 ;;
     --help|-h)      usage ;;
     *)              echo "Unknown flag: $1"; usage ;;
   esac
@@ -235,6 +241,10 @@ done
 [[ -z "$REF" ]] && { echo "Error: --ref is required"; exit 1; }
 [[ -z "$TOOL" ]] && { echo "Error: --tool is required"; exit 1; }
 [[ -z "$CWD" ]] && CWD="$(pwd)"
+case "$OPEN" in
+  browser|herdr|both) ;;
+  *) echo "Error: --open (or DT_OPEN) must be browser, herdr or both, not '$OPEN'"; exit 1 ;;
+esac
 
 # Check tool is supported
 if ! echo "$SUPPORTED_TOOLS" | grep -qw "$TOOL"; then
@@ -320,6 +330,65 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM
 
+# ── Open the review ──────────────────────────────────────────────────────────
+# The Herdr app's command line: $DT_HERDR, else herdr-app on PATH.
+herdr_cli() {
+  if [[ -n "${DT_HERDR:-}" ]]; then echo "$DT_HERDR"; return; fi
+  command -v herdr-app 2>/dev/null || true
+}
+
+# Switches to the repo's Review tab in Herdr, or opens one (Herdr's `difftate` mod).
+# Returns 1 when Herdr can't be reached, so the caller can fall back to the browser.
+open_in_herdr() {
+  local cli root name tabs existing args
+  cli=$(herdr_cli)
+  if [[ -z "$cli" || ! -x "$cli" ]]; then
+    echo "  Herdr: herdr-app not found (set DT_HERDR to the Herdr app's binary)"
+    return 1
+  fi
+  if ! tabs=$("$cli" ls 2>/dev/null); then
+    echo "  Herdr: not running"
+    return 1
+  fi
+  root=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || echo "$CWD")
+  name="Review · $(basename "$root")"
+  existing=$(NAME="$name" python3 -c '
+import json, os, sys
+for s in json.load(sys.stdin).get("spaces", []):
+    for t in s.get("tabs", []):
+        if t.get("name") == os.environ["NAME"]:
+            print(t["id"]); sys.exit()
+' <<<"$tabs" 2>/dev/null || true)
+  if [[ -n "$existing" ]] && "$cli" do tab.select "{\"id\":\"$existing\"}" >/dev/null 2>&1; then
+    echo "  Herdr: switched to the \"$name\" tab"
+    return 0
+  fi
+  args=$(NAME="$name" FOLDER="$root" python3 -c '
+import json, os
+print(json.dumps({"name": os.environ["NAME"], "mod": "difftate", "props": {"folder": os.environ["FOLDER"]}}))')
+  if ! "$cli" do tab.new "$args" >/dev/null 2>&1; then
+    echo "  Herdr: could not open a Review tab (is the difftate mod installed?)"
+    return 1
+  fi
+  echo "  Herdr: opened the \"$name\" tab"
+}
+
+open_review() {
+  case "$OPEN" in
+    browser) open "$URL" 2>/dev/null || true ;;
+    herdr)
+      if ! open_in_herdr; then
+        echo "  Falling back to the browser"
+        open "$URL" 2>/dev/null || true
+      fi
+      ;;
+    both)
+      open_in_herdr || true
+      open "$URL" 2>/dev/null || true
+      ;;
+  esac
+}
+
 # ── Start diffity ────────────────────────────────────────────────────────────
 OWNS_DIFFITY=false
 
@@ -363,8 +432,9 @@ else
 fi
 
 echo "Diffity running on port $port"
-echo "  → http://localhost:${port}/diff?ref=${REF}"
-open "http://localhost:${port}/diff?ref=${REF}" 2>/dev/null || true
+URL="http://localhost:${port}/diff?ref=${REF}"
+echo "  → $URL"
+open_review
 echo ""
 echo "Watching for comments every ${INTERVAL}s"
 echo "  Tool: $TOOL (cmd: $CMD)"

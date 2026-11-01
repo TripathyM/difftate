@@ -1,0 +1,65 @@
+{
+  "_about": "Default keys for the difftate review tab. To change keys, put only the ones you change in ~/.config/difftate/keymap.json (same shape: leader, options, normal, visual, insert); it survives updates. Space R reloads it. Sequences use vim notation: <leader>, <C-x> (ctrl), <Esc>, <CR>, <Tab>, <Space>, <Up>/<Down>/<Left>/<Right>. A count before a motion repeats it (5j). Visual mode falls back to normal-mode keys. Set an action to \"\" to unbind a key. The \"insert\" table takes single keys only (Esc always leaves insert mode). Actions are listed in README.md next to this file.",
+  "leader": "<Space>",
+  "options": {
+    "font_size": 12.5,
+    "char_width": 0.6,
+    "row_height": 20,
+    "tab_width": 4,
+    "sequence_timeout_ms": 800
+  },
+  "normal": {
+    "j": "down", "<Down>": "down",
+    "k": "up", "<Up>": "up",
+    "h": "left", "<Left>": "left",
+    "l": "right", "<Right>": "right",
+    "w": "word_next", "b": "word_prev", "e": "word_end",
+    "0": "line_start", "^": "first_char", "$": "line_end",
+    "gg": "top", "G": "bottom",
+    "<C-d>": "half_down", "<C-u>": "half_up",
+    "<C-f>": "page_down", "<C-b>": "page_up",
+    "zz": "center",
+
+    "]h": "next_hunk", "[h": "prev_hunk",
+    "]c": "next_hunk", "[c": "prev_hunk",
+    "L": "next_file", "H": "prev_file",
+    "]b": "next_file", "[b": "prev_file",
+    "]d": "next_thread", "[d": "prev_thread",
+    "]t": "next_thread", "[t": "prev_thread",
+
+    "V": "visual_line", "v": "visual_line",
+    "gc": "comment", "<leader>cc": "comment",
+    "r": "reply", "<CR>": "reply",
+    "R": "resolve", "<leader>cR": "reopen",
+
+    "gd": "goto_definition", "gr": "references",
+    "<C-o>": "jump_back", "<Tab>": "jump_forward",
+
+    "<leader><Space>": "find_files", "<leader>ff": "find_files",
+    "<leader>fc": "changed_files", "<leader>sd": "threads",
+    "<leader>e": "toggle_explorer", "<leader>v": "toggle_view",
+    "/": "search", "n": "search_next", "N": "search_prev", "*": "search_word",
+    "<leader>o": "open_in_editor",
+    "<leader>R": "refresh",
+    "?": "help",
+    "<Esc>": "escape",
+
+    "i": "insert", "a": "append",
+    "I": "insert_line_start", "A": "append_line_end",
+    "o": "open_below", "O": "open_above",
+    "x": "delete_char", "dd": "delete_line",
+    "yy": "yank_line", "p": "put_below", "P": "put_above",
+    "u": "undo", "<C-r>": "redo",
+    "<C-s>": "save", ":": "command"
+  },
+  "visual": {
+    "gc": "comment", "c": "comment", "<CR>": "comment",
+    "d": "delete_line", "x": "delete_line", "y": "yank_line",
+    "<C-s>": "save",
+    "V": "escape", "v": "escape", "<Esc>": "escape"
+  },
+  "insert": {
+    "<C-s>": "save",
+    "<C-c>": "escape"
+  }
+}

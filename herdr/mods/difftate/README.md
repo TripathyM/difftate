@@ -1,0 +1,103 @@
+# difftate review (Herdr mod)
+
+A code-editor-like review tab for the diff a running `difftate` (or `dtc`, `dto`) serves.
+Comments go into the same diffity threads the browser uses, so the agent answers them the same way.
+Installing it: see "Review in Herdr" in the difftate README.
+
+## Use
+
+1. In the repo, run `difftate` as usual. With `DT_OPEN=herdr` it opens a **Review · ‹repo›** tab
+   by itself (or switches to it).
+2. Or press `cmd-shift-r` in Herdr (if you added `herdr/keys.json`): the tab opens for the focused pane's repo.
+   Or: `herdr-app do tab.new '{"name":"Review · repo","mod":"difftate","props":{"folder":"/path/to/repo"}}'`
+3. Move with vim keys, `V` to select lines, `gc` to comment, Enter to send.
+
+Without a running difftate the tab still browses and edits code; commenting needs it.
+It connects within 2 seconds whenever difftate starts for that repo.
+
+## Your own keys
+
+`keymap.json` here holds the defaults and is replaced on update. Put your changes in
+`~/.config/difftate/keymap.json`, with only the keys you change. It has the same shape and wins key by key:
+
+```json
+{ "leader": ",", "normal": { "<C-p>": "find_files", "H": "" } }
+```
+
+`""` unbinds a key. `Space R` reloads keys (and the diff) without reopening the tab.
+
+## Actions
+
+Bind any of these in your keymap. Each one also runs from a shell as `herdr-app do difftate.<action>`,
+or from Herdr's `keys.json` as `"difftate.<action>"`.
+
+| Action | Default keys | What it does |
+|---|---|---|
+| down / up / left / right | j k h l, arrows | Move (counts work: `5j`) |
+| word_next / word_prev / word_end | w b e | Word motions |
+| line_start / first_char / line_end | 0 ^ $ | In-line motions |
+| top / bottom | gg G | File start / end |
+| half_down / half_up / page_down / page_up | C-d C-u C-f C-b | Scroll by half or full screens |
+| center | zz | Center the cursor line |
+| next_hunk / prev_hunk | ]h [h, ]c [c | Next change; past the last one, the next file |
+| next_file / prev_file | L H, ]b [b | Next changed file |
+| next_thread / prev_thread | ]d [d, ]t [t | Next open review thread, across files |
+| visual_line | V v | Select lines |
+| comment | gc, Space c c (visual: gc c Enter) | Comment on the line or selection |
+| reply | r, Enter | Reply to the thread on this line |
+| resolve / reopen | R, Space c R | Resolve or reopen that thread |
+| goto_definition | gd | Jump to the definition (ripgrep patterns; a picker if several) |
+| references | gr | Every use of the word under the cursor |
+| jump_back / jump_forward | C-o, Tab | Jump list |
+| find_files | Space Space, Space f f | Fuzzy open any file in the repo |
+| changed_files | Space f c | Fuzzy pick a changed file |
+| threads | Space s d | Fuzzy pick a review thread |
+| toggle_view | Space v | Diff ↔ full file (full file marks added lines, red underline = deleted below) |
+| toggle_explorer | Space e | Show or hide the changed-files list |
+| search / search_next / search_prev / search_word | / n N * | Search in the file (smartcase) |
+| open_in_editor | Space o | Open this line in `$EDITOR` (else vi) beside the review |
+| refresh | Space R | Reload the diff and threads (they also refresh by themselves) |
+| help | ? | Every binding; Enter runs one |
+| escape | Esc | Leave visual or insert mode, close a picker |
+
+In a comment, type `\n` for a line break (diffity turns it into one).
+Shift-click a line to extend a selection.
+
+`Space Space` finds any file in the repo; changed files are marked:
+
+![Find files picker in the Review tab](../../screenshots/find-files.png)
+
+## Editing
+
+Edits happen in the full-file view. Pressing an edit key on a diff line switches there at the same line
+(deleted lines can't be edited: they aren't in the file).
+
+`o` on a diff line: the full file, a new line in insert mode, and the unsaved edit marked (yellow bar, `[+] unsaved`):
+
+![Insert mode in the Review tab](../../screenshots/insert-mode.png)
+
+| Action | Default keys | What it does |
+|---|---|---|
+| insert / append | i a | Insert mode before / after the cursor |
+| insert_line_start / append_line_end | I A | Insert at the first non-blank / end of line |
+| open_below / open_above | o O | New line below / above, same indent, in insert mode |
+| delete_char | x | Delete the character under the cursor (counts work) |
+| delete_line | dd (visual: d x) | Delete lines; they go in the register |
+| yank_line | yy (visual: y) | Copy lines; in the diff this copies deleted lines too |
+| put_below / put_above | p P | Put the register's lines below / above |
+| undo / redo | u, C-r | One step per command or per insert session |
+| save | C-s, Cmd-S, `:w` | Write the file |
+| save_force | `:w!` | Write even though the file changed on disk |
+| revert | `:e!` | Reload from disk and drop unsaved edits |
+| command | : | `:w` `:w!` `:e!` `:e` `:42` (go to line) |
+
+In insert mode: Enter (keeps indent), Backspace, Delete, Tab (the file's own indent), arrows,
+Home/End, Esc or C-c to leave. Tabs in the file stay tabs.
+
+Saving checks the file still matches what was loaded. If the agent (or anything else) changed it
+meanwhile, the save is refused: `:w!` overwrites, `:e!` takes the disk version. A dirty file
+blocks switching files until you save or drop it. Saves keep the file's permissions and follow symlinks.
+After a save, diffity sees the change and the diff refreshes by itself.
+
+Not supported: pasting from the system clipboard (Herdr mods can't read it), multi-key insert
+mappings like `jk`, text objects (`ciw`, `dw`), and registers other than the one line register.

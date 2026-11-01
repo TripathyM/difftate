@@ -9,6 +9,7 @@ Review a diff in [diffity](https://www.npmjs.com/package/diffity), comment on an
 - [diffity](https://www.npmjs.com/package/diffity) CLI, tested with `0.9.5`: `npm install -g diffity@0.9.5`
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`) or [OpenCode](https://opencode.ai) (`opencode`)
 - `zsh`, `python3` (standard library only), `git`
+- Optional: the [Herdr](https://herdr.dev) app, to review in a Herdr tab (see [Review in Herdr](#review-in-herdr-optional)); its go to definition uses [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`)
 
 ## Install
 
@@ -47,6 +48,7 @@ difftate --session <uuid>   # attach a specific session
 difftate --no-session       # headless, no session context
 difftate --model <model>    # force the agent's model (default: the session's model)
 difftate --cmd <command>    # run Claude through another command or alias
+difftate --open herdr       # review in a Herdr tab instead of the browser (see "Review in Herdr")
 ```
 
 Without `--session`, it attaches the latest agent session for the current folder, so comments are answered with that session's full context.
@@ -64,6 +66,38 @@ dtcp() { CLAUDE_CONFIG_DIR=~/.claude-personal difftate --cmd ccp "$@"; }   # sam
 
 Sessions are found in `$CLAUDE_CONFIG_DIR` (default `~/.claude`), the same rule `claude` itself follows. If a wrapper sets a different config dir internally, set `CLAUDE_CONFIG_DIR` in its shortcut as above, or the watcher looks in the wrong place. Don't set it to `~/.claude` explicitly: leave it unset for the default.
 
+## Review in Herdr (optional)
+
+If you use the [Herdr](https://herdr.dev) app, the review can open in a Herdr tab instead of the browser: a small code editor with vim keys, comment threads under the lines, go to definition, fuzzy file open, and quick edits you save yourself. Comments are the same diffity threads, so the agent answers them as it does in the browser, and both stay in sync.
+
+![The Review tab in Herdr](herdr/preview.png)
+
+**Install** (from the difftate folder, `~/difftate` below):
+
+```bash
+ln -s ~/difftate/herdr/mods/difftate ~/.config/herdr-app/mods/difftate   # the mod, linked so git pull updates it
+```
+
+If `~/.config/herdr-app/mods/difftate` already exists, remove it first: `ln -s` would put the link inside it.
+
+```zsh
+# in ~/.zshrc, after the source line
+export DT_OPEN=herdr                                              # difftate / dtc / dto open a Review tab
+export DT_HERDR="/Applications/Herdr.app/Contents/MacOS/Herdr"   # only if herdr-app isn't on PATH
+```
+
+Herdr adds `herdr-app` to `~/.local/bin` when it starts. Check with `command -v herdr-app` in a new terminal; set `DT_HERDR` only if that prints nothing.
+
+Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~/.config/herdr-app/keys.json` (also in [`herdr/keys.json`](herdr/keys.json)) to open the tab for the focused pane's repo.
+
+**Use:** run `difftate` as usual. It opens a **Review · ‹repo›** tab, or switches to it if it's open. If Herdr isn't running or can't be found, it opens the browser. `--open browser` (or `both`) overrides `DT_OPEN` for one run.
+
+- Keys: `?` in the tab lists them. Defaults are in [`herdr/mods/difftate/README.md`](herdr/mods/difftate/README.md). Your own go in `~/.config/difftate/keymap.json`, which updates don't touch.
+- After a `git pull`, close and reopen the Review tab: an open tab keeps the code it started with.
+- [`herdr/RECIPE.md`](herdr/RECIPE.md) describes the mod for herdr.dev and for rebuilding it.
+
+**Uninstall:** `rm ~/.config/herdr-app/mods/difftate` (removes the link only) and drop the `DT_OPEN` / `DT_HERDR` lines.
+
 ## Files
 
 | File | What it does |
@@ -72,6 +106,9 @@ Sessions are found in `$CLAUDE_CONFIG_DIR` (default `~/.claude`), the same rule 
 | `difftate-watch.sh` | Starts (or reuses) diffity, polls for open comment threads, dispatches them to the agent, posts "🕒 Queued" status while the agent is busy |
 | `lib/threads.py` | Picks the threads waiting on the agent, and turns open threads into the prompt text (status comments removed) |
 | `lib/stream_fmt.py` | Reads the agent's JSON event stream; prints live progress lines and keeps the diffity status comment updated |
+| `herdr/mods/difftate/` | The Herdr Review tab (optional): code view, keys, threads, editing. See [Review in Herdr](#review-in-herdr-optional) |
+| `herdr/keys.json`, `herdr/RECIPE.md`, `herdr/preview.png` | Herdr's sharing files: the optional key binding, the build brief, the screenshot |
+| `herdr/screenshots/` | More screenshots of the Review tab, shown in the mod's README |
 
 ## What you see
 
@@ -133,6 +170,8 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 |---|---|---|
 | `CLAUDE_CONFIG_DIR` | unset (`~/.claude`) | Where Claude sessions are looked up; also read by `claude` itself |
 | `DT_CONTEXT_WINDOW` | unset (Claude auto-detects) | Context window in tokens, for the % when the tool doesn't report it. E.g. `export DT_CONTEXT_WINDOW=200000` for OpenCode |
+| `DT_OPEN` | `browser` | Where the review opens: `browser`, `herdr` or `both`. `--open` overrides it for one run. See [Review in Herdr](#review-in-herdr-optional) |
+| `DT_HERDR` | unset (`herdr-app` on `PATH`) | Path to the Herdr app's binary, for `DT_OPEN=herdr` when `herdr-app` isn't on `PATH` |
 
 ### Constants (edit the file)
 
@@ -150,7 +189,7 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 
 ### Watcher flags (`difftate-watch.sh --help`)
 
-`--ref`, `--tool`, `--session`, `--model`, `--cwd`, `--interval` (poll seconds, default 1), `--cmd`.
+`--ref`, `--tool`, `--session`, `--model`, `--cwd`, `--interval` (poll seconds, default 1), `--cmd`, `--open` (browser, herdr, both).
 
 ### Internal env vars (set by the watcher, don't set yourself)
 
@@ -212,6 +251,8 @@ Agent invocation:
 | Wrong diff shown | Check `?ref=` in the page URL; rerun `difftate <ref>` |
 | Answer from the wrong model / 🧠 far from `/context` | Check the `Model:` line; force it with `difftate --model <model>` |
 | Thread ignored | Its last comment starts with `[dt-reply]` or `[dt-status]`; reply again to re-trigger |
+| Browser opens instead of the Herdr tab | The watcher prints a `Herdr:` line saying why: `herdr-app` not found (set `DT_HERDR`), Herdr not running, or the mod missing (`herdr-app check ~/.config/herdr-app/mods/difftate`) |
+| Herdr tab misses a change after an update | Close the Review tab and open it again: an open tab keeps the code it started with |
 
 ## Roadmap
 

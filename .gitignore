@@ -4,3 +4,7 @@
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Herdr writes these into every mod folder
+herdr/mods/*/gpui-kit.d.ts
+herdr/mods/*/jsconfig.json
