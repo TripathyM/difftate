@@ -232,7 +232,8 @@ followed by the rules (reply with `dt-reply`, change code only when asked, never
 
 Coding agent invocation:
 - Claude: `claude -p … --resume <session> --model <model> --settings <run sandbox> --output-format stream-json --verbose < /dev/null`
-  - `--settings '{"sandbox":{"filesystem":{"allowWrite":["<run folder>"],"denyWrite":["<repo>/.git/difftate"],"denyRead":["<repo>/.git/difftate/token"]}}}'` lets `dt-reply` write to the run's folder, and keeps the coding agent out of difftate's folder and away from the API token, so it can't resolve threads or edit notes. It's added to your own settings for these runs only, and ignored when the sandbox is off.
+  - `--settings` lets `dt-reply` write to the run's folder, and keeps the coding agent out of difftate's folder (`<repo>/.git/difftate`) and away from the API token, so it can't resolve threads or edit notes. Its `sandbox.filesystem` part (`allowWrite` the run's folder, `denyWrite` the folder, `denyRead` the token) binds the Bash tool when the sandbox is on; its `permissions.deny` rules (`Edit(//<folder>/**)`, `Read(//<token>)`) bind Claude's own file tools. It's added to your own settings for these runs only.
+  - Dispatch posts replies only to threads that were open when the run started, whatever the coding agent writes into its folder.
 - OpenCode: `opencode run … --session <session> [--model <model>] --auto --format json < /dev/null`
 
 `< /dev/null` matters: `opencode run` hangs waiting on stdin otherwise.

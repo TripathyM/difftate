@@ -39,26 +39,36 @@ class RunFolder:
             f.write("".join(f"{tid}\n" for tid in thread_ids))
         return folder
 
-    def take_replies(self):
-        """The replies written since the last call, oldest first: [(thread id, body)]."""
+    def replies(self):
+        """The replies not yet posted, oldest first: [(name, thread id, body)].
+        A file that isn't a reply is removed."""
         replies_dir = os.path.join(self.path, REPLIES)
         try:
             names = sorted(n for n in os.listdir(replies_dir) if n.endswith(".json"))
         except OSError:
             return []
-        taken = []
+        found = []
         for name in names:
-            path = os.path.join(replies_dir, name)
             try:
-                with open(path) as f:
+                with open(os.path.join(replies_dir, name)) as f:
                     reply = json.load(f)
-                os.remove(path)
-            except (OSError, ValueError):
+            except OSError:
                 continue
+            except ValueError:
+                reply = None
             if isinstance(reply, dict) and isinstance(reply.get("thread"), str) \
                     and isinstance(reply.get("body"), str):
-                taken.append((reply["thread"], reply["body"]))
-        return taken
+                found.append((name, reply["thread"], reply["body"]))
+            else:
+                self.posted(name)
+        return found
+
+    def posted(self, name):
+        """The reply <name> is done with: remove it."""
+        try:
+            os.remove(os.path.join(self.path, REPLIES, name))
+        except OSError:
+            pass
 
     def write_reply(self, thread_id, body):
         """Leave the coding agent's answer to the thread <thread_id> (or the start of

@@ -96,6 +96,7 @@ class WatcherTest(unittest.TestCase):
         self.write("app.py", "def greet(name):\n    return f'hello {name}'\n")
         self.output = []
         self.watcher = None
+        self.agent_cmd = FAKE_AGENT
 
     def tearDown(self):
         if self.watcher and self.watcher.poll() is None:
@@ -107,7 +108,7 @@ class WatcherTest(unittest.TestCase):
             f.write(text)
 
     def watcher_command(self):
-        return [sys.executable, WATCHER, "--ref", "HEAD", "--tool", "claude", "--cmd", FAKE_AGENT,
+        return [sys.executable, WATCHER, "--ref", "HEAD", "--tool", "claude", "--cmd", self.agent_cmd,
                 "--cwd", self.repo, "--interval", "0.2"]
 
     def launch_watcher(self):
@@ -251,13 +252,14 @@ class WatcherTest(unittest.TestCase):
         self.assertNotIn("diffity", self.prompts()[0].lower())
         self.assertNotIn("diffity", " ".join(self.agent_args()).lower())
 
-    def test_each_claude_run_may_write_only_its_folder_not_the_store_or_read_the_token(self):
+    def test_each_claude_run_may_not_write_the_store_or_read_the_token(self):
         self.start_watcher()
         tid = self.open_thread("Why an f-string here?")["id"]
         wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
 
         args = self.agent_args()
-        sandbox = json.loads(args[args.index("--settings") + 1])["sandbox"]["filesystem"]
+        settings = json.loads(args[args.index("--settings") + 1])
+        sandbox = settings["sandbox"]["filesystem"]
         with open(os.path.join(self.agent_dir, "run_dir")) as f:
             run_dir = f.read()
         store = os.path.realpath(os.path.join(self.repo, ".git", "difftate"))
@@ -265,11 +267,50 @@ class WatcherTest(unittest.TestCase):
         self.assertEqual(sandbox["allowWrite"], [run_dir])
         self.assertEqual(sandbox["denyWrite"], [store])
         self.assertEqual(sandbox["denyRead"], [os.path.join(store, "token")])
+        # The sandbox binds only Bash: Claude's own file tools need permission rules
+        self.assertEqual(settings["permissions"]["deny"],
+                         [f"Edit(/{store}/**)", f"Read(/{os.path.join(store, 'token')})"])
         self.assertFalse(os.path.realpath(run_dir).startswith(store + os.sep), "the run's folder is outside the store")
 
         self.release_agent()
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertFalse(os.path.exists(run_dir), "the run's folder goes when the run ends")
+
+    def test_a_coding_agent_that_cant_start_fails_its_threads_and_the_watcher_keeps_going(self):
+        self.agent_cmd = os.path.join(self.tmp, "agent.py")
+        shutil.copy(FAKE_AGENT, self.agent_cmd)
+        os.chmod(self.agent_cmd, 0o755)
+        self.release_agent()
+        self.start_watcher()
+        os.chmod(self.agent_cmd, 0o644)  # it can't start any more
+
+        tid = self.open_thread("Why an f-string here?")["id"]
+
+        final = wait_for("the failed progress note", lambda: self.note(tid, "progress", "no reply"))
+        self.assertTrue(final.startswith("❌ **Failed** after "), final)
+        self.assertIn("could not start", final)
+        self.assertIn("could not start claude", self.terminal())
+        self.assertIsNone(self.watcher.poll(), "the watcher keeps going:\n" + self.terminal())
+
+        os.chmod(self.agent_cmd, 0o755)
+        self.api("POST", f"/api/threads/{tid}/comments", {"body": "Please try again."})
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+    def test_a_reply_to_a_thread_outside_the_run_is_not_posted(self):
+        self.release_agent()
+        self.start_watcher()
+        done = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the replied state", lambda: self.state(done) == "replied")
+        self.api("PATCH", f"/api/threads/{done}/status", {"status": "resolved"})
+        with open(os.path.join(self.agent_dir, "rogue"), "w") as f:
+            f.write(done)
+
+        tid = self.open_thread("Rename greet to welcome?", line=1)["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        time.sleep(0.5)  # a few polls
+
+        self.assertNotIn("A reply nobody asked for.", self.bodies(done))
+        self.assertNotIn("A reply nobody asked for.", self.bodies(tid))
 
     def test_thread_written_during_a_run_is_queued_then_answered_next(self):
         self.start_watcher()

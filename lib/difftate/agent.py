@@ -93,11 +93,15 @@ class Claude(Agent):
 
     @staticmethod
     def run_settings(access):
-        """Claude's sandbox setting for one run. Merged into the user's settings;
-        ignored when the sandbox is off."""
-        return json.dumps({"sandbox": {"filesystem": {
-            "allowWrite": list(access.write), "denyWrite": list(access.deny_write),
-            "denyRead": list(access.deny_read)}}}, separators=(",", ":"))
+        """Claude's settings for one run, merged into the user's own. The sandbox
+        binds the Bash tool (and is ignored when the sandbox is off); permission
+        rules bind Claude's own file tools (Edit rules cover Write too). A path
+        rule starts with "//" for an absolute path."""
+        deny = [f"Edit(/{path}/**)" for path in access.deny_write] + [f"Read(/{path})" for path in access.deny_read]
+        return json.dumps({
+            "sandbox": {"filesystem": {"allowWrite": list(access.write), "denyWrite": list(access.deny_write),
+                                       "denyRead": list(access.deny_read)}},
+            "permissions": {"deny": deny}}, separators=(",", ":"))
 
     def command(self, prompt, access):
         """The command line for one run, and the lines to print about it."""

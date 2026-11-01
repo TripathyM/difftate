@@ -35,6 +35,7 @@ class Dispatch:
         self.problem = problem  # () -> None, or why the watcher must exit
         self.run = None
         self.run_folder = None  # where the coding agent leaves its replies
+        self.reply_to = frozenset()  # the threads the run in progress may reply to
         self.started = None  # when the run in progress started
 
     def _open_threads(self):
@@ -61,7 +62,8 @@ class Dispatch:
 
         ids = [t["id"] for t in waiting]
         new_ids = [cid for t in waiting for cid in self.review.unsent(t)]
-        self.run_folder = RunFolder.create(t["id"] for t in open_threads)
+        self.reply_to = frozenset(t["id"] for t in open_threads)
+        self.run_folder = RunFolder.create(self.reply_to)
         access = RunAccess(write=[self.run_folder.path], deny_write=[self.review_folder], deny_read=[self.api.token_file])
         argv, said = self.agent.command(prompt.build(open_threads, ids, new_ids), access)
         for line in said:
@@ -76,7 +78,13 @@ class Dispatch:
         agent_env = dict(os.environ, DT_RUN_DIR=self.run_folder.path)
         self.started = time.time()
         self.review.start_run(waiting)
-        self.run = Run(self.agent.name, argv, self.cwd, fmt_env, agent_env)
+        try:
+            self.run = Run(self.agent.name, argv, self.cwd, fmt_env, agent_env)
+        except OSError as e:
+            # A prompt too long for the command line, or a --cmd that can't run any more
+            print(f"[{now()}] Warning: could not start {self.agent.name}: {e}")
+            self.end_run(f" (could not start {self.agent.name}: {e})")
+            return
         # Threads that arrive meanwhile get a queued note right away. Runs stay one at a time.
         while self.run.running():
             self.post_replies()
@@ -89,21 +97,34 @@ class Dispatch:
         self.run = None
         self.end_run()
 
-    def post_replies(self):
-        """Post the answers the coding agent left in the run's folder as replies."""
-        for tid, body in self.run_folder.take_replies() if self.run_folder else []:
+    def post_replies(self, last_try=False):
+        """Post the answers the coding agent left in the run's folder as replies.
+
+        Only threads that were open when the run started get one: the coding agent
+        can write anything into its folder. A reply the store refuses stays for
+        the next try; after the last one it is printed, so it isn't lost."""
+        for name, tid, body in self.run_folder.replies() if self.run_folder else []:
+            if tid not in self.reply_to:
+                print(f"[{now()}] Warning: dropped a reply to thread {tid[:8]}: it isn't open in this run")
+                self.run_folder.posted(name)
+                continue
             try:
                 self.review.add_comment(tid, "reply", body)
             except StoreError as e:
-                print(f"[{now()}] Warning: could not post the reply to thread {tid[:8]}: {e}")
+                if last_try:
+                    print(f"[{now()}] Warning: could not post the reply to thread {tid[:8]} ({e}). The reply:")
+                    print(body)
+                continue
+            self.run_folder.posted(name)
 
     def end_run(self, why="", say=True):
         """The run ended: its last replies are posted, the threads it didn't reply
         to are failed, and their progress notes say so."""
-        self.post_replies()
+        self.post_replies(last_try=True)
         if self.run_folder:
             self.run_folder.remove()
             self.run_folder = None
+        self.reply_to = frozenset()
         try:
             failed = self.review.end_run()
         except StoreError:
@@ -114,12 +135,15 @@ class Dispatch:
             self.note_no_reply(t, int(time.time() - self.started), why)
 
     def stop_run(self, say=True):
-        """Stop the run in progress, and every process it started."""
+        """Stop the run in progress, and every process it started. A run whose
+        coding agent already exited (Ctrl+C before Dispatch saw it) still ends:
+        its last replies are posted."""
         if self.run and self.run.running():
             if say:
                 print(f"Stopping running agent (pid {self.run.pid})...")
             self.run.stop()
-            self.run = None
+        self.run = None
+        if self.run_folder:
             self.end_run(" (the watcher stopped)", say=False)
 
     def post_queued_notes(self):
