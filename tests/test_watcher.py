@@ -241,6 +241,26 @@ class WatcherTest(unittest.TestCase):
                          "the queued note becomes the progress note")
         wait_for("both threads replied", lambda: self.state(first) == self.state(second) == "replied")
 
+    def test_a_queued_note_followed_by_another_comment_says_it_was_picked_up(self):
+        self.start_watcher()
+        first = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(first, "progress", "Working"))
+        second = self.open_thread("Rename greet to welcome?", line=1)["id"]
+        wait_for("a queued note", lambda: self.note(second, "queued"))
+        self.api("POST", f"/api/threads/{second}/comments", {"body": "Or to hello?"})
+
+        self.release_agent()
+        wait_for("the replied state", lambda: self.state(second) == "replied")
+
+        self.assertEqual(self.comments(second), [
+            ("comment", "Rename greet to welcome?"),
+            ("queued", "🕒 **Queued** — picked up by the next run (below)."),
+            ("comment", "Or to hello?"),
+            ("progress", self.note(second, "progress")),
+            ("reply", f"Fake answer to {second[:8]}."),
+        ])
+        self.assertTrue(self.note(second, "progress").startswith("✅ **Done** in "))
+
     def test_a_follow_up_during_a_run_on_the_same_thread_is_answered_in_the_next_run(self):
         self.start_watcher()
         tid = self.open_thread("Why an f-string here?")["id"]

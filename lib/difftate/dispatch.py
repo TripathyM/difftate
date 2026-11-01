@@ -14,6 +14,7 @@ from .agent import Run
 from .store import StoreError
 
 QUEUED_NOTE = "🕒 **Queued** — agent is busy with another comment, will pick this up next."
+PICKED_UP_NOTE = "🕒 **Queued** — picked up by the next run (below)."
 
 
 def now():
@@ -61,6 +62,7 @@ class Dispatch:
             print(line)
         # A thread that ends in its queued note gets that note back as its progress note
         queued = {t["id"]: t["comments"][-1]["id"] for t in waiting if t["comments"][-1]["kind"] == "queued"}
+        self.close_queued_notes(waiting, queued)
         # The progress notes go through the review API. Only the formatter gets the
         # token file, never the agent.
         fmt_env = dict(os.environ, **self.api.env(), DT_THREAD_IDS=",".join(ids),
@@ -110,6 +112,18 @@ class Dispatch:
             except StoreError:
                 pass
         return posted
+
+    def close_queued_notes(self, threads, reused):
+        """A queued note that a later comment pushed up the thread can't become the
+        progress note (that must come after every comment the run is sent), so it
+        says the run picked the thread up instead."""
+        for t in threads:
+            for c in t["comments"]:
+                if c["kind"] == "queued" and c["id"] != reused.get(t["id"]) and c["body"] == QUEUED_NOTE:
+                    try:
+                        self.review.edit_note(c["id"], "queued", PICKED_UP_NOTE)
+                    except StoreError:
+                        pass
 
     @staticmethod
     def _has_queued_note(thread):
