@@ -148,7 +148,7 @@ def _check_id(value):
 def _comment(c):
     """A diffity comment in difftate's format. Only a text prefix tells a reply or
     a note from a comment; anything without one is a reviewer's, whoever wrote it
-    (a reviewing agent writes to diffity as an agent, with no prefix)."""
+    (a reviewing agent writes to diffity with diffity's agent author, but no prefix)."""
     body = c.get("body") or ""
     kind = next((k for k, m in MARKERS.items() if body == m or body.startswith(m + " ")), "comment")
     if kind != "comment":

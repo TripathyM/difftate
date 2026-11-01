@@ -3,7 +3,7 @@
 Every change to the review goes through here, so the rules hold whatever the
 store or the caller (a viewer through the API, or Dispatch):
   1. Only a reviewer opens a thread or changes its thread status.
-  2. The agent writes only replies.
+  2. The coding agent writes only replies.
   3. Only difftate writes notes, and only notes can be edited.
   4. One rule gives the thread state (thread_state below).
 
@@ -32,7 +32,7 @@ def thread_state(thread, sent, running, replies_before):
       waiting   it has a reviewer's comment that no run has been sent yet
       queued    waiting while a run handles other threads
       working   the run in progress has it
-      replied   the agent spoke last, and every reviewer comment was sent to a run
+      replied   the coding agent spoke last, and every reviewer comment was sent to a run
       failed    its run ended with no reply to it
 
     <sent> holds the ids of comments sent to a run; <running> the ids of the
@@ -84,7 +84,7 @@ class Review:
         return self._with_state(thread)
 
     def add_comment(self, thread_id, kind, body):
-        """A reviewer's comment, the agent's reply, or difftate's note: <kind> says which."""
+        """A reviewer's comment, the coding agent's reply, or difftate's note: <kind> says which."""
         return self.store.add_comment(thread_id, need_kind(kind, KINDS), need_text(body))
 
     def edit_note(self, note_id, kind, body):

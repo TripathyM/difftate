@@ -1,6 +1,6 @@
 # difftate
 
-Annotate an agent's diff, and the agent answers or fixes the code.
+Annotate a coding agent's diff, and the coding agent answers or fixes the code.
 
 Review a diff in [diffity](https://www.npmjs.com/package/diffity), comment on any line, and Claude Code or OpenCode replies or edits the code, with the session's full context. Progress shows live in the diffity UI and in the terminal.
 
@@ -46,14 +46,14 @@ difftate staged             # only staged changes
 dto                         # OpenCode, same arguments
 difftate --session <uuid>   # attach a specific session
 difftate --no-session       # headless, no session context
-difftate --model <model>    # force the agent's model (default: the session's model)
+difftate --model <model>    # force the coding agent's model (default: the session's model)
 difftate --cmd <command>    # run Claude through another command or alias
 difftate --open herdr       # review in a Herdr tab instead of the browser (see "Review in Herdr")
 ```
 
 Without `--session`, it attaches the latest agent session for the current folder, so comments are answered with that session's full context.
 
-**Always run from the branch's checkout.** The agent edits files in the current directory. There is deliberately no "source branch" option: it would let the agent write fixes onto the wrong branch. To review another branch without switching, use a worktree (`git worktree add ../repo-x feature-x`, `cd` there, run `difftate master`).
+**Always run from the branch's checkout.** The coding agent edits files in the current directory. There is deliberately no "source branch" option: it would let the coding agent write fixes onto the wrong branch. To review another branch without switching, use a worktree (`git worktree add ../repo-x feature-x`, `cd` there, run `difftate master`).
 
 ## Example: several Claude setups
 
@@ -68,7 +68,7 @@ Sessions are found in `$CLAUDE_CONFIG_DIR` (default `~/.claude`), the same rule 
 
 ## Review in Herdr (optional)
 
-If you use the [Herdr](https://herdr.dev) app, the review can open in a Herdr tab instead of the browser: a small code editor with vim keys, comment threads under the lines, go to definition, fuzzy file open, and quick edits you save yourself. Comments are the same diffity threads, so the agent answers them as it does in the browser, and both stay in sync.
+If you use the [Herdr](https://herdr.dev) app, the review can open in a Herdr tab instead of the browser: a small code editor with vim keys, comment threads under the lines, go to definition, fuzzy file open, and quick edits you save yourself. Comments are the same diffity threads, so the coding agent answers them as it does in the browser, and both stay in sync.
 
 ![The Review tab in Herdr](herdr/preview.png)
 
@@ -103,10 +103,10 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 | File | What it does |
 |---|---|
 | `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the session, then start `difftate-watch.py` |
-| `difftate-watch.py`, `lib/difftate/` | The watcher: starts (or reuses) diffity, serves the [review API](#review-api), dispatches waiting threads to the agent, posts "🕒 Queued" notes while the agent is busy |
-| `bin/dt-reply` | How the agent answers a thread: `dt-reply <thread> "<answer>"` |
-| `lib/stream_fmt.py` | Reads the agent's JSON event stream; prints live progress lines and keeps the progress note updated |
-| `tests/` | Watcher tests: a temporary repository, the real watcher, a fake agent. See [Tests](#tests) |
+| `difftate-watch.py`, `lib/difftate/` | The watcher: starts (or reuses) diffity, serves the [review API](#review-api), dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
+| `bin/dt-reply` | How the coding agent answers a thread: `dt-reply <thread> "<answer>"` |
+| `lib/stream_fmt.py` | Reads the coding agent's JSON event stream; prints live progress lines and keeps the progress note updated |
+| `tests/` | Watcher tests: a temporary repository, the real watcher, a fake coding agent. See [Tests](#tests) |
 | `herdr/mods/difftate/` | The Herdr Review tab (optional): code view, keys, threads, editing. See [Review in Herdr](#review-in-herdr-optional) |
 | `herdr/keys.json`, `herdr/RECIPE.md`, `herdr/preview.png` | Herdr's sharing files: the optional key binding, the build brief, the screenshot |
 | `herdr/screenshots/` | More screenshots of the Review tab, shown in the mod's README |
@@ -116,7 +116,7 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 **In the diffity UI**, each thread gets one status comment, edited in place (UI refreshes every ~2s):
 
 ```
-[dt-queued] 🕒 Queued — agent is busy with another comment…   ← arrived while agent was busy
+[dt-queued] 🕒 Queued — agent is busy with another comment…   ← arrived while the coding agent was busy
 [dt-status] ⏳ Thinking… (4s)
 [dt-status] ⏳ Working… (12s) · 🧠 context 84k / 1M (8%)
 - ✅ `Read src/app.ts`
@@ -125,7 +125,7 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 [dt-status] ❌ Failed after 30s  (+ checklist and reason)
 ```
 
-The agent's reply follows as a separate `[dt-reply]` entry: the agent writes only the answer, and difftate adds the prefix diffity needs. Progress notes are never sent to the model (see [What the agent gets](#what-the-agent-gets)).
+The coding agent's reply follows as a separate `[dt-reply]` entry: the coding agent writes only the answer, and difftate adds the prefix diffity needs. Progress notes are never sent to the model (see [What the coding agent gets](#what-the-coding-agent-gets)).
 
 **In the watcher terminal**:
 
@@ -141,12 +141,12 @@ The agent's reply follows as a separate `[dt-reply]` entry: the agent writes onl
 
 ## Context size and when to compact
 
-`🧠 context` is the token count of the agent's latest model call. In session mode that includes the resumed session's full history, so it is the session's current size.
+`🧠 context` is the token count of the coding agent's latest model call. In session mode that includes the resumed session's full history, so it is the session's current size.
 
 - Claude reports its window, so you get a percentage.
 - OpenCode shows tokens only, unless you set `DT_CONTEXT_WINDOW`.
 - With the same model as your session (see below), it should be close to `/context` in that session (not exact: `-p` may load a slightly different system prompt and tool set). A big gap usually means a different model answered.
-- At **70%+** it adds `⚠️ consider /compact`. The agent can't compact itself: run `/compact` in your own Claude session.
+- At **70%+** it adds `⚠️ consider /compact`. The coding agent can't compact itself: run `/compact` in your own Claude session.
 
 ## Which model answers
 
@@ -159,7 +159,7 @@ A Claude session doesn't store its model. Each `claude -p` the watcher starts us
 | `dto` (OpenCode) | OpenCode keeps the session's own model on resume, so no detection is needed |
 | Any, with `--model` | `--model` always wins |
 
-The watcher prints `Model: <name> (from session)` on every dispatch, and the 🚀 line shows the model the agent actually ran.
+The watcher prints `Model: <name> (from session)` on every dispatch, and the 🚀 line shows the model the coding agent actually ran.
 
 **Cost note:** prompt caches are per model and expire after ~1h idle. The first comment after a model switch or a long break re-caches the whole session (roughly $1 for a ~120k-token Opus session at list price; cloud providers' pricing differs). Later comments within the hour are cents. Switching models back and forth costs more than staying on one.
 
@@ -180,8 +180,8 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 |---|---|---|---|
 | `COMPACT_WARN_PCT` | `lib/stream_fmt.py` | `70` | % of context window that triggers `⚠️ consider /compact` |
 | `MAX_STEPS_SHOWN` | `lib/stream_fmt.py` | `8` | Checklist steps shown; older ones collapse to "…N earlier steps" |
-| `STATUS_REFRESH_S` | `lib/stream_fmt.py` | `3` | Seconds between status comment refreshes while the agent is quiet |
-| `TEXT_MAX` | `lib/stream_fmt.py` | `300` | Max characters of agent text per terminal line |
+| `STATUS_REFRESH_S` | `lib/stream_fmt.py` | `3` | Seconds between status comment refreshes while the coding agent is quiet |
+| `TEXT_MAX` | `lib/stream_fmt.py` | `300` | Max characters of coding agent text per terminal line |
 | `ANCHOR_MAX_LINES` | `lib/difftate/prompt.py` | `20` | Lines of the commented code included per thread |
 | `SUMMARY_MAX` | `lib/difftate/prompt.py` | `200` | Characters per comment in "Other open threads" |
 | `MARKERS` | `lib/difftate/diffity.py` | `[dt-reply]`, `[dt-queued]`, `[dt-status]` | Prefixes that tell replies and notes from your comments in diffity. Only the diffity store uses them |
@@ -194,23 +194,23 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 
 | Variable | Purpose |
 |---|---|
-| `DT_API`, `DT_TOKEN_FILE` | Review API address and token file, for the progress notes (given to `lib/stream_fmt.py` only, never to the agent) |
-| `DT_THREAD_IDS` | Comma-separated threads the current agent run handles |
+| `DT_API`, `DT_TOKEN_FILE` | Review API address and token file, for the progress notes (given to `lib/stream_fmt.py` only, never to the coding agent) |
+| `DT_THREAD_IDS` | Comma-separated threads the current run handles |
 | `DT_QUEUED_NOTES` | The "Queued" notes that become those threads' progress notes |
-| `DT_RUN_DIR` | The run's folder, where `dt-reply` leaves the agent's answers (given to the agent) |
+| `DT_RUN_DIR` | The run's folder, where `dt-reply` leaves the coding agent's answers (given to the coding agent) |
 
 ## How it works
 
 1. Every `--interval` seconds the watcher lists open threads. A thread is **waiting** when it has a comment of yours (or another reviewer's) that no run has been sent yet (see [thread state](#review-api)).
-2. Waiting threads → one agent run, in the background, with the prompt below. Agents run **one at a time**; comments that queue up during a run all go into the next one.
+2. Waiting threads → one run of the coding agent, in the background, with the prompt below. Runs go **one at a time**; comments that queue up during a run all go into the next one.
 3. While it runs, the watcher keeps polling; new threads get `🕒 Queued` within ~1s and go in the next run.
 4. `lib/stream_fmt.py` posts or reuses the progress note, then edits it through the review API.
-5. The agent answers each thread with `dt-reply <thread> "<answer>"`. That writes the answer into the run's folder (a temporary folder per run), and the watcher posts it as a reply. The agent never writes to the review itself.
-6. Ctrl+C stops the watcher, the running agent and its child processes, and diffity (if the watcher started it).
+5. The coding agent answers each thread with `dt-reply <thread> "<answer>"`. That writes the answer into the run's folder (a temporary folder per run), and the watcher posts it as a reply. The coding agent never writes to the review itself.
+6. Ctrl+C stops the watcher, the running coding agent and its child processes, and diffity (if the watcher started it).
 
-### What the agent gets
+### What the coding agent gets
 
-`lib/difftate/prompt.py` builds the prompt as plain text, without notes or JSON metadata, so the agent doesn't need to read the review itself:
+`lib/difftate/prompt.py` builds the prompt as plain text, without notes or JSON metadata, so the coding agent doesn't need to read the review itself:
 
 ```
 ## Reply to these threads (1)
@@ -219,7 +219,7 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 Code:
 <the commented lines>
 reviewer: rename this to fetchUser
-you: Should I also rename the test?        ← the agent's earlier reply
+you: Should I also rename the test?        ← the coding agent's earlier reply
 reviewer (new): yes
 
 ## Other open threads (2) — context only
@@ -228,11 +228,11 @@ reviewer (new): yes
   you: It handles flaky 502s from the gateway.
 ```
 
-followed by the rules (reply with `dt-reply`, change code only when asked, never resolve). "Other open threads" lets the agent see a related comment elsewhere ("this also fixes your comment on api.ts") at a fraction of the full JSON's size.
+followed by the rules (reply with `dt-reply`, change code only when asked, never resolve). "Other open threads" lets the coding agent see a related comment elsewhere ("this also fixes your comment on api.ts") at a fraction of the full JSON's size.
 
-Agent invocation:
+Coding agent invocation:
 - Claude: `claude -p … --resume <session> --model <model> --settings <run sandbox> --output-format stream-json --verbose < /dev/null`
-  - `--settings '{"sandbox":{"filesystem":{"allowWrite":["<run folder>"],"denyWrite":["<repo>/.git/difftate"],"denyRead":["<repo>/.git/difftate/token"]}}}'` lets `dt-reply` write to the run's folder, and keeps the agent out of difftate's folder and away from the API token, so it can't resolve threads or edit notes. It's added to your own settings for these runs only, and ignored when the sandbox is off.
+  - `--settings '{"sandbox":{"filesystem":{"allowWrite":["<run folder>"],"denyWrite":["<repo>/.git/difftate"],"denyRead":["<repo>/.git/difftate/token"]}}}'` lets `dt-reply` write to the run's folder, and keeps the coding agent out of difftate's folder and away from the API token, so it can't resolve threads or edit notes. It's added to your own settings for these runs only, and ignored when the sandbox is off.
 - OpenCode: `opencode run … --session <session> [--model <model>] --auto --format json < /dev/null`
 
 `< /dev/null` matters: `opencode run` hangs waiting on stdin otherwise.
@@ -268,7 +268,7 @@ The **thread state** of an open thread (`null` otherwise) is the one rule the wa
 | `waiting` | It has a reviewer's comment that no run has been sent yet |
 | `queued` | Waiting while a run handles other threads |
 | `working` | The run in progress has it |
-| `replied` | The agent spoke last, and every reviewer comment was sent to a run |
+| `replied` | The coding agent spoke last, and every reviewer comment was sent to a run |
 | `failed` | Its run ended with no reply to it. Its progress note says "no reply", and it isn't sent again until you comment |
 
 So a follow-up you write while the agent works on the same thread is answered in the next run ([#3](https://github.com/TripathyM/difftate/issues/3)). A comment from a separate reviewing agent (written to diffity as an agent, without a `[dt-…]` prefix) counts as yours. diffity's `[dt-…]` prefixes stay inside the diffity store: the API has comment kinds instead.
@@ -279,7 +279,7 @@ So a follow-up you write while the agent works on the same thread is answered in
 python3 -m unittest discover -s tests -v
 ```
 
-`tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_stores.py` runs one test suite against every store (memory and diffity). Tests that need diffity 0.9.5 skip without it. CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
+`tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_stores.py` runs one test suite against every store (memory and diffity). Tests that need diffity 0.9.5 skip without it. CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
 
 ## Known limitations
 
@@ -290,7 +290,7 @@ python3 -m unittest discover -s tests -v
 | Symptom | Check |
 |---|---|
 | No progress note appears | Watcher terminal for `could not post the progress note`; is diffity on the port shown? |
-| Agent never finishes | Run the agent command by hand with `< /dev/null`; look for auth or stdin hangs |
+| Coding agent never finishes | Run the coding agent's command by hand with `< /dev/null`; look for auth or stdin hangs |
 | Wrong diff shown | Check `?ref=` in the page URL; rerun `difftate <ref>` |
 | Answer from the wrong model / 🧠 far from `/context` | Check the `Model:` line; force it with `difftate --model <model>` |
 | Thread ignored | Its thread state is `replied` or `failed` (`GET /api/threads`): comment again to re-trigger |

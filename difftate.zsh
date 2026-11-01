@@ -3,7 +3,7 @@
 
 # ── difftate ─────────────────────────────────────────────────────────────────
 # Starts the watcher (difftate-watch.py): it serves the review and dispatches
-# waiting threads to the agent, in its agent session when one is found.
+# waiting threads to the coding agent, in its agent session when one is found.
 # Defaults: --ref master, --interval 1s. Auto-attaches latest session.
 #
 # Usage:
@@ -14,8 +14,8 @@
 #   dto                            # opencode + auto-attach latest session
 #   difftate --session <uuid>      # use a specific session (skip auto-detect)
 #   difftate --no-session          # force headless (skip auto-detect)
-#   difftate --model <model>       # force the agent's model (default: session's model)
-#   difftate --cmd <binary>        # run the agent through another command or alias
+#   difftate --model <model>       # force the coding agent's model (default: session's model)
+#   difftate --cmd <binary>        # run the coding agent through another command or alias
 #   difftate --open herdr          # open the review in Herdr (browser|herdr|both; default $DT_OPEN, else browser)
 #
 # Claude sessions are looked up in $CLAUDE_CONFIG_DIR (default ~/.claude).

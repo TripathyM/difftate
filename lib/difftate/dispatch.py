@@ -1,8 +1,8 @@
-"""Dispatch: send the waiting threads to the agent, one run at a time.
+"""Dispatch: send the waiting threads to the coding agent, one run at a time.
 
 While a run works, threads that become waiting get a queued note right away.
 The run's progress notes are kept by lib/stream_fmt.py through the review API.
-The agent answers with dt-reply into the run's folder, and Dispatch posts each
+The coding agent answers with dt-reply into the run's folder, and Dispatch posts each
 answer as a reply, during the run and when it ends.
 When the run ends, a thread it didn't reply to is failed ("no reply"): its
 progress note says so, and it isn't sent again until the reviewer comments.
@@ -29,12 +29,12 @@ class Dispatch:
         self.review = review
         self.agent = agent
         self.cwd = cwd
-        self.review_folder = review_folder  # the store and the token: kept out of the agent's reach
+        self.review_folder = review_folder  # the store and the token: kept out of the coding agent's reach
         self.interval = interval
         self.api = api  # ApiAddress, for the progress notes
         self.problem = problem  # () -> None, or why the watcher must exit
         self.run = None
-        self.run_folder = None  # where the agent leaves its replies
+        self.run_folder = None  # where the coding agent leaves its replies
         self.started = None  # when the run in progress started
 
     def _open_threads(self):
@@ -70,7 +70,7 @@ class Dispatch:
         queued = {t["id"]: t["comments"][-1]["id"] for t in waiting if t["comments"][-1]["kind"] == "queued"}
         self.close_queued_notes(waiting, queued)
         # The progress notes go through the review API. Only the formatter gets the
-        # token file, never the agent.
+        # token file, never the coding agent.
         fmt_env = dict(os.environ, **self.api.env(), DT_THREAD_IDS=",".join(ids),
                        DT_QUEUED_NOTES=json.dumps(queued))
         agent_env = dict(os.environ, DT_RUN_DIR=self.run_folder.path)
@@ -90,7 +90,7 @@ class Dispatch:
         self.end_run()
 
     def post_replies(self):
-        """Post the answers the agent left in the run's folder as replies."""
+        """Post the answers the coding agent left in the run's folder as replies."""
         for tid, body in self.run_folder.take_replies() if self.run_folder else []:
             try:
                 self.review.add_comment(tid, "reply", body)

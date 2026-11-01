@@ -178,7 +178,7 @@ class WatcherTest(unittest.TestCase):
             pass
 
     def silence_agent(self, silent=True, runs=()):
-        """The agent replies to no thread (in every run, or only in <runs>)."""
+        """The coding agent replies to no thread (in every run, or only in <runs>)."""
         path = os.path.join(self.agent_dir, "silent")
         if silent:
             os.makedirs(self.agent_dir, exist_ok=True)
@@ -239,7 +239,7 @@ class WatcherTest(unittest.TestCase):
         reply = self.thread(tid)["comments"][-1]
         self.assertEqual((reply["author"], reply["kind"], reply["body"]),
                          ("agent", "reply", f"Fake answer to {tid[:8]}."),
-                         "the agent wrote only its answer: no marker")
+                         "the coding agent wrote only its answer: no marker")
         self.assertRegex(self.prompts()[0], r"\S*dt-reply <thread> \"<answer>\"")
 
     def test_the_prompt_and_the_run_settings_name_no_diffity(self):
@@ -344,7 +344,7 @@ class WatcherTest(unittest.TestCase):
         self.release_agent()
         self.start_watcher()
 
-        # A separate reviewing agent writes its findings to diffity as an agent
+        # A separate reviewing agent writes its findings to diffity, with diffity's agent author
         subprocess.run(["diffity", "agent", "comment", "--file", "app.py", "--line", "2",
                         "--body", "Missing a type hint."], cwd=self.repo, env=self.env, check=True,
                        capture_output=True)
@@ -453,7 +453,7 @@ class WatcherTest(unittest.TestCase):
         return refused.exception.code
 
     def test_only_a_reviewer_opens_a_thread_or_changes_its_status(self):
-        self.silence_agent()  # keep the agent out of the thread
+        self.silence_agent()  # keep the coding agent out of the thread
         self.start_watcher()
         anchor = {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2}
         for author in ("agent", "difftate"):

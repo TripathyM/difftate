@@ -23,7 +23,7 @@ A thread (difftate's thread format):
                  "kind": "comment"|"reply"|"queued"|"progress", "body", "time"}]}
 
 A comment's kind says who wrote it: a comment is the reviewer's (the default), a
-reply the agent's, and a queued or progress note difftate's. "author" says who
+reply the coding agent's, and a queued or progress note difftate's. "author" says who
 opens a thread or sets its status, and must be "reviewer" (the default): anyone
 else gets 403. Only notes can be edited (403 otherwise). Errors are
 {"error": <message>} with status 400, 403, 404 or 502.

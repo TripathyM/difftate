@@ -1,7 +1,7 @@
 """The agents: Claude Code and OpenCode.
 
 Each adapter knows its default command, how to find an agent session, how to
-pick the model, and the command line for one run. A run pipes the agent's event
+pick the model, and the command line for one run. A run pipes the coding agent's event
 stream through lib/stream_fmt.py, which prints the steps and keeps the progress
 notes (through the review API).
 """
@@ -23,12 +23,12 @@ NONE_FOUND = "    (none found)"
 class RunAccess(namedtuple("RunAccess", "write deny_write deny_read")):
     """What one run may touch: it may write the folders in <write> (its run's
     folder), and may not write <deny_write> (the store) or read <deny_read> (the
-    API token). An agent with a sandbox enforces it; one without relies on the
+    API token). A coding agent with a sandbox enforces it; one without relies on the
     watcher's checks."""
 
 
 class Agent:
-    """An agent, and how this watcher runs it: the command, the agent session
+    """A coding agent, and how this watcher runs it: the command, the agent session
     (empty for headless) and a model override (empty for the default)."""
     name = default_cmd = ""
 
@@ -148,7 +148,7 @@ AGENTS = {a.name: a for a in (Claude, OpenCode)}
 
 
 class Run:
-    """One run: the agent, piped into lib/stream_fmt.py."""
+    """One run: the coding agent, piped into lib/stream_fmt.py."""
 
     def __init__(self, tool, argv, cwd, fmt_env, agent_env):
         self.agent = subprocess.Popen(argv, cwd=cwd, env=agent_env, stdin=subprocess.DEVNULL,
@@ -157,7 +157,7 @@ class Run:
             self.fmt = subprocess.Popen([sys.executable, "-u", STREAM_FMT, tool], stdin=self.agent.stdout,
                                         env=fmt_env, start_new_session=True)
         except BaseException:
-            # Ctrl+C (or a failure) between the two: the agent has its own session, so stop it here
+            # Ctrl+C (or a failure) between the two: the coding agent has its own process session, so stop it here
             procs.stop_tree(self.agent)
             raise
         finally:

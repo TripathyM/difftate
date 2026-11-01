@@ -1,5 +1,5 @@
 """The watcher: one per review. Starts or reuses diffity, serves the review API,
-and dispatches waiting threads to the agent until Ctrl+C.
+and dispatches waiting threads to the coding agent until Ctrl+C.
 
 The difftate / dtc / dto shell functions start it (difftate.zsh).
 """
@@ -15,7 +15,7 @@ from .api import ReviewApi, running_watcher
 from .dispatch import Dispatch
 from .review import Review
 
-USAGE = """difftate-watch.py — Start diffity and poll for comments, dispatching them to the agent.
+USAGE = """difftate-watch.py — Start diffity and poll for comments, dispatching them to the coding agent.
 (Normally run via the difftate / dtc / dto shell functions.)
 
 Usage:
@@ -30,7 +30,7 @@ Optional:
   --cwd <path>           Repo path for headless mode (default: current directory)
   --interval <seconds>   Polling interval in seconds (default: 1)
   --cmd <binary>         Override the CLI binary or shell alias (e.g. a wrapper around claude)
-  --model <model>        Model for the agent (default: Claude with --session matches the
+  --model <model>        Model for the coding agent (default: Claude with --session matches the
                          session's latest interactive model)
   --open <where>         browser, herdr or both (default: $DT_OPEN, else browser).
                          herdr opens a Review tab in the Herdr app, or switches to it;

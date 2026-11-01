@@ -2,7 +2,7 @@
 open threads, and the rules.
 
 Notes are left out: they cost tokens on every run and say nothing about the code.
-The agent answers with dt-reply (bin/dt-reply), and nothing in the prompt names
+The coding agent answers with dt-reply (bin/dt-reply), and nothing in the prompt names
 the store.
 """
 import shlex

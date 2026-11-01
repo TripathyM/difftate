@@ -11,9 +11,9 @@ Controlled through FAKE_AGENT_DIR (a folder the test owns):
   run_dir  written at start: the run's folder it was given ($DT_RUN_DIR)
   prompt   written at start: the prompt it was sent
   prompts  one line appended per run: the prompt as JSON
-  go       the agent waits for this file before it replies, so a test can see
+  go       the coding agent waits for this file before it replies, so a test can see
            the thread while the run is working
-  silent   while this file exists, the agent replies to no thread; when it
+  silent   while this file exists, the coding agent replies to no thread; when it
            lists run numbers ("2" or "1,3"), only in those runs
 """
 import json

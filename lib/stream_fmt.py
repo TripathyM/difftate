@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn an agent's JSON event stream into live progress for the watcher.
+"""Turn a coding agent's JSON event stream into live progress for the watcher.
 
 Usage: <agent> ... | python3 -u lib/stream_fmt.py <claude|opencode>
 
@@ -162,7 +162,7 @@ class Status:
         ctx = CONTEXT.label()
         lines = [head + (f" · {ctx}" if ctx else "")]
         if self.state == "done":
-            # Finished: one line is enough, the agent's own reply has the details
+            # Finished: one line is enough, the coding agent's own reply has the details
             return lines[0]
         hidden = len(self.steps) - MAX_STEPS_SHOWN
         if hidden > 0:
@@ -285,9 +285,9 @@ for line in sys.stdin:
         continue
     try:
         handler(ev)
-    except Exception as e:  # never kill the agent's pipe over a formatting bug
+    except Exception as e:  # never kill the coding agent's pipe over a formatting bug
         out("⚠️", f"unparsed event ({e})")
 
-# Stream ended without a final event — the agent crashed or was killed
+# Stream ended without a final event — the coding agent crashed or was killed
 if STATUS.state not in ("done", "failed"):
     done(ok=False, note="Agent exited without finishing — check the watcher terminal.")

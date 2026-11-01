@@ -1,12 +1,12 @@
-"""The run's folder: where the agent leaves its replies for Dispatch.
+"""The run's folder: where the coding agent leaves its replies for Dispatch.
 
-The agent answers a thread with `dt-reply <thread> "<answer>"` (bin/dt-reply).
+The coding agent answers a thread with `dt-reply <thread> "<answer>"` (bin/dt-reply).
 That writes the answer into the run's folder ($DT_RUN_DIR), and Dispatch posts
-it as a reply. So the agent needs no token, no write access to the store, and
+it as a reply. So the coding agent needs no token, no write access to the store, and
 no marker: difftate knows the answer is a reply because of where it came from.
 
 The folder (a temporary one per run, outside the repository):
-  threads    the ids of the open threads the agent may reply to, one per line
+  threads    the ids of the open threads the coding agent may reply to, one per line
   replies/   one JSON file per answer, {"thread", "body"}, named so they sort
              in the order they were written
 """
@@ -18,7 +18,7 @@ import time
 
 THREADS = "threads"
 REPLIES = "replies"
-# The command the agent answers with
+# The command the coding agent answers with
 DT_REPLY = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "bin", "dt-reply")
 
 
@@ -61,7 +61,7 @@ class RunFolder:
         return taken
 
     def write_reply(self, thread_id, body):
-        """Leave the agent's answer to the thread <thread_id> (or the start of
+        """Leave the coding agent's answer to the thread <thread_id> (or the start of
         its id) for Dispatch (dt-reply). Returns the thread's full id."""
         try:
             with open(os.path.join(self.path, THREADS)) as f:
