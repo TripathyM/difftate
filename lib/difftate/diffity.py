@@ -233,7 +233,8 @@ class DiffityStore:
         text = body if kind == "comment" else f"{MARKERS[kind]} {body}"
         return _comment(self._call("POST", f"/api/threads/{thread_id}/reply", {"body": text, "author": author}))
 
-    def edit_note(self, note_id, kind, body):
+    def edit_note(self, note_id, kind, body, final=False):
+        """diffity keeps every edit: <final> changes nothing."""
         _check_id(note_id)
         session = self._session()
         found = next((c for t in self._raw_threads(session) for c in t.get("comments") or []
@@ -243,6 +244,16 @@ class DiffityStore:
         text = f"{MARKERS[kind]} {body}"
         self._call("PATCH", f"/api/comments/{note_id}", {"body": text})
         return _comment(dict(found, body=text))
+
+    # diffity has no place for runs: the Review finds them from the progress notes
+    def record_run(self, run):
+        pass
+
+    def record_run_end(self, run_id, outcome):
+        pass
+
+    def runs(self):
+        return None
 
     def set_status(self, thread_id, status):
         self._find_thread(thread_id)

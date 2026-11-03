@@ -176,5 +176,7 @@ class Run:
         return self.fmt.wait() or self.agent.wait()
 
     def stop(self):
-        procs.stop_tree(self.agent)
+        # The formatter first: once the coding agent's stream ends, it would note
+        # the run as failed ("exited without finishing"). Dispatch writes the final notes.
         procs.stop_tree(self.fmt)
+        procs.stop_tree(self.agent)

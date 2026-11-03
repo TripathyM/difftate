@@ -7,6 +7,8 @@ Modules follow the contexts in GLOSSARY.md and ADR 0001:
   store     the store port and difftate's thread format
   diffity   the diffity store (an anti-corruption layer over diffity 0.9.5)
   memory    the memory store (tests)
+  local     the local store: difftate's own, in the git folder, and the review history
+  changes   the base, the review's branch and the changeset, from git
   dispatch  the loop: waiting threads, queued notes, one run at a time
   runfolder the run's folder, where dt-reply leaves the coding agent's replies
   prompt    the prompt for one run

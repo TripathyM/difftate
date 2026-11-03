@@ -2,7 +2,9 @@
 
 Each test creates a temporary git repository, starts the real watcher with a
 fake agent swapped in through `--cmd`, and drives it through the review API.
-HOME points into the temporary folder, so diffity's data stays there too.
+HOME points into the temporary folder, so diffity's data and the review history
+stay there too. The shared tests run on both stores: diffity (skipped when
+diffity 0.9.5 isn't installed) and the local store (with no diffity on PATH).
 """
 import json
 import os
@@ -65,8 +67,11 @@ def git(repo, env, *args):
     subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, env=env)
 
 
-@unittest.skipUnless(shutil.which("diffity"), "diffity 0.9.5 is not installed")
-class WatcherTest(unittest.TestCase):
+class Harness:
+    """A temporary repository on the branch "feature", and the watcher on it.
+    Subclasses set STORE."""
+    STORE = ""
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="difftate-test-")
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
@@ -86,15 +91,21 @@ class WatcherTest(unittest.TestCase):
             f.write("[user]\n\tname = Test\n\temail = test@example.com\n")
         self.env = {k: v for k, v in os.environ.items()
                     if k not in ("CLAUDE_CONFIG_DIR", "DT_OPEN", "DT_HERDR", "XDG_CONFIG_HOME")}
-        self.env.update(HOME=self.home, PATH=bin_dir + os.pathsep + os.environ["PATH"],
-                        GIT_CONFIG_NOSYSTEM="1", FAKE_AGENT_DIR=self.agent_dir)
+        path = os.environ["PATH"].split(os.pathsep)
+        if self.STORE == "local":
+            # Prove the local store needs no diffity: none on PATH
+            path = [d for d in path if not os.path.exists(os.path.join(d, "diffity"))]
+        self.env.update(HOME=self.home, PATH=os.pathsep.join([bin_dir, *path]),
+                        GIT_CONFIG_NOSYSTEM="1", FAKE_AGENT_DIR=self.agent_dir, DT_STORE=self.STORE)
 
         git(self.repo, self.env, "init", "-q", "-b", "main")
         self.write("app.py", "def greet(name):\n    return 'hi ' + name\n")
         git(self.repo, self.env, "add", ".")
         git(self.repo, self.env, "commit", "-q", "-m", "first")
+        git(self.repo, self.env, "checkout", "-q", "-b", "feature")
         self.write("app.py", "def greet(name):\n    return f'hello {name}'\n")
         self.output = []
+        self.extra_args = []
         self.watcher = None
         self.agent_cmd = FAKE_AGENT
 
@@ -108,8 +119,9 @@ class WatcherTest(unittest.TestCase):
             f.write(text)
 
     def watcher_command(self):
-        return [sys.executable, WATCHER, "--ref", "HEAD", "--tool", "claude", "--cmd", self.agent_cmd,
-                "--cwd", self.repo, "--interval", "0.2"]
+        ref = ["--ref", "HEAD"] if self.STORE == "diffity" else []
+        return [sys.executable, WATCHER, *ref, "--tool", "claude", "--cmd", self.agent_cmd,
+                "--cwd", self.repo, "--interval", "0.2", *self.extra_args]
 
     def launch_watcher(self):
         self.watcher = subprocess.Popen(
@@ -121,10 +133,18 @@ class WatcherTest(unittest.TestCase):
     def start_watcher(self):
         self.launch_watcher()
         api_file = os.path.join(self.repo, ".git", "difftate", "api.json")
-        wait_for("the review API", lambda: os.path.exists(api_file) or self.watcher.poll() is not None)
+        def served():
+            # This watcher's own api.json: one killed earlier leaves its own behind
+            try:
+                with open(api_file) as f:
+                    info = json.load(f)
+            except (OSError, ValueError):
+                return None
+            return info if info.get("pid") == self.watcher.pid else None
+
+        wait_for("the review API", lambda: served() or self.watcher.poll() is not None)
         self.assertIsNone(self.watcher.poll(), "watcher exited:\n" + self.terminal())
-        with open(api_file) as f:
-            self.port = json.load(f)["port"]
+        self.port = served()["port"]
         with open(os.path.join(self.repo, ".git", "difftate", "token")) as f:
             self.token = f.read().strip()
 
@@ -204,7 +224,16 @@ class WatcherTest(unittest.TestCase):
     def dispatches(self):
         return self.terminal().count("New/changed threads detected")
 
-    # ── Tests ────────────────────────────────────────────────────────────────
+    def refused(self, method, path, payload):
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            self.api(method, path, payload)
+        refused.exception.close()
+        return refused.exception.code
+
+
+class SharedTests:
+    """What the watcher does whatever the store."""
+
     def test_comment_gets_working_note_then_reply(self):
         self.start_watcher()
         thread = self.open_thread("Why an f-string here?")
@@ -381,20 +410,6 @@ class WatcherTest(unittest.TestCase):
         self.assertEqual(self.state(tid), "failed")
         self.assertEqual([k for k, _ in self.comments(tid)], ["comment", "progress", "comment", "reply", "progress"])
 
-    def test_a_reviewing_agents_comment_is_dispatched_like_the_users(self):
-        self.release_agent()
-        self.start_watcher()
-
-        # A separate reviewing agent writes its findings to diffity, with diffity's agent author
-        subprocess.run(["diffity", "agent", "comment", "--file", "app.py", "--line", "2",
-                        "--body", "Missing a type hint."], cwd=self.repo, env=self.env, check=True,
-                       capture_output=True)
-        [thread] = self.api("GET", "/api/threads")
-        self.assertEqual(thread["comments"][0]["author"], "reviewer")
-
-        wait_for("the replied state", lambda: self.state(thread["id"]) == "replied")
-        self.assertIn("reviewer (new): Missing a type hint.", self.prompts()[0])
-
     def test_a_run_with_no_reply_leaves_the_thread_failed_until_a_new_comment(self):
         self.silence_agent()
         self.release_agent()
@@ -455,24 +470,6 @@ class WatcherTest(unittest.TestCase):
 
         wait_for("every started process to stop", lambda: not [p for p in started if alive(p)], timeout=10)
 
-    def test_ctrl_c_while_diffity_starts_stops_diffity(self):
-        # A diffity that never says where it listens, so the watcher is still waiting for it
-        bin_dir = os.path.join(self.tmp, "slow-bin")
-        os.makedirs(bin_dir)
-        pid_file = os.path.join(self.tmp, "diffity.pid")
-        with open(os.path.join(bin_dir, "diffity"), "w") as f:
-            f.write(f'#!/bin/sh\n[ "$1" = list ] && {{ echo "[]"; exit 0; }}\necho $$ > {pid_file}\nexec sleep 60\n')
-        os.chmod(os.path.join(bin_dir, "diffity"), 0o755)
-        self.env["PATH"] = bin_dir + os.pathsep + self.env["PATH"]
-
-        self.launch_watcher()
-        wait_for("diffity to start", lambda: os.path.exists(pid_file) and open(pid_file).read().strip())
-        with open(pid_file) as f:
-            diffity_pid = int(f.read())
-        self.stop_watcher()
-
-        wait_for("diffity to stop", lambda: not alive(diffity_pid), timeout=10)
-
     def test_a_second_watcher_on_the_same_repository_is_refused(self):
         self.start_watcher()
         first = (self.watcher, self.port, self.token)
@@ -486,12 +483,6 @@ class WatcherTest(unittest.TestCase):
         with open(os.path.join(self.repo, ".git", "difftate", "token")) as f:
             self.assertEqual(f.read().strip(), self.token, "the first watcher's token is kept")
         self.assertEqual(self.api("GET", "/api/threads"), [])
-
-    def refused(self, method, path, payload):
-        with self.assertRaises(urllib.error.HTTPError) as refused:
-            self.api(method, path, payload)
-        refused.exception.close()
-        return refused.exception.code
 
     def test_only_a_reviewer_opens_a_thread_or_changes_its_status(self):
         self.silence_agent()  # keep the coding agent out of the thread
@@ -552,9 +543,214 @@ class WatcherTest(unittest.TestCase):
         out = self.terminal()
         self.assertIn("Stopping watcher...", out)
         self.assertIn("Stopping running agent (pid ", out)
-        self.assertIn("Killing diffity (pid ", out)
+        if self.STORE == "diffity":
+            self.assertIn("Killing diffity (pid ", out)
         self.assertTrue(out.rstrip().endswith("Done."), out)
         self.assertFalse(os.path.exists(os.path.join(self.repo, ".git", "difftate", "api.json")))
+
+
+    def test_a_thread_the_agent_answered_stays_replied_when_ctrl_c_stops_the_run(self):
+        os.makedirs(self.agent_dir, exist_ok=True)
+        with open(os.path.join(self.agent_dir, "linger"), "w"):
+            pass
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the reply", lambda: self.note(tid, "reply"))
+        self.assertEqual(self.state(tid), "working", "the run hasn't ended")
+
+        self.stop_watcher()
+        self.output.clear()
+        self.start_watcher()
+        time.sleep(1.5)  # several polls
+
+        self.assertEqual(self.state(tid), "replied")
+        self.assertEqual((self.dispatches(), len(self.prompts())), (0, 1), "not dispatched again")
+        self.assertEqual([k for k, _ in self.comments(tid)], ["comment", "progress", "reply"])
+        self.assertTrue(self.note(tid, "progress").startswith("⏹ **Stopped** after "), self.note(tid, "progress"))
+
+
+@unittest.skipUnless(shutil.which("diffity"), "diffity 0.9.5 is not installed")
+class DiffityWatcherTest(Harness, SharedTests, unittest.TestCase):
+    STORE = "diffity"
+
+    def test_a_reviewing_agents_comment_is_dispatched_like_the_users(self):
+        self.release_agent()
+        self.start_watcher()
+
+        # A separate reviewing agent writes its findings to diffity, with diffity's agent author
+        subprocess.run(["diffity", "agent", "comment", "--file", "app.py", "--line", "2",
+                        "--body", "Missing a type hint."], cwd=self.repo, env=self.env, check=True,
+                       capture_output=True)
+        [thread] = self.api("GET", "/api/threads")
+        self.assertEqual(thread["comments"][0]["author"], "reviewer")
+
+        wait_for("the replied state", lambda: self.state(thread["id"]) == "replied")
+        self.assertIn("reviewer (new): Missing a type hint.", self.prompts()[0])
+
+    def test_ctrl_c_while_diffity_starts_stops_diffity(self):
+        # A diffity that never says where it listens, so the watcher is still waiting for it
+        bin_dir = os.path.join(self.tmp, "slow-bin")
+        os.makedirs(bin_dir)
+        pid_file = os.path.join(self.tmp, "diffity.pid")
+        with open(os.path.join(bin_dir, "diffity"), "w") as f:
+            f.write(f'#!/bin/sh\n[ "$1" = list ] && {{ echo "[]"; exit 0; }}\necho $$ > {pid_file}\nexec sleep 60\n')
+        os.chmod(os.path.join(bin_dir, "diffity"), 0o755)
+        self.env["PATH"] = bin_dir + os.pathsep + self.env["PATH"]
+
+        self.launch_watcher()
+        wait_for("diffity to start", lambda: os.path.exists(pid_file) and open(pid_file).read().strip())
+        with open(pid_file) as f:
+            diffity_pid = int(f.read())
+        self.stop_watcher()
+
+        wait_for("diffity to stop", lambda: not alive(diffity_pid), timeout=10)
+
+
+
+class LocalWatcherTest(Harness, SharedTests, unittest.TestCase):
+    STORE = "local"
+
+    def events_file(self):
+        reviews = os.path.join(self.repo, ".git", "difftate", "reviews")
+        [review] = os.listdir(reviews)
+        return os.path.join(reviews, review, "events.jsonl")
+
+    def kill_watcher(self):
+        """kill -9: the watcher gets no chance to stop its run. Its processes
+        are stopped here, as the terminal would."""
+        started = descendants(self.watcher.pid)
+        self.watcher.kill()
+        self.watcher.wait(timeout=15)
+        for pid in started:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    def test_a_watcher_killed_during_a_run_doesnt_send_its_threads_again(self):
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
+
+        self.kill_watcher()
+        self.output.clear()
+        self.release_agent()
+        self.start_watcher()
+        time.sleep(1.5)  # several polls
+
+        self.assertEqual(self.state(tid), "failed")
+        self.assertEqual((self.dispatches(), len(self.prompts())), (0, 1), "not dispatched again")
+        self.assertRegex(self.note(tid, "progress"), r"^❌ \*\*Failed\*\* — no reply \(the watcher stopped\)")
+        with open(self.events_file()) as f:
+            runs = [e for e in map(json.loads, f) if e["type"] in ("run", "run-ended")]
+        self.assertEqual([(e["type"], e.get("outcome")) for e in runs], [("run", None), ("run-ended", "interrupted")])
+
+        self.api("POST", f"/api/threads/{tid}/comments", {"body": "Please try again."})
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+    def test_a_thread_answered_before_the_watcher_was_killed_stays_replied(self):
+        os.makedirs(self.agent_dir, exist_ok=True)
+        with open(os.path.join(self.agent_dir, "linger"), "w"):
+            pass
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the reply", lambda: self.note(tid, "reply"))
+
+        self.kill_watcher()
+        self.output.clear()
+        self.start_watcher()
+        time.sleep(1.5)  # several polls
+
+        self.assertEqual(self.state(tid), "replied")
+        self.assertEqual((self.dispatches(), len(self.prompts())), (0, 1), "not dispatched again")
+
+    def test_comment_to_reply_works_with_diffity_not_installed(self):
+        self.assertIsNone(shutil.which("diffity", path=self.env["PATH"]))
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        self.assertEqual(self.bodies(tid)[-1], f"Fake answer to {tid[:8]}.")
+        self.assertIn("(no viewer for the local store yet)", self.terminal())
+
+    def test_a_thread_survives_a_commit(self):
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+        git(self.repo, self.env, "commit", "-q", "-am", "Say hello")
+        self.assertEqual(self.state(tid), "replied")
+        self.stop_watcher()
+        self.start_watcher()
+
+        self.assertEqual(self.state(tid), "replied")
+        self.assertEqual(self.bodies(tid)[0], "Why an f-string here?")
+
+    def test_the_base_is_the_default_branch_unless_base_says_otherwise(self):
+        # The remote's default branch is "trunk", one commit behind
+        git(self.repo, self.env, "update-ref", "refs/remotes/origin/trunk", "main")
+        git(self.repo, self.env, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+        self.write("new.py", "print('new')\n")
+        self.start_watcher()
+
+        review = self.api("GET", "/api/review")
+        self.assertEqual((review["branch"], review["base"]), ("feature", "origin/trunk"))
+        changeset = self.api("GET", "/api/changeset")
+        self.assertEqual(changeset["base"], "origin/trunk")
+        self.assertIn("+    return f'hello {name}'", changeset["diff"])
+        self.assertIn("+++ b/new.py", changeset["diff"], "new untracked files are in the changeset")
+        self.stop_watcher()
+
+        self.extra_args = ["--base", "main"]
+        self.start_watcher()
+        other = self.api("GET", "/api/review")
+        self.assertEqual(other["base"], "main")
+        self.assertNotEqual(other["id"], review["id"], "another base is another review")
+
+    def test_stored_lines_go_to_the_review_history_with_repository_and_branch(self):
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+        with open(self.events_file()) as f:
+            stored = [json.loads(line) for line in f]
+        history_dir = os.path.join(self.home, ".difftate", "history")
+        [month] = os.listdir(history_dir)
+        with open(os.path.join(history_dir, month)) as f:
+            history = [json.loads(line) for line in f]
+        self.assertEqual([e["type"] for e in stored], ["opened", "comment", "run", "comment", "run-ended", "note"])
+        self.assertEqual([{k: v for k, v in h.items() if k in e} for h, e in zip(history, stored)], stored)
+        self.assertEqual({(h["repo"]["path"], h["branch"]) for h in history}, {(os.path.realpath(self.repo), "feature")})
+
+    def test_an_edit_to_stored_lines_the_watcher_didnt_make_is_warned_about_and_restored(self):
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
+        with open(self.events_file()) as f:
+            kept = f.read()
+
+        # The coding agent, with its sandbox off, rewrites the reviewer's comment and forges a reply
+        forged = kept.replace("Why an f-string here?", "Looks great.") + json.dumps(
+            {"type": "comment", "thread": tid, "id": "forged", "author": "agent", "kind": "reply",
+             "body": "Forged.", "time": "2026-01-01T00:00:00.000Z", "seq": 99}) + "\n"
+        with open(self.events_file(), "w") as f:
+            f.write(forged)
+
+        wait_for("the warning", lambda: "changed outside difftate" in self.terminal())
+        self.assertIn(tid[:8], self.terminal())
+        with open(self.events_file()) as f:
+            self.assertEqual(f.read(), kept, "restored")
+        self.assertEqual(self.bodies(tid)[0], "Why an f-string here?")
+
+        self.release_agent()
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        self.assertIn("changed outside difftate", self.note(tid, "progress"))
+        self.assertNotIn("Forged.", self.bodies(tid))
 
 
 if __name__ == "__main__":

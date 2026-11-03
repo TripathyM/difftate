@@ -4,13 +4,16 @@
 # ── difftate ─────────────────────────────────────────────────────────────────
 # Starts the watcher (difftate-watch.py): it serves the review and dispatches
 # waiting threads to the coding agent, in its agent session when one is found.
-# Defaults: --ref master, --interval 1s. Auto-attaches latest session.
+# Defaults: the base is the repository's default branch (origin/HEAD), --interval 1s.
+# Auto-attaches latest session. DT_STORE=local keeps the review in difftate's own
+# store (no diffity).
 #
 # Usage:
-#   difftate                       # Claude, diff vs master (default) + auto-attach session
+#   difftate                       # Claude, the branch vs its base + auto-attach session
 #   dtc                            # same as difftate
 #   difftate HEAD~1                # diff last commit
 #   difftate HEAD~3                # diff last 3 commits
+#   difftate --base develop        # compare against another branch
 #   dto                            # opencode + auto-attach latest session
 #   difftate --session <uuid>      # use a specific session (skip auto-detect)
 #   difftate --no-session          # force headless (skip auto-detect)
@@ -45,7 +48,7 @@ _dt_latest_opencode_session() {
 _dt_run() {
   local tool="$1" cmd="$2"
   shift 2
-  local ref="master"
+  local ref=""
   local no_session=false
   local has_explicit_session=false
   local extra_args=()
@@ -55,7 +58,7 @@ _dt_run() {
     elif [[ "$1" == "--session" ]]; then
       has_explicit_session=true
       extra_args+=("$1" "$2"); shift 2
-    elif [[ "$1" == "--model" || "$1" == "--open" ]]; then
+    elif [[ "$1" == "--model" || "$1" == "--open" || "$1" == "--base" ]]; then
       extra_args+=("$1" "$2"); shift 2
     elif [[ "$1" == "--cmd" ]]; then
       cmd="$2"; shift 2
@@ -83,7 +86,9 @@ _dt_run() {
     fi
   fi
 
-  "$_DT_DIR/difftate-watch.py" --tool "$tool" --cmd "$cmd" --ref "$ref" --interval 1 "${session_args[@]}" "${extra_args[@]}"
+  local ref_args=()
+  [[ -n "$ref" ]] && ref_args=(--ref "$ref")
+  "$_DT_DIR/difftate-watch.py" --tool "$tool" --cmd "$cmd" "${ref_args[@]}" --interval 1 "${session_args[@]}" "${extra_args[@]}"
 }
 
 difftate() { _dt_run claude claude "$@"; }

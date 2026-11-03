@@ -15,6 +15,9 @@ Controlled through FAKE_AGENT_DIR (a folder the test owns):
            the thread while the run is working
   rogue    a thread id: the agent also writes a reply to it straight into the
            run's folder, without dt-reply (an agent breaking the rules)
+  linger   while this file exists, the coding agent waits after its replies for
+           the file "finish" before the run ends, so a test can stop the
+           watcher between the two
   silent   while this file exists, the coding agent replies to no thread; when it
            lists run numbers ("2" or "1,3"), only in those runs
 """
@@ -82,6 +85,10 @@ def main():
             json.dump({"thread": target, "body": "A reply nobody asked for."}, f)
     for tid in ids if dt_reply else []:
         subprocess.run([dt_reply, tid, f"Fake answer to {tid}."], check=True, stdout=subprocess.DEVNULL)
+    if folder and os.path.exists(os.path.join(folder, "linger")):
+        deadline = time.time() + GATE_TIMEOUT_S
+        while not os.path.exists(os.path.join(folder, "finish")) and time.time() < deadline:
+            time.sleep(0.05)
     emit({"type": "assistant", "message": {"content": [{"type": "text", "text": f"Replied to {len(ids)} thread(s)."}]}})
     emit({"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.0123, "modelUsage": {}})
 

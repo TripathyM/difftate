@@ -123,7 +123,7 @@ First, open a new terminal (or run `source ~/.zshrc`). Then `cd` into a git repo
 
 | To review | Run |
 |---|---|
-| The whole branch, against master | `difftate` |
+| The whole branch, against the default branch (`origin/HEAD`) | `difftate` |
 | The whole branch, against main | `difftate main` |
 | The last commit | `difftate HEAD~1` |
 | The last 3 commits (any number) | `difftate HEAD~3` |

@@ -1,5 +1,6 @@
-"""The watcher: one per review. Starts or reuses diffity, serves the review API,
-and dispatches waiting threads to the coding agent until Ctrl+C.
+"""The watcher: one per review. Opens the review in its store (diffity, started or
+reused; or difftate's own local store with DT_STORE=local), serves the review
+API, and dispatches waiting threads to the coding agent until Ctrl+C.
 
 The difftate / dtc / dto shell functions start it (difftate.zsh).
 """
@@ -9,23 +10,30 @@ import signal
 import subprocess
 import sys
 
-from . import diffity, viewer
+from . import changes, diffity, viewer
 from .agent import AGENTS
 from .api import ReviewApi, running_watcher
-from .dispatch import Dispatch
+from .dispatch import Dispatch, now
+from .local import LocalStore
 from .review import Review
+from .store import StoreError
 
-USAGE = """difftate-watch.py — Start diffity and poll for comments, dispatching them to the coding agent.
+STORES = ("diffity", "local")
+
+USAGE = """difftate-watch.py — Open the review and poll for comments, dispatching them to the coding agent.
 (Normally run via the difftate / dtc / dto shell functions.)
 
 Usage:
-  difftate-watch.py --ref <git-ref> --tool <claude|opencode> [options]
+  difftate-watch.py --tool <claude|opencode> [options]
 
 Required:
-  --ref <ref>            Git ref for diffity (master, HEAD~3, branch-name)
   --tool <tool>          AI tool to dispatch to (claude, opencode)
 
 Optional:
+  --base <branch>        The branch the review compares against (default: the repository's
+                         default branch, origin/HEAD; else main or master)
+  --ref <ref>            Git ref for diffity's view (default: the base; HEAD~3, HEAD, ...).
+                         The local store shows all changes against the base
   --session <id>         Resume an existing session (full conversation context)
   --cwd <path>           Repo path for headless mode (default: current directory)
   --interval <seconds>   Polling interval in seconds (default: 1)
@@ -37,20 +45,24 @@ Optional:
                          if Herdr can't be reached it falls back to the browser
   --help                 Show this help
 
+Environment:
+  DT_STORE               diffity (default) or local: difftate's own store, in the
+                         repository's git folder, with no diffity
+
 Examples:
   # Claude Code — headless (no session context)
-  difftate-watch.py --ref master --tool claude --interval 1
+  difftate-watch.py --tool claude --interval 1
 
-  # Claude Code — resume mode (full session context)
-  difftate-watch.py --ref master --tool claude --session <full-uuid> --interval 1
+  # Claude Code — resume mode (full session context), against the develop branch
+  difftate-watch.py --base develop --tool claude --session <full-uuid> --interval 1
 
-  # OpenCode — headless
-  difftate-watch.py --ref master --tool opencode --interval 1
+  # OpenCode — headless, the last 3 commits
+  difftate-watch.py --ref HEAD~3 --tool opencode --interval 1
 
   # OpenCode — resume mode
-  difftate-watch.py --ref master --tool opencode --session <session-id> --interval 1"""
+  difftate-watch.py --tool opencode --session <session-id> --interval 1"""
 
-FLAGS = {"--ref": "ref", "--tool": "tool", "--session": "session", "--model": "model", "--cwd": "cwd",
+FLAGS = {"--ref": "ref", "--base": "base", "--tool": "tool", "--session": "session", "--model": "model", "--cwd": "cwd",
          "--interval": "interval", "--cmd": "cmd", "--open": "open"}
 
 
@@ -62,7 +74,7 @@ class Exit(Exception):
 
 
 def parse(argv):
-    opts = {"ref": "", "tool": "", "session": "", "model": "", "cwd": "", "interval": "1", "cmd": "",
+    opts = {"ref": "", "base": "", "store": os.environ.get("DT_STORE") or "diffity", "tool": "", "session": "", "model": "", "cwd": "", "interval": "1", "cmd": "",
             "open": os.environ.get("DT_OPEN") or "browser"}
     i = 0
     while i < len(argv):
@@ -73,13 +85,13 @@ def parse(argv):
             raise Exit(1, f"Unknown flag: {arg}\n{USAGE}" if arg not in FLAGS else f"Error: {arg} needs a value")
         opts[FLAGS[arg]] = argv[i + 1]
         i += 2
-    if not opts["ref"]:
-        raise Exit(1, "Error: --ref is required")
     if not opts["tool"]:
         raise Exit(1, "Error: --tool is required")
     opts["cwd"] = opts["cwd"] or os.getcwd()
     if opts["open"] not in viewer.OPEN_IN:
         raise Exit(1, f"Error: --open (or DT_OPEN) must be browser, herdr or both, not '{opts['open']}'")
+    if opts["store"] not in STORES:
+        raise Exit(1, f"Error: DT_STORE must be diffity or local, not '{opts['store']}'")
     if opts["tool"] not in AGENTS:
         raise Exit(1, f"Error: unsupported tool '{opts['tool']}'. Supported: {' '.join(AGENTS)}")
     try:
@@ -159,18 +171,34 @@ class Watcher:
     def start(self):
         o = self.opts
         try:
-            self.diffity = diffity.launch(o["ref"], o["cwd"])
-        except diffity.DiffityStartError as e:
-            raise Exit(1, str(e))
-        store = self.diffity.store()
+            base = changes.resolve_base(o["cwd"], o["base"])
+        except changes.ChangesError as e:
+            # diffity shown an explicit --ref needs no base (as before the local store)
+            if o["store"] == "local" or o["base"] or not o["ref"]:
+                raise Exit(1, str(e))
+            base = None
+        if o["store"] == "local":
+            store, problem = self.local_store(base), lambda: None
+        else:
+            try:
+                self.diffity = diffity.launch(o["ref"] or base, o["cwd"])
+            except diffity.DiffityStartError as e:
+                raise Exit(1, str(e))
+            store, problem = self.diffity.store(), self.diffity.problem
         review = Review(store)
-        review.recover_runs()
-        self.api = ReviewApi(review, self.folder, self.root)
+        try:
+            interrupted = review.recover_runs()
+        except StoreError as e:
+            raise Exit(1, f"Error: could not read the review ({e})")
+        self.api = ReviewApi(review, self.folder, self.root, lambda: changes.changeset(o["cwd"], base))
         self.api.start()
 
-        url = self.diffity.viewer_url(o["ref"])
-        print(f"  → {url}")
-        viewer.open_review(o["open"], url, self.root)
+        if self.diffity:
+            url = self.diffity.viewer_url(o["ref"] or base)
+            print(f"  → {url}")
+            viewer.open_review(o["open"], url, self.root)
+        else:
+            print(f"  → review API {self.api.address().url} (no viewer for the local store yet)")
         print()
         print(f"Watching for comments every {o['interval']:g}s")
         print(f"  Tool: {o['tool']} (cmd: {self.agent.cmd})")
@@ -182,7 +210,25 @@ class Watcher:
         print("Press Ctrl+C to stop")
         print()
         self.dispatch = Dispatch(review, self.agent, o["cwd"], self.folder, o["interval"],
-                                 self.api.address(), self.diffity.problem)
+                                 self.api.address(), problem)
+        self.dispatch.close_interrupted(interrupted)
+
+    def local_store(self, base):
+        o = self.opts
+        try:
+            branch = changes.review_branch(o["cwd"], base)
+        except changes.ChangesError as e:
+            raise Exit(1, str(e))
+        if o["ref"]:
+            print(f"Views come later for the local store: showing all changes, not just {o['ref']}")
+        print(f"Local store: the review of {branch} against {base}")
+        return LocalStore.open(self.folder, o["cwd"], branch, base, on_tamper=self.tampered)
+
+    def tampered(self, thread_ids):
+        names = ", ".join(t[:8] for t in thread_ids) or "no thread named"
+        print(f"[{now()}] Warning: the stored review was changed outside difftate ({names}): restored it")
+        if self.dispatch:
+            self.dispatch.warn_tampered(thread_ids)
 
     def stop(self, say=True):
         """Stop the run, every process it started, diffity (when started here) and the API."""

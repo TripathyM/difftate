@@ -1,11 +1,16 @@
 """Dispatch: send the waiting threads to the coding agent, one run at a time.
 
 While a run works, threads that become waiting get a queued note right away.
-The run's progress notes are kept by lib/stream_fmt.py through the review API.
+Before a run starts, Dispatch posts a progress note on each of its threads, and
+the store keeps the run (which comments it was sent). lib/stream_fmt.py edits
+the notes through the review API while the run works.
 The coding agent answers with dt-reply into the run's folder, and Dispatch posts each
 answer as a reply, during the run and when it ends.
-When the run ends, a thread it didn't reply to is failed ("no reply"): its
-progress note says so, and it isn't sent again until the reviewer comments.
+When the run ends (done, failed, or stopped by Ctrl+C), Dispatch writes each
+progress note's final line. A thread the run didn't reply to is failed ("no
+reply"): its progress note says so, and it isn't sent again until the reviewer comments.
+A run whose watcher was killed is ended by the next watcher: its threads with
+no reply are failed the same way.
 """
 import json
 import os
@@ -18,6 +23,9 @@ from .store import StoreError
 
 QUEUED_NOTE = "🕒 **Queued** — agent is busy with another comment, will pick this up next."
 PICKED_UP_NOTE = "🕒 **Queued** — picked up by the next run (below)."
+THINKING_NOTE = "⏳ **Thinking…** (0s)"
+TAMPERED = ("⚠️ The stored review was changed outside difftate during this run "
+            "(only difftate may write it): difftate restored it.")
 
 
 def now():
@@ -37,6 +45,8 @@ class Dispatch:
         self.run_folder = None  # where the coding agent leaves its replies
         self.reply_to = frozenset()  # the threads the run in progress may reply to
         self.started = None  # when the run in progress started
+        self.notes = {}  # thread id: its progress note, for the run in progress
+        self.tampered = set()  # threads whose stored lines were changed outside difftate during the run
 
     def _open_threads(self):
         try:
@@ -63,6 +73,7 @@ class Dispatch:
         ids = [t["id"] for t in waiting]
         new_ids = [cid for t in waiting for cid in self.review.unsent(t)]
         self.reply_to = frozenset(t["id"] for t in open_threads)
+        self.started = time.time()
         self.run_folder = RunFolder.create(self.reply_to)
         access = RunAccess(write=[self.run_folder.path], deny_write=[self.review_folder], deny_read=[self.api.token_file])
         argv, said = self.agent.command(prompt.build(open_threads, ids, new_ids), access)
@@ -71,19 +82,21 @@ class Dispatch:
         # A thread that ends in its queued note gets that note back as its progress note
         queued = {t["id"]: t["comments"][-1]["id"] for t in waiting if t["comments"][-1]["kind"] == "queued"}
         self.close_queued_notes(waiting, queued)
-        # The progress notes go through the review API. Only the formatter gets the
-        # token file, never the coding agent.
-        fmt_env = dict(os.environ, **self.api.env(), DT_THREAD_IDS=",".join(ids),
-                       DT_QUEUED_NOTES=json.dumps(queued))
+        self.notes = self.post_progress_notes(waiting, queued)
+        # The formatter edits the progress notes through the review API. Only the
+        # formatter gets the token file, never the coding agent.
+        fmt_env = dict(os.environ, **self.api.env(), DT_NOTES=json.dumps(self.notes))
         agent_env = dict(os.environ, DT_RUN_DIR=self.run_folder.path)
-        self.started = time.time()
-        self.review.start_run(waiting)
+        try:
+            self.review.start_run(waiting)
+        except StoreError as e:
+            print(f"[{now()}] Warning: could not record the run ({e}): a restarted watcher may send it again")
         try:
             self.run = Run(self.agent.name, argv, self.cwd, fmt_env, agent_env)
         except OSError as e:
             # A prompt too long for the command line, or a --cmd that can't run any more
             print(f"[{now()}] Warning: could not start {self.agent.name}: {e}")
-            self.end_run(f" (could not start {self.agent.name}: {e})")
+            self.end_run(f" (could not start {self.agent.name}: {e})", outcome="failed")
             return
         # Threads that arrive meanwhile get a queued note right away. Runs stay one at a time.
         while self.run.running():
@@ -95,7 +108,7 @@ class Dispatch:
         if code:
             print(f"[{now()}] Warning: dispatch to {self.agent.name} failed (exit {code})")
         self.run = None
-        self.end_run()
+        self.end_run(outcome="failed" if code else "done")
 
     def post_replies(self, last_try=False):
         """Post the answers the coding agent left in the run's folder as replies.
@@ -117,22 +130,77 @@ class Dispatch:
                 continue
             self.run_folder.posted(name)
 
-    def end_run(self, why="", say=True):
+    def post_progress_notes(self, threads, queued):
+        """A progress note on each of <threads> ({thread id: note id}). A thread
+        that ends in its queued note (<queued>) gets that note back."""
+        notes = {}
+        for t in threads:
+            try:
+                if t["id"] in queued:
+                    note = self.review.edit_note(queued[t["id"]], "progress", THINKING_NOTE)
+                else:
+                    note = self.review.add_comment(t["id"], "progress", THINKING_NOTE)
+                notes[t["id"]] = note["id"]
+            except StoreError as e:
+                print(f"[{now()}] Warning: could not post the progress note on thread {t['id'][:8]} ({e})")
+        return notes
+
+    def end_run(self, why="", say=True, stopped=False, outcome="done"):
         """The run ended: its last replies are posted, the threads it didn't reply
-        to are failed, and their progress notes say so."""
+        to are failed, and every progress note gets its final line."""
         self.post_replies(last_try=True)
         if self.run_folder:
             self.run_folder.remove()
             self.run_folder = None
         self.reply_to = frozenset()
+        notes, self.notes = self.notes, {}
+        secs = int(time.time() - self.started)
         try:
-            failed = self.review.end_run()
+            failed = self.review.end_run("stopped" if stopped else outcome)
+            threads = {t["id"]: t for t in self.review.threads()}
         except StoreError:
+            self.tampered = set()
             return
         for t in failed:
             if say:
                 print(f"[{now()}] No reply to thread {t['id'][:8]} — it waits for your next comment")
-            self.note_no_reply(t, int(time.time() - self.started), why)
+            self.note_no_reply(t, secs, why, notes.get(t["id"]))
+        failed_ids = {t["id"] for t in failed}
+        for tid, note_id in notes.items():
+            if tid not in failed_ids and tid in threads:
+                self.finish_note(threads[tid], note_id, secs, stopped)
+        self.tampered = set()
+
+    def finish_note(self, thread, note_id, secs, stopped):
+        """The final line of a progress note on a thread the run didn't fail. It is
+        the formatter's, unless the formatter didn't get to finish it."""
+        note = next((c for c in thread["comments"] if c["id"] == note_id), None)
+        if note is None:
+            return
+        body = note["body"]
+        if body.startswith("⏳"):
+            body = f"⏹ **Stopped** after {secs}s (the watcher stopped)" if stopped else f"✅ **Done** in {secs}s"
+        self._final(thread["id"], note_id, body)
+
+    def _final(self, thread_id, note_id, body):
+        if thread_id in self.tampered:
+            body += f"\n\n{TAMPERED}"
+        try:
+            self.review.edit_note(note_id, "progress", body, final=True)
+        except StoreError:
+            pass
+
+    def close_interrupted(self, threads):
+        """<threads> were in a run whose watcher was killed, and got no reply."""
+        for t in threads:
+            print(f"[{now()}] No reply to thread {t['id'][:8]} — the watcher stopped during its run")
+            self.note_no_reply(t, None, " (the watcher stopped)")
+
+    def warn_tampered(self, thread_ids):
+        """Stored lines were changed outside difftate (and restored): a run in
+        progress says so in the final progress notes of the threads they name."""
+        if self.notes:
+            self.tampered.update(thread_ids)
 
     def stop_run(self, say=True):
         """Stop the run in progress, and every process it started. A run whose
@@ -144,7 +212,7 @@ class Dispatch:
             self.run.stop()
         self.run = None
         if self.run_folder:
-            self.end_run(" (the watcher stopped)", say=False)
+            self.end_run(" (the watcher stopped)", say=False, stopped=True)
 
     def post_queued_notes(self):
         posted = []
@@ -177,17 +245,21 @@ class Dispatch:
         since = len(kinds) - kinds[::-1].index("progress") if "progress" in kinds else 0
         return "queued" in kinds[since:]
 
-    def note_no_reply(self, thread, secs, why=""):
-        """The run's progress note on <thread> ends as failed, with "no reply" (and <why>)."""
-        note = next((c for c in reversed(thread["comments"]) if c["kind"] == "progress"), None)
-        failed = f"❌ **Failed** after {secs}s — no reply{why}"
+    def note_no_reply(self, thread, secs, why="", note_id=None):
+        """The run's progress note on <thread> (<note_id>; a new one when it has
+        none) ends as failed, with "no reply" (and <why>). <secs> is None when
+        the run's length isn't known."""
+        note = next((c for c in thread["comments"] if c["id"] == note_id), None) if note_id else None
+        failed = f"❌ **Failed**{'' if secs is None else f' after {secs}s'} — no reply{why}"
         try:
             if note is None:
-                self.review.add_comment(thread["id"], "progress", failed)
+                note = self.review.add_comment(thread["id"], "progress", failed)
+                body = failed
             elif note["body"].startswith("❌"):
                 # The run already failed: keep why, and add that this thread got no reply
-                self.review.edit_note(note["id"], "progress", f"{note['body']}\n\nNo reply{why}.")
+                body = f"{note['body']}\n\nNo reply{why}."
             else:
-                self.review.edit_note(note["id"], "progress", failed)
+                body = failed
         except StoreError:
-            pass
+            return
+        self._final(thread["id"], note["id"], body)

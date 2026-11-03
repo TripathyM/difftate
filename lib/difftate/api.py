@@ -4,7 +4,10 @@ Viewers and the progress notes reach the review only through it. Every request
 needs the token from the repository's difftate folder (`<git dir>/difftate/token`,
 readable only by the user); a request without it gets 401.
 
-  GET   /api/review                     start or reuse the review: {"id"}
+  GET   /api/review                     start or reuse the review: {"id"} (the local
+                                        store adds "branch" and "base")
+  GET   /api/changeset                  the review's changeset, from git: {"base",
+                                        "commit" (where the branch left the base), "diff"}
   GET   /api/threads[?status=open]      list threads
   POST  /api/threads                    open a thread: {"anchor", "body", "author"?}
   POST  /api/threads/<id>/comments      add a comment: {"kind"?, "body"}
@@ -41,6 +44,7 @@ import urllib.parse
 from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .changes import ChangesError
 from .store import StoreError
 
 MAX_BODY = 1 << 20
@@ -87,8 +91,9 @@ def _write_private(path, text):
 
 
 class ReviewApi:
-    def __init__(self, review, folder, root):
+    def __init__(self, review, folder, root, changeset):
         self.review = review
+        self.changeset = changeset  # () -> the review's changeset
         self.folder = folder
         self.root = root
         self.token = secrets.token_urlsafe(32)
@@ -102,7 +107,7 @@ class ReviewApi:
     def start(self):
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
         os.chmod(self.folder, 0o700)
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self.review, self.token))
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self.review, self.token, self.changeset))
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         _write_private(self.token_file, self.token + "\n")
@@ -129,7 +134,7 @@ class ReviewApi:
                     pass
 
 
-def _handler(review, token):
+def _handler(review, token, changeset):
     expected = f"Bearer {token}".encode()
 
     def need(payload, key):
@@ -146,6 +151,7 @@ def _handler(review, token):
 
     routes = [
         ("GET", r"/api/review", lambda q, p: review.review()),
+        ("GET", r"/api/changeset", lambda q, p: changeset()),
         ("GET", r"/api/threads", lambda q, p: review.threads((q.get("status") or [None])[0])),
         ("POST", r"/api/threads", lambda q, p: review.open_thread(
             fields(p).get("anchor"), need(p, "body"), fields(p).get("author", "reviewer"))),
@@ -199,6 +205,8 @@ def _handler(review, token):
                 result = fn(urllib.parse.parse_qs(url.query), payload, *match.groups())
             except StoreError as e:
                 return self._send(e.status, {"error": str(e)})
+            except ChangesError as e:
+                return self._send(502, {"error": str(e)})
             self._send(200, result)
 
         do_GET = do_POST = do_PATCH = _handle
