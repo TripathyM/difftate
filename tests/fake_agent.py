@@ -20,6 +20,8 @@ Controlled through FAKE_AGENT_DIR (a folder the test owns):
            watcher between the two
   silent   while this file exists, the coding agent replies to no thread; when it
            lists run numbers ("2" or "1,3"), only in those runs
+  error    while this file exists, the run ends with an error result whose
+           message is the file's text
 """
 import json
 import os
@@ -90,6 +92,11 @@ def main():
         while not os.path.exists(os.path.join(folder, "finish")) and time.time() < deadline:
             time.sleep(0.05)
     emit({"type": "assistant", "message": {"content": [{"type": "text", "text": f"Replied to {len(ids)} thread(s)."}]}})
+    error = os.path.join(folder, "error") if folder else ""
+    if error and os.path.exists(error):
+        with open(error) as f:
+            emit({"type": "result", "subtype": "error", "is_error": True, "result": f.read(), "modelUsage": {}})
+        return
     emit({"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.0123, "modelUsage": {}})
 
 
