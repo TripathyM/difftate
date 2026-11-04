@@ -241,11 +241,9 @@ class Watcher:
         self.api.start()
 
         self.base = base
-        if self.diffity:
-            print(f"  → {self.diffity.viewer_url(o['ref'] or base)}")
-        else:
-            print(f"  → {self.api.page_url()}")
-        self.open_viewer(o["open"])
+        url = self.viewer_url()
+        print(f"  → {url}")
+        self.open_viewer(o["open"], url)
         print()
         print(f"Watching for comments every {o['interval']:g}s")
         print(f"  Tool: {o['tool']} (cmd: {self.agent.cmd})")
@@ -260,12 +258,16 @@ class Watcher:
                                  self.api.address(), problem)
         self.dispatch.close_interrupted(interrupted)
 
-    def open_viewer(self, where):
-        """Open the review in the viewer (<where>: browser, herdr or both). Viewers
-        show the API's view; diffity's browser viewer shows only its own ref."""
-        # Without diffity, both read the review API: the Review tab, and difftate's own page
-        url = self.diffity.viewer_url(self.opts["ref"] or self.base) if self.diffity else self.api.page_url()
-        viewer.open_review(where, url, self.root)
+    def viewer_url(self):
+        """The browser viewer's link: diffity's, or difftate's own page with a new
+        single-use launch code (it never carries the review token)."""
+        return self.diffity.viewer_url(self.opts["ref"] or self.base) if self.diffity else self.api.page_url()
+
+    def open_viewer(self, where, url=None):
+        """Open the review in the viewer (<where>: browser, herdr or both), at <url>
+        (default: a new link). Viewers show the API's view; diffity's browser viewer
+        shows only its own ref. Without diffity, both read the review API."""
+        viewer.open_review(where, url or self.viewer_url(), self.root)
 
     def view_shown(self, view, open_in):
         """A viewer, or another `difftate` call, switched the view."""

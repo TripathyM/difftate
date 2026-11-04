@@ -53,10 +53,16 @@ else gets 403. Only notes can be edited (403 otherwise). Errors are
 `<git dir>/difftate/api.json` says where the API runs: {"port", "pid", "root"}.
 
 The same server serves difftate's own browser viewer (lib/difftate/web), a client of
-this API like any other: GET /?token=<token> is the page, and its scripts are
-/app.js?token=<token> and /diff.js?token=<token>. Without the token they get 401 too.
+this API like any other, which never sees the token (a coding agent can read the
+browser's history). The watcher opens it with a single-use launch code:
+GET /?launch=<code> trades the code for an HttpOnly, SameSite=Strict cookie and
+redirects to /, after which the code is refused. The page (/) and its scripts
+(/app.js, /diff.js) need that cookie; API requests take it instead of the token only
+with the header "X-Difftate: page" (which another site's page can't send without
+asking) and, when the browser says, the API's own Origin. Anything else gets 401.
 """
 import hmac
+import http.cookies
 import json
 import os
 import re
@@ -174,6 +180,40 @@ class ShownView:
         return {"view": view}
 
 
+class PageLogin:
+    """How difftate's browser page gets in without the token: single-use launch
+    codes, each traded once for the page's cookie."""
+
+    def __init__(self):
+        self.secret = secrets.token_urlsafe(32)  # the cookie's value: not the token
+        self._codes = set()
+        self._lock = threading.Lock()
+
+    def new_code(self):
+        code = secrets.token_urlsafe(24)
+        with self._lock:
+            self._codes.add(code)
+        return code
+
+    def trade(self, code):
+        """True once for each code made here; the code is then spent."""
+        with self._lock:
+            for known in self._codes:
+                if hmac.compare_digest(known.encode(), code.encode()):
+                    self._codes.discard(known)
+                    return True
+        return False
+
+    def holds_cookie(self, name, header):
+        """Whether a request's Cookie header carries the page's cookie."""
+        try:
+            jar = http.cookies.SimpleCookie(header or "")
+        except http.cookies.CookieError:
+            return False
+        given = jar[name].value if name in jar else ""
+        return hmac.compare_digest(given.encode(), self.secret.encode())
+
+
 class ReviewApi:
     def __init__(self, review, folder, root, changeset, shown):
         self.review = review
@@ -182,6 +222,7 @@ class ReviewApi:
         self.folder = folder
         self.root = root
         self.token = secrets.token_urlsafe(32)
+        self.login = PageLogin()
         self.server = None
         self.token_file = os.path.join(folder, "token")
         self.api_file = os.path.join(folder, "api.json")
@@ -190,13 +231,13 @@ class ReviewApi:
         return ApiAddress(f"http://127.0.0.1:{self.server.server_address[1]}", self.token_file)
 
     def page_url(self):
-        """The browser viewer's page, with the token."""
-        return f"{self.address().url}/?token={self.token}"
+        """A link to the browser viewer, with a new single-use launch code."""
+        return f"{self.address().url}/?launch={self.login.new_code()}"
 
     def start(self):
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
         os.chmod(self.folder, 0o700)
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self.review, self.token, self.changeset, self.shown))
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self.review, self.token, self.changeset, self.shown, self.login))
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         _write_private(self.token_file, self.token + "\n")
@@ -223,7 +264,7 @@ class ReviewApi:
                     pass
 
 
-def _handler(review, token, changeset, shown):
+def _handler(review, token, changeset, shown, login):
     expected = f"Bearer {token}".encode()
 
     def need(payload, key):
@@ -284,31 +325,49 @@ def _handler(review, token, changeset, shown):
             self.end_headers()
             self.wfile.write(data)
 
-        def _page(self, url):
-            """The browser viewer's files: the token comes in the query, as a page
-            and its scripts can't send a header."""
-            def text(status, content_type, body):
-                self._send_bytes(status, content_type, body.encode(), PAGE_HEADERS.items())
+        def _cookie_name(self):
+            # Cookies don't keep ports apart: one name per watcher's port
+            return f"difftate-{self.server.server_address[1]}"
 
-            given = (urllib.parse.parse_qs(url.query).get("token") or [""])[0].encode()
-            if not hmac.compare_digest(given, token.encode()):
-                return text(401, "text/plain; charset=utf-8",
-                            "difftate: missing or wrong token. Open the link the watcher printed.\n")
+        def _page_cookie(self):
+            return login.holds_cookie(self._cookie_name(), self.headers.get("Cookie"))
+
+        def _from_page(self):
+            """An API request from difftate's own page: its cookie, its header, and
+            no other site's origin."""
+            origin = self.headers.get("Origin")
+            own = f"http://127.0.0.1:{self.server.server_address[1]}"
+            return (self.headers.get("X-Difftate") == "page" and origin in (None, own)
+                    and self._page_cookie())
+
+        def _page(self, url):
+            """The browser viewer's files, for the page's cookie; a launch code gets it."""
+            def text(status, content_type, body, headers=()):
+                self._send_bytes(status, content_type, body.encode(), [*PAGE_HEADERS.items(), *headers])
+
+            refused = "difftate: open the link a running difftate prints (each link opens the page once).\n"
+            code = urllib.parse.parse_qs(url.query).get("launch")
+            if url.path == "/" and code and self.command == "GET":
+                if not login.trade(code[0]):
+                    return text(401, "text/plain; charset=utf-8", refused)
+                cookie = f"{self._cookie_name()}={login.secret}; Path=/; HttpOnly; SameSite=Strict"
+                return text(303, "text/plain; charset=utf-8", "", [("Location", "/"), ("Set-Cookie", cookie)])
+            if not self._page_cookie():
+                return text(401, "text/plain; charset=utf-8", refused)
             if url.path not in PAGE_FILES:
                 return text(404, "text/plain; charset=utf-8", "not found\n")
             if self.command != "GET":
                 return text(405, "text/plain; charset=utf-8", "method not allowed\n")
             path, content_type = PAGE_FILES[url.path]
             with open(path, encoding="utf-8") as f:
-                page = f.read()
-            text(200, content_type, page.replace("{{token}}", urllib.parse.quote(token, safe="")))
+                text(200, content_type, f.read())
 
         def _handle(self):
             url = urllib.parse.urlsplit(self.path)
             if not url.path.startswith("/api/"):
                 return self._page(url)
             given = (self.headers.get("Authorization") or "").encode()
-            if not hmac.compare_digest(given, expected):
+            if not hmac.compare_digest(given, expected) and not self._from_page():
                 return self._send(401, {"error": "missing or wrong token"})
             matches = [(m, rx.match(url.path), fn) for m, rx, fn in routes]
             matches = [(m, match, fn) for m, match, fn in matches if match]
