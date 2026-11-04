@@ -360,12 +360,17 @@ class Code:
                                     1 if m[4] is None else int(m[4])) for m in HUNK.finditer(out)]
         return self._diffs[(a, b)]
 
+    def checked_out(self):
+        """What a review of the checkout now would be of (review_branch), or None
+        when git can't say."""
+        try:
+            return review_branch(self.cwd, self.base)
+        except ChangesError:
+            return None
+
     def on_branch(self):
         """Whether the review's branch (or the commit standing in for it) is checked out."""
-        try:
-            return review_branch(self.cwd, self.base) == self.branch
-        except ChangesError:
-            return False
+        return self.checked_out() == self.branch
 
     def snapshot(self, anchor, view=""):
         """The snapshot for a new anchor written in <view>, and the code on its lines

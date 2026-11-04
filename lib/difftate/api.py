@@ -5,14 +5,18 @@ needs the token from the repository's difftate folder (`<git dir>/difftate/token
 readable only by the user); a request without it gets 401.
 
   GET   /api/review                     start or reuse the review of the checked-out
-                                        branch: {"id", "branch", "base"}. The watcher
-                                        follows the branch, so they change after a checkout
+                                        branch: {"id", "branch", "base", "waitingForRun",
+                                        "checkedOut"}. The watcher follows the branch, so
+                                        they change after a checkout; until a run in
+                                        progress ends, "waitingForRun" is true and
+                                        "checkedOut" names the branch it moves to
   GET   /api/view                       the view viewers show: {"view"}
   PUT   /api/view                       show another view: {"view", "open"?: browser|herdr|both
                                         (also open the viewer on it)}
   GET   /api/changeset[?view=<view>]    the review's changeset in the view (default: the
                                         one viewers show), from git: {"view", "base",
-                                        "commit" (where the branch left the base), "diff"}
+                                        "commit" (where the branch left the base), "diff",
+                                        "waitingForRun", "checkedOut" (as /api/review)}
   GET   /api/threads[?status=open][&view=<view>]
                                         list threads; with a view, each anchor's lines
                                         are where its code is in that view
@@ -55,8 +59,9 @@ opens a thread or sets its status, and must be "reviewer" (the default): anyone
 else gets 403. Only notes can be edited (403 otherwise). Errors are
 {"error": <message>} with status 400, 403, 404, 409 or 502. While another branch is
 checked out and a run keeps the watcher on this review, opening a thread or
-marking a file viewed gets 409: the watcher moves to that branch's review once
-the run ends.
+marking a file viewed gets 409, and every thread with an anchor is listed with
+"inView": false and its own lines (the code on disk is the other branch's): the
+watcher moves to that branch's review once the run ends.
 
 A viewed file belongs to the review, like a thread: it stays viewed in every
 view, after a reload and after a commit, until its diff in all changes changes
@@ -312,7 +317,7 @@ def _handler(current, token, changeset, shown, login):
         ("GET", r"/api/review", lambda q, p: current().review()),
         ("GET", r"/api/view", lambda q, p: {"view": shown.current()}),
         ("PUT", r"/api/view", lambda q, p: shown.switch(fields(p).get("view", ""), open_in(p))),
-        ("GET", r"/api/changeset", lambda q, p: changeset(view_of(q))),
+        ("GET", r"/api/changeset", lambda q, p: dict(changeset(view_of(q)), **current().waiting())),
         ("GET", r"/api/threads", lambda q, p: current().threads(
             (q.get("status") or [None])[0], shown.check(q["view"][0]) if "view" in q else None)),
         ("POST", r"/api/threads", lambda q, p: current().open_thread(

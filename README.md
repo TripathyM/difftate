@@ -58,7 +58,7 @@ Without `--session`, it attaches the latest agent session for the current folder
 
 **The base** is the repository's default branch (`origin/HEAD`; without one, a local `main` or `master`), unless `--base` gives another. It used to be `master`. A review is one branch against its base, like a pull request; with a detached HEAD, or on the base branch itself, the current commit stands in for the branch.
 
-**The watcher follows the checked-out branch.** Check out another branch and the watcher and its viewers move to that branch's review (a new one if it has none); check out the first branch again and its review is back as you left it. A run in progress finishes on its own threads first, and its replies land there. Until it ends, the review can't take a new thread or viewed mark (409), as the files on disk are the other branch's. On the base branch itself, a commit counts as a checkout: the review lasts one commit.
+**The watcher follows the checked-out branch.** Check out another branch and the watcher and its viewers move to that branch's review (a new one if it has none); check out the first branch again and its review is back as you left it. A run in progress finishes on its own threads first, and its replies land there. Until it ends, the files on disk are the other branch's: the review can't take a new thread or viewed mark (409), no thread is placed in that code (each is listed not in view), and both viewers show a one-line banner (`waitingForRun` and `checkedOut` in `/api/review` and `/api/changeset`). On the base branch itself, a commit counts as a checkout: the review lasts one commit.
 
 ## The review
 

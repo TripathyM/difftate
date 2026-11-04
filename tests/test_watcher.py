@@ -926,8 +926,10 @@ class WatcherTest(Harness, unittest.TestCase):
         tid = self.open_thread("Why an f-string here?")["id"]
         wait_for("the replied state", lambda: self.state(tid) == "replied")
 
-        with open(self.events_file()) as f:
-            stored = [json.loads(line) for line in f]
+        def stored_lines():
+            with open(self.events_file()) as f:
+                return [json.loads(line) for line in f]
+        stored = wait_for("the run's final note stored", lambda: (lines := stored_lines())[-1]["type"] == "note" and lines)
         history_dir = os.path.join(self.home, ".difftate", "history")
         [month] = os.listdir(history_dir)
         with open(os.path.join(history_dir, month)) as f:
@@ -1048,11 +1050,15 @@ class WatcherTest(Harness, unittest.TestCase):
             "file": "app.py", "side": "old", "startLine": 2, "endLine": 2, "code": "    return 'hi ' + name"}})["id"]
         wait_for("the replied state", lambda: self.state(tid) == "replied")
 
-        # The base gets an import on top, and the branch is rebased onto it
-        git(self.repo, self.env, "checkout", "-q", "main")
-        self.write("app.py", "import os\n\n" + self.read("app.py"))
-        git(self.repo, self.env, "commit", "-q", "-am", "Import os")
-        git(self.repo, self.env, "checkout", "-q", "feature")
+        # The base gets an import on top (in another worktree: a checkout of main would move
+        # the watcher to main's review), and the branch is rebased onto it
+        base = os.path.join(self.tmp, "base")
+        git(self.repo, self.env, "worktree", "add", "-q", base, "main")
+        with open(os.path.join(base, "app.py")) as f:
+            old = f.read()
+        with open(os.path.join(base, "app.py"), "w") as f:
+            f.write("import os\n\n" + old)
+        git(base, self.env, "commit", "-q", "-am", "Import os")
         git(self.repo, self.env, "rebase", "-q", "main")
 
         wait_for("the thread to move", lambda: self.anchor(tid) == (4, 4))
@@ -1174,6 +1180,29 @@ class WatcherTest(Harness, unittest.TestCase):
         self.checkout("feature")
         self.assertEqual(self.viewed(), ["app.py"])
         self.assertEqual(self.state(tid), "replied")
+
+    def test_while_a_run_holds_the_old_review_no_thread_is_placed_in_the_new_branchs_code(self):
+        git(self.repo, self.env, "commit", "-q", "-am", "Say hello")
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
+        self.assertEqual(self.api("GET", "/api/review")["waitingForRun"], False)
+
+        # The same code one line lower on the other branch: placing it there would move the thread
+        git(self.repo, self.env, "checkout", "-q", "-b", "other", "main")
+        self.write("app.py", "# other\n" + "def greet(name):\n    return f'hello {name}'\n")
+        review = wait_for("the review waiting for its run", lambda: (r := self.api("GET", "/api/review"))["waitingForRun"] and r)
+        self.assertEqual((review["branch"], review["checkedOut"]), ("feature", "other"))
+        changeset = self.api("GET", "/api/changeset")
+        self.assertEqual((changeset["waitingForRun"], changeset["checkedOut"]), (True, "other"))
+        for view in ("", "HEAD"):
+            [t] = self.api("GET", "/api/threads?view=" + view)
+            self.assertEqual((t["inView"], t["anchor"]["startLine"], t["anchor"]["endLine"]), (False, 2, 2), view)
+
+        self.release_agent()
+        wait_for("the review of other", lambda: self.api("GET", "/api/review")["branch"] == "other")
+        review = self.api("GET", "/api/review")
+        self.assertEqual((review["waitingForRun"], review["checkedOut"]), (False, "other"))
 
     def test_a_review_on_the_base_branch_lasts_one_commit(self):
         git(self.repo, self.env, "checkout", "-q", "main")
