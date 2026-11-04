@@ -12,6 +12,7 @@ class MemoryStore:
         self.review_id = str(uuid.uuid4())
         self._threads = []
         self._runs = []
+        self._viewed = {}
         self._lock = threading.Lock()
 
     def review(self):
@@ -69,6 +70,17 @@ class MemoryStore:
     def runs(self):
         with self._lock:
             return copy.deepcopy(self._runs)
+
+    def viewed(self):
+        with self._lock:
+            return dict(self._viewed)
+
+    def mark_viewed(self, file, diff_hash):
+        with self._lock:
+            if diff_hash is None:
+                self._viewed.pop(file, None)
+            else:
+                self._viewed[file] = diff_hash
 
     def _find(self, thread_id):
         for t in self._threads:

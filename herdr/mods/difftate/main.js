@@ -147,6 +147,7 @@ export default class Review extends View {
     this.itemOfRow = [];
     this.files = [];
     this.threads = [];
+    this.viewed = new Set(); // paths of the files marked viewed (the watcher clears a mark when the file's diff changes)
     this.reviewView = ""; // the review's view (all changes, commits, staged…); this.view is the file shown
     this.view = null;
     this.jumps = [];
@@ -233,8 +234,14 @@ export default class Review extends View {
     }
     this.api = api;
     this.msg = "";
+    await this.loadReview();
+  }
+
+  // The changeset, the threads and the viewed files
+  async loadReview() {
     await this.loadDiff();
     await this.loadThreads();
+    await this.loadViewed();
   }
 
   async loadDiff() {
@@ -260,6 +267,28 @@ export default class Review extends View {
     this.threads = list;
     this.rebuildItems();
     return true;
+  }
+
+  // True when the viewed files changed
+  async loadViewed() {
+    if (!this.api) return false;
+    const viewed = await this.api.viewed().catch(() => null);
+    if (!viewed || [...viewed].sort().join("\0") === [...this.viewed].sort().join("\0")) return false;
+    this.viewed = viewed;
+    return true;
+  }
+
+  toggleViewed(cx) {
+    const path = this.view?.path;
+    if (!this.api || !path || !this.fileOf(path)) { this.msg = "Open a changed file to mark it viewed"; return; }
+    const viewed = !this.viewed.has(path);
+    cx.spawn(async (cx) => {
+      try {
+        this.viewed = await this.api.setViewed(path, viewed);
+        this.msg = viewed ? `Viewed ${path}` : `Not viewed: ${path}`;
+      } catch (e) { this.msg = String(e.message ?? e); }
+      cx.notify();
+    });
   }
 
   poll(cx) {
@@ -288,6 +317,7 @@ export default class Review extends View {
           cx.notify();
         }
         if (await this.loadThreads()) cx.notify();
+        if (await this.loadViewed()) cx.notify();
       } catch (e) {
         this.msg = String(e);
       } finally {
@@ -622,6 +652,7 @@ export default class Review extends View {
       comment: () => this.startComment(),
       reply: () => this.startReply(),
       resolve: () => this.setThreadStatus("resolved", cx), reopen: () => this.setThreadStatus("open", cx),
+      toggle_viewed: () => this.toggleViewed(cx),
       goto_definition: () => this.gotoDefinition(cx), references: () => this.references(cx),
       jump_back: () => this.jump(-1, cx), jump_forward: () => this.jump(1, cx),
       find_files: () => this.findFiles(cx), changed_files: () => this.changedFiles(), threads: () => this.threadPicker(), views: () => this.viewPicker(cx),
@@ -945,7 +976,7 @@ export default class Review extends View {
   }
 
   changedFiles() {
-    this.openPicker("Changed files", this.files.map((f) => ({ label: f.path, detail: `+${f.additions} −${f.deletions}`, value: f.path })), (p, cx) => {
+    this.openPicker("Changed files", this.files.map((f) => ({ label: f.path, detail: `+${f.additions} −${f.deletions}${this.viewed.has(f.path) ? " · viewed" : ""}`, value: f.path })), (p, cx) => {
       cx.spawn(async (cx) => { await this.openFile(p, "diff", null); cx.notify(); });
     });
   }
@@ -1069,7 +1100,7 @@ export default class Review extends View {
     this.fileCache = null;
     cx.spawn(async (cx) => {
       await this.loadKeymap(); // picks up edits to ~/.config/difftate/keymap.json
-      if (this.api) { await this.loadDiff().catch(() => {}); await this.loadThreads(); }
+      if (this.api) await this.loadReview().catch((e) => { this.msg = String(e.message ?? e); });
       else await this.attach(cx);
       if (this.view) await this.reopen();
       this.msg = "Refreshed";
@@ -1155,19 +1186,22 @@ export default class Review extends View {
     const status = { added: "A", deleted: "D", renamed: "R", copied: "C" };
     return v_flex().w(EXPLORER_W).flex_none().h_full().min_h(0).bg(t.chrome).border_r(1).border_color(t.border)
       .child(h_flex().h(30).flex_none().px(12).items_center().text_size(11).text_color(t.dim)
-        .child(div().flex_1().child(`Changed files · ${this.files.length}`)))
+        .child(div().flex_1().child(`Changed files · ${this.files.length}`))
+        .child(div().child(`${this.files.filter((f) => this.viewed.has(f.path)).length} viewed`)))
       .child(v_flex().id("dt-files").flex_1().min_h(0).px(6).pb(8).overflow_y_scrollbar()
         .children(this.files.map((f) => {
           const parts = f.path.split("/"), name = parts.pop();
           const on = f.path === this.view?.path;
           const n = open.get(f.path) ?? 0;
+          const seen = this.viewed.has(f.path);
           return h_flex().id(`dt-f-${f.path}`).h(26).flex_none().px(8).gap(6).rounded(6).items_center().cursor_pointer()
             .when(on, (el) => el.bg(t.selected)).hover((s) => s.bg(t.hover))
             .on_click((_e, cx) => { cx.spawn(async (cx) => { await this.openFile(f.path, "diff", null); this.handle.focus(); cx.notify(); }); })
             .child(div().w(10).flex_none().text_size(10.5).text_color(f.status === "added" ? t.ansi2 : f.status === "deleted" ? t.ansi1 : t.blocked).child(status[f.status] ?? "M"))
             .child(h_flex().flex_1().min_w(0).text_size(12)
-              .child(div().min_w(0).truncate().text_color(t.foreground).child(name))
+              .child(div().min_w(0).truncate().text_color(seen ? t.dim : t.foreground).child(name))
               .when(parts.length > 0, (el) => el.child(div().pl(6).min_w(0).truncate().text_size(10.5).text_color(t.dim).child(parts.join("/")))))
+            .when(seen, (el) => el.child(div().text_size(10.5).text_color(t.ansi2).child("✓")))
             .when(n > 0, (el) => el.child(div().px(5).h(16).flex().items_center().rounded(4).bg(t.blocked + "26").text_size(10).text_color(t.blocked).child(String(n))))
             .child(div().text_size(10.5).text_color(t.ansi2).child(f.additions ? `+${f.additions}` : ""))
             .child(div().text_size(10.5).text_color(t.ansi1).child(f.deletions ? `−${f.deletions}` : ""));
@@ -1245,6 +1279,7 @@ export default class Review extends View {
       .child(div().flex_1().min_w(0).truncate().text_color(this.keymapError ? t.blocked : t.muted).child(this.keymapError ?? this.msg ?? ""))
       .when(Boolean(this.view), (el) => el
         .child(div().text_color(t.dim).child(this.view.mode === "diff" ? "diff" : "file"))
+        .when(this.viewed.has(this.view.path), (el) => el.child(div().text_color(t.ansi2).child("✓ viewed")))
         .when(this.dirty, (el) => el.child(div().text_color(t.ansi3).font_semibold().child("[+] unsaved")))
         .child(div().max_w(420).truncate().text_color(t.muted).child(`${this.view.path}  ${r?.new ?? r?.old ?? "-"}:${this.cur.col + 1}`)));
 

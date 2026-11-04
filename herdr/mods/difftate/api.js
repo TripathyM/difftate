@@ -75,5 +75,10 @@ export class ReviewApi {
 
   comment(threadId, body) { return this.call("POST", `/api/threads/${encodeURIComponent(threadId)}/comments`, { kind: "comment", body }); }
 
+  // The files the reviewer marked viewed (until their diff changes), as a Set of paths
+  async viewed() { return new Set((await this.call("GET", "/api/viewed")).files); }
+
+  async setViewed(file, viewed) { return new Set((await this.call("PUT", "/api/viewed", { file, viewed })).files); }
+
   setStatus(threadId, status) { return this.call("PATCH", `/api/threads/${encodeURIComponent(threadId)}/status`, { status }); }
 }

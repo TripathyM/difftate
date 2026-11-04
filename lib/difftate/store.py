@@ -27,6 +27,10 @@ The store port:
   runs()                                the runs, oldest first, each with "outcome"
                                         (None while it runs); None from a store that
                                         can't keep runs (diffity)
+  viewed()                              the files the reviewer marked viewed: {file:
+                                        the hash of its diff when marked}
+  mark_viewed(file, diff_hash)          the reviewer viewed <file> when its diff had
+                                        that hash, or unmarked it (<diff_hash> None)
 
 A thread:
   {"id", "anchor": {"file", "side", "startLine", "endLine", "code", "commit",

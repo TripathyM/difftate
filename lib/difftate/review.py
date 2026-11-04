@@ -12,6 +12,9 @@ with its code; when its code changes, it is outdated, and keeps the code it was
 written on. Only difftate moves threads or marks them outdated: no caller of
 the API can.
 
+A file the reviewer marked viewed stays viewed until its diff in the changeset
+(all changes) changes: a commit doesn't change it, any edit to the file does.
+
 Dispatch records which comments each run was sent: in the watcher's memory,
 and as a run in the store. When the watcher starts, it reads the runs back. A
 store that can't keep runs (diffity) has them recovered from the progress notes
@@ -59,9 +62,10 @@ def thread_state(thread, sent, running, replies_before):
 
 
 class Review:
-    def __init__(self, store, code=None):
+    def __init__(self, store, code=None, diff_hashes=None):
         self.store = store
         self.code = code  # changes.Code: where each thread's code is now (None: threads stay put)
+        self.diff_hashes = diff_hashes  # () -> {file: the hash of its diff in the changeset} (changes.diff_hashes)
         self._sent = set()  # ids of the comments sent to a run
         self._running = frozenset()  # ids of the threads in the run in progress
         self._run_id = None  # the run in progress
@@ -91,7 +95,40 @@ class Review:
         with self._lock:
             return _unsent(thread, self._sent)
 
+    def viewed(self):
+        """The files marked viewed whose diff hasn't changed since, in order. A
+        mark whose file's diff changed is cleared, so undoing the change doesn't
+        bring it back."""
+        return self._viewed(self._diff_hashes())
+
+    def _viewed(self, now):
+        marked = self.store.viewed()
+        for f, diff_hash in marked.items():
+            if now.get(f) != diff_hash:
+                self.store.mark_viewed(f, None)
+        return sorted(f for f, diff_hash in marked.items() if now.get(f) == diff_hash)
+
+    def _diff_hashes(self):
+        if self.diff_hashes is None:
+            raise StoreError(501, "this review keeps no viewed files")
+        try:
+            return self.diff_hashes()
+        except ChangesError as e:
+            raise StoreError(502, f"could not read the changeset: {e}")
+
     # ── Changing the review (rules 1–3) ──────────────────────────────────────
+    def mark_viewed(self, file, viewed=True):
+        """The reviewer viewed <file> as its diff is now (or unmarked it, <viewed>
+        False). Returns the files viewed."""
+        need_text(file, "file")
+        if not isinstance(viewed, bool):
+            raise StoreError(400, "viewed must be true or false")
+        now = self._diff_hashes()
+        if viewed and file not in now:
+            raise StoreError(404, f"{file} is not in the changeset")
+        self.store.mark_viewed(file, now[file] if viewed else None)
+        return self._viewed(now)
+
     def open_thread(self, anchor, body, author=REVIEWER, view=""):
         """A thread on <anchor>'s lines in <view>: it belongs to the review, and
         follows its code from there."""

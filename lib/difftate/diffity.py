@@ -172,6 +172,7 @@ class DiffityStore:
 
     def __init__(self, port):
         self.url = f"http://localhost:{port}"
+        self._viewed = {}  # diffity keeps no viewed files: this watcher keeps them until it stops
 
     def _call(self, method, path, payload=None):
         req = urllib.request.Request(
@@ -261,6 +262,15 @@ class DiffityStore:
 
     def runs(self):
         return None
+
+    def viewed(self):
+        return dict(self._viewed)
+
+    def mark_viewed(self, file, diff_hash):
+        if diff_hash is None:
+            self._viewed.pop(file, None)
+        else:
+            self._viewed[file] = diff_hash
 
     def set_status(self, thread_id, status):
         self._find_thread(thread_id)

@@ -809,6 +809,54 @@ class LocalWatcherTest(Harness, SharedTests, unittest.TestCase):
         self.assertEqual(self.state(tid), "replied")
         self.assertEqual(self.bodies(tid)[0], "Why an f-string here?")
 
+    def viewed(self):
+        return self.api("GET", "/api/viewed")["files"]
+
+    def mark_viewed(self, file, viewed=True):
+        return self.api("PUT", "/api/viewed", {"file": file, "viewed": viewed})["files"]
+
+    def test_a_viewed_file_stays_viewed_after_a_restart_and_a_commit(self):
+        self.write("other.py", "x = 1\n")
+        self.start_watcher()
+
+        self.assertEqual(self.viewed(), [])
+        self.assertEqual(self.mark_viewed("app.py"), ["app.py"])
+        self.stop_watcher()
+        self.start_watcher()
+        self.assertEqual(self.viewed(), ["app.py"])
+
+        git(self.repo, self.env, "add", "app.py")
+        git(self.repo, self.env, "commit", "-q", "-m", "Say hello")
+        self.assertEqual(self.viewed(), ["app.py"], "a commit doesn't change the file's diff")
+
+        self.assertEqual(self.mark_viewed("app.py", False), [])
+
+    def test_an_edit_that_keeps_the_line_counts_clears_the_viewed_mark(self):
+        self.write("other.py", "x = 1\n")
+        self.start_watcher()
+        self.mark_viewed("app.py")
+        self.mark_viewed("other.py")
+
+        self.write("app.py", "def greet(name):\n    return f'hey {name}'\n")
+
+        self.assertEqual(self.viewed(), ["other.py"], "same line counts, other code: no longer viewed")
+        self.write("app.py", "def greet(name):\n    return f'hello {name}'\n")
+        self.assertEqual(self.viewed(), ["other.py"], "the mark was cleared: undoing the edit doesn't bring it back")
+
+    def test_an_edit_inside_a_new_untracked_file_clears_the_viewed_mark(self):
+        self.write("new.py", "x = 1\n")
+        self.start_watcher()
+        self.assertEqual(self.mark_viewed("new.py"), ["new.py"])
+
+        self.write("new.py", "x = 2\n")
+
+        self.assertEqual(self.viewed(), [])
+
+    def test_only_a_file_in_the_changeset_can_be_marked_viewed(self):
+        self.start_watcher()
+        status = self.refused("PUT", "/api/viewed", {"file": "nope.py", "viewed": True})
+        self.assertEqual(status, 404)
+
     def test_the_base_is_the_default_branch_unless_base_says_otherwise(self):
         # The remote's default branch is "trunk", one commit behind
         git(self.repo, self.env, "update-ref", "refs/remotes/origin/trunk", "main")
