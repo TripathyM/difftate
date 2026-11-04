@@ -536,6 +536,17 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertIn("no view 'nope'", bad.stdout)
         self.assertEqual(self.api("GET", "/api/view"), started)
 
+    def test_an_interval_that_is_not_a_positive_finite_number_is_refused(self):
+        for value in ["-1", "0", "inf", "nan"]:
+            with self.subTest(value=value):
+                command = self.watcher_command()
+                command[command.index("--interval") + 1] = value
+                run = subprocess.run(command, cwd=self.repo, env=self.env, stdin=subprocess.DEVNULL,
+                                     capture_output=True, text=True, timeout=60)
+                self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+                self.assertIn(f"Error: --interval must be a number of seconds, not '{value}'",
+                              run.stdout + run.stderr)
+
     def test_only_a_reviewer_opens_a_thread_or_changes_its_status(self):
         self.silence_agent()  # keep the coding agent out of the thread
         self.start_watcher()

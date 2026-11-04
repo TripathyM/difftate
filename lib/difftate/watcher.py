@@ -6,6 +6,7 @@ it moves to that branch's review (started if new), and back again.
 The difftate / dtc / dto shell functions start it (difftate.zsh).
 """
 import fcntl
+import math
 import os
 import shutil
 import signal
@@ -94,9 +95,12 @@ def parse(argv):
     if opts["tool"] not in AGENTS:
         raise Exit(1, f"Error: unsupported tool '{opts['tool']}'. Supported: {' '.join(AGENTS)}")
     try:
-        opts["interval"] = float(opts["interval"])
+        interval = float(opts["interval"])
     except ValueError:
+        interval = None
+    if interval is None or not math.isfinite(interval) or interval <= 0:
         raise Exit(1, f"Error: --interval must be a number of seconds, not '{opts['interval']}'")
+    opts["interval"] = interval
     return opts
 
 
