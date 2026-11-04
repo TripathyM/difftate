@@ -2,9 +2,7 @@
 
 Each test creates a temporary git repository, starts the real watcher with a
 fake agent swapped in through `--cmd`, and drives it through the review API.
-HOME points into the temporary folder, so diffity's data and the review history
-stay there too. The shared tests run on both stores: diffity (skipped when
-diffity 0.9.5 isn't installed) and the local store (with no diffity on PATH).
+HOME points into the temporary folder, so the review history stays there too.
 """
 import http.client
 import json
@@ -70,9 +68,7 @@ def git(repo, env, *args):
 
 
 class Harness:
-    """A temporary repository on the branch "feature", and the watcher on it.
-    Subclasses set STORE."""
-    STORE = ""
+    """A temporary repository on the branch "feature", and the watcher on it."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="difftate-test-")
@@ -93,12 +89,8 @@ class Harness:
             f.write("[user]\n\tname = Test\n\temail = test@example.com\n")
         self.env = {k: v for k, v in os.environ.items()
                     if k not in ("CLAUDE_CONFIG_DIR", "DT_OPEN", "DT_HERDR", "XDG_CONFIG_HOME")}
-        path = os.environ["PATH"].split(os.pathsep)
-        if self.STORE == "local":
-            # Prove the local store needs no diffity: none on PATH
-            path = [d for d in path if not os.path.exists(os.path.join(d, "diffity"))]
-        self.env.update(HOME=self.home, PATH=os.pathsep.join([bin_dir, *path]),
-                        GIT_CONFIG_NOSYSTEM="1", FAKE_AGENT_DIR=self.agent_dir, DT_STORE=self.STORE)
+        self.env.update(HOME=self.home, PATH=os.pathsep.join([bin_dir, os.environ["PATH"]]),
+                        GIT_CONFIG_NOSYSTEM="1", FAKE_AGENT_DIR=self.agent_dir)
 
         git(self.repo, self.env, "init", "-q", "-b", "main")
         self.write("app.py", "def greet(name):\n    return 'hi ' + name\n")
@@ -121,8 +113,7 @@ class Harness:
             f.write(text)
 
     def watcher_command(self):
-        ref = ["--ref", "HEAD"] if self.STORE == "diffity" else []
-        return [sys.executable, WATCHER, *ref, "--tool", "claude", "--cmd", self.agent_cmd,
+        return [sys.executable, WATCHER, "--tool", "claude", "--cmd", self.agent_cmd,
                 "--cwd", self.repo, "--interval", "0.2", *self.extra_args]
 
     def launch_watcher(self):
@@ -241,8 +232,7 @@ class Harness:
         return refused.exception.code
 
 
-class SharedTests:
-    """What the watcher does whatever the store."""
+class WatcherTest(Harness, unittest.TestCase):
 
     def test_comment_gets_working_note_then_reply(self):
         self.start_watcher()
@@ -281,15 +271,6 @@ class SharedTests:
                          ("agent", "reply", f"Fake answer to {tid[:8]}."),
                          "the coding agent wrote only its answer: no marker")
         self.assertRegex(self.prompts()[0], r"\S*dt-reply <thread> \"<answer>\"")
-
-    def test_the_prompt_and_the_run_settings_name_no_diffity(self):
-        self.release_agent()
-        self.start_watcher()
-        tid = self.open_thread("Why an f-string here?")["id"]
-        wait_for("the replied state", lambda: self.state(tid) == "replied")
-
-        self.assertNotIn("diffity", self.prompts()[0].lower())
-        self.assertNotIn("diffity", " ".join(self.agent_args()).lower())
 
     def test_each_claude_run_may_not_write_the_store_or_read_the_token(self):
         self.start_watcher()
@@ -507,7 +488,7 @@ class SharedTests:
 
         # No view: all changes. A view that isn't one changes nothing
         self.assertEqual(self.second_watcher().returncode, 0)
-        started = {"view": "HEAD" if self.STORE == "diffity" else ""}  # the diffity tests start on HEAD
+        started = {"view": ""}
         self.assertEqual(self.api("GET", "/api/view"), started)
         bad = self.second_watcher("--ref", "nope")
         self.assertEqual(bad.returncode, 1, bad.stdout)
@@ -573,8 +554,6 @@ class SharedTests:
         out = self.terminal()
         self.assertIn("Stopping watcher...", out)
         self.assertIn("Stopping running agent (pid ", out)
-        if self.STORE == "diffity":
-            self.assertIn("Killing diffity (pid ", out)
         self.assertTrue(out.rstrip().endswith("Done."), out)
         self.assertFalse(os.path.exists(os.path.join(self.repo, ".git", "difftate", "api.json")))
 
@@ -597,48 +576,6 @@ class SharedTests:
         self.assertEqual((self.dispatches(), len(self.prompts())), (0, 1), "not dispatched again")
         self.assertEqual([k for k, _ in self.comments(tid)], ["comment", "progress", "reply"])
         self.assertTrue(self.note(tid, "progress").startswith("⏹ **Stopped** after "), self.note(tid, "progress"))
-
-
-@unittest.skipUnless(shutil.which("diffity"), "diffity 0.9.5 is not installed")
-class DiffityWatcherTest(Harness, SharedTests, unittest.TestCase):
-    STORE = "diffity"
-
-    def test_a_reviewing_agents_comment_is_dispatched_like_the_users(self):
-        self.release_agent()
-        self.start_watcher()
-
-        # A separate reviewing agent writes its findings to diffity, with diffity's agent author
-        subprocess.run(["diffity", "agent", "comment", "--file", "app.py", "--line", "2",
-                        "--body", "Missing a type hint."], cwd=self.repo, env=self.env, check=True,
-                       capture_output=True)
-        [thread] = self.api("GET", "/api/threads")
-        self.assertEqual(thread["comments"][0]["author"], "reviewer")
-
-        wait_for("the replied state", lambda: self.state(thread["id"]) == "replied")
-        self.assertIn("reviewer (new): Missing a type hint.", self.prompts()[0])
-
-    def test_ctrl_c_while_diffity_starts_stops_diffity(self):
-        # A diffity that never says where it listens, so the watcher is still waiting for it
-        bin_dir = os.path.join(self.tmp, "slow-bin")
-        os.makedirs(bin_dir)
-        pid_file = os.path.join(self.tmp, "diffity.pid")
-        with open(os.path.join(bin_dir, "diffity"), "w") as f:
-            f.write(f'#!/bin/sh\n[ "$1" = list ] && {{ echo "[]"; exit 0; }}\necho $$ > {pid_file}\nexec sleep 60\n')
-        os.chmod(os.path.join(bin_dir, "diffity"), 0o755)
-        self.env["PATH"] = bin_dir + os.pathsep + self.env["PATH"]
-
-        self.launch_watcher()
-        wait_for("diffity to start", lambda: os.path.exists(pid_file) and open(pid_file).read().strip())
-        with open(pid_file) as f:
-            diffity_pid = int(f.read())
-        self.stop_watcher()
-
-        wait_for("diffity to stop", lambda: not alive(diffity_pid), timeout=10)
-
-
-
-class LocalWatcherTest(Harness, SharedTests, unittest.TestCase):
-    STORE = "local"
 
     def events_file(self):
         reviews = os.path.join(self.repo, ".git", "difftate", "reviews")
@@ -694,15 +631,6 @@ class LocalWatcherTest(Harness, SharedTests, unittest.TestCase):
 
         self.assertEqual(self.state(tid), "replied")
         self.assertEqual((self.dispatches(), len(self.prompts())), (0, 1), "not dispatched again")
-
-    def test_comment_to_reply_works_with_diffity_not_installed(self):
-        self.assertIsNone(shutil.which("diffity", path=self.env["PATH"]))
-        self.release_agent()
-        self.start_watcher()
-        tid = self.open_thread("Why an f-string here?")["id"]
-
-        wait_for("the replied state", lambda: self.state(tid) == "replied")
-        self.assertEqual(self.bodies(tid)[-1], f"Fake answer to {tid[:8]}.")
 
     def opened_urls(self):
         try:

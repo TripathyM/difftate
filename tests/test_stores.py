@@ -1,9 +1,7 @@
 """Seam 2: one test suite for every store.
 
 Each store keeps the review's threads in difftate's own thread format, so
-switching stores (and later removing diffity) is safe. The diffity store runs
-against a real diffity 0.9.5 in a temporary repository, and is skipped when
-diffity isn't installed.
+switching stores is safe: the memory store (tests) and the local store.
 """
 import json
 import os
@@ -16,7 +14,6 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
-from difftate import diffity  # noqa: E402
 from difftate.local import LocalStore  # noqa: E402
 from difftate.memory import MemoryStore  # noqa: E402
 from difftate.store import StoreError  # noqa: E402
@@ -26,8 +23,6 @@ ANCHOR = {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2, "code":
 
 class StoreContract:
     """The behaviour every store shares. Subclasses set self.store in setUp."""
-    KEEPS_RUNS = True  # diffity has no place for runs
-    FOLLOWS_CODE = True  # diffity's threads never move and are never outdated
 
     def test_a_thread_moves_with_its_code_and_stays_outdated_once_it_changed(self):
         tid = self.store.open_thread(dict(ANCHOR, snapshot="a" * 40), "Why an f-string here?")["id"]
@@ -37,9 +32,6 @@ class StoreContract:
         self.store.mark_outdated(tid)
         [outdated] = self.store.threads()
 
-        if not self.FOLLOWS_CODE:
-            self.assertEqual((outdated["anchor"]["startLine"], outdated["outdated"]), (2, False))
-            return
         self.assertEqual({k: moved["anchor"][k] for k in ("startLine", "endLine", "code", "snapshot")},
                          {"startLine": 5, "endLine": 6, "code": ANCHOR["code"], "snapshot": "b" * 40})
         self.assertFalse(moved["outdated"])
@@ -47,9 +39,6 @@ class StoreContract:
         self.assertEqual(outdated["anchor"], moved["anchor"], "an outdated thread keeps its anchor")
 
     def test_a_run_is_kept_with_what_it_was_sent_until_it_ends(self):
-        if not self.KEEPS_RUNS:
-            self.assertIsNone(self.store.runs())
-            return
         tid = self.store.open_thread(ANCHOR, "Why an f-string here?")["id"]
         comment = self.store.threads()[0]["comments"][0]["id"]
         run = {"id": "run-1", "threads": [tid], "sent": [comment], "repliesBefore": {tid: []}}
@@ -295,54 +284,6 @@ class LocalStoreTest(StoreContract, unittest.TestCase):
         self.assertEqual([c["body"] for t in threads for c in t["comments"]], ["Why an f-string here?", "And the name?"])
         self.store.threads()
         self.assertEqual(len(self.warnings), 1, "reported once")
-
-
-@unittest.skipUnless(shutil.which("diffity"), "diffity 0.9.5 is not installed")
-class DiffityStoreTest(StoreContract, unittest.TestCase):
-    """A real diffity per test, in a temporary repository. HOME points into the
-    temporary folder, so diffity's data stays there too."""
-    KEEPS_RUNS = False
-    FOLLOWS_CODE = False
-
-    def setUp(self):
-        tmp = tempfile.mkdtemp(prefix="difftate-store-test-")
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        self.repo = os.path.join(tmp, "repo")
-        home = os.path.join(tmp, "home")
-        os.makedirs(self.repo)
-        os.makedirs(home)
-        with open(os.path.join(home, ".gitconfig"), "w") as f:
-            f.write("[user]\n\tname = Test\n\temail = test@example.com\n")
-        for key, value in (("HOME", home), ("GIT_CONFIG_NOSYSTEM", "1")):
-            self.addCleanup(os.environ.__setitem__, key, os.environ[key]) if key in os.environ \
-                else self.addCleanup(os.environ.pop, key, None)
-            os.environ[key] = value
-
-        git(self.repo, "init", "-q", "-b", "main")
-        with open(os.path.join(self.repo, "app.py"), "w") as f:
-            f.write("def greet(name):\n    return 'hi ' + name\n")
-        git(self.repo, "add", ".")
-        git(self.repo, "commit", "-q", "-m", "first")
-        with open(os.path.join(self.repo, "app.py"), "w") as f:
-            f.write("def greet(name):\n    return f'hello {name}'\n")
-        self.head = git(self.repo, "rev-parse", "HEAD").strip()
-
-        process = diffity.DiffityProcess.start("HEAD", self.repo)
-        self.addCleanup(process.stop, False)
-        self.store = process.store()
-
-    def test_an_anchor_records_the_commit_it_was_written_on(self):
-        self.store.open_thread(ANCHOR, "Why an f-string here?")
-
-        self.assertEqual(self.store.threads()[0]["anchor"]["commit"], self.head)
-
-    def test_a_reviewing_agents_comment_counts_as_the_reviewers(self):
-        subprocess.run(["diffity", "agent", "comment", "--file", "app.py", "--line", "2",
-                        "--body", "Missing a type hint."], cwd=self.repo, check=True, capture_output=True)
-
-        [thread] = self.store.threads()
-        self.assertEqual([(c["author"], c["kind"], c["body"]) for c in thread["comments"]],
-                         [("reviewer", "comment", "Missing a type hint.")])
 
 
 if __name__ == "__main__":

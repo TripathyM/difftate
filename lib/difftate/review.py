@@ -16,9 +16,7 @@ A file the reviewer marked viewed stays viewed until its diff in the changeset
 (all changes) changes: a commit doesn't change it, any edit to the file does.
 
 Dispatch records which comments each run was sent: in the watcher's memory,
-and as a run in the store. When the watcher starts, it reads the runs back. A
-store that can't keep runs (diffity) has them recovered from the progress notes
-instead (a run's progress note comes after every comment the run was sent).
+and as a run in the store. When the watcher starts, it reads the runs back.
 """
 import threading
 import uuid
@@ -62,9 +60,9 @@ def thread_state(thread, sent, running, replies_before):
 
 
 class Review:
-    def __init__(self, store, code=None, diff_hashes=None):
+    def __init__(self, store, code, diff_hashes):
         self.store = store
-        self.code = code  # changes.Code: where each thread's code is now (None: threads stay put)
+        self.code = code  # changes.Code: where each thread's code is now
         self.diff_hashes = diff_hashes  # () -> {file: the hash of its diff in the changeset} (changes.diff_hashes)
         self._sent = set()  # ids of the comments sent to a run
         self._running = frozenset()  # ids of the threads in the run in progress
@@ -86,7 +84,7 @@ class Review:
         threads = self.store.threads(status)
         for t in threads:
             self._with_state(t)
-        if view is not None and self.code is not None:
+        if view is not None:
             self.code.place(threads, view)
         return threads
 
@@ -109,8 +107,6 @@ class Review:
         return sorted(f for f, diff_hash in marked.items() if now.get(f) == diff_hash)
 
     def _diff_hashes(self):
-        if self.diff_hashes is None:
-            raise StoreError(501, "this review keeps no viewed files")
         try:
             return self.diff_hashes()
         except ChangesError as e:
@@ -136,7 +132,7 @@ class Review:
             raise StoreError(403, "only a reviewer opens a thread")
         anchor, body = need_anchor(anchor), need_text(body)
         outdated = False
-        if anchor is not None and self.code is not None:
+        if anchor is not None:
             # A thread is written on the code it names: if the file no longer has
             # that code there (it changed since the viewer showed it), it is outdated at once
             try:
@@ -156,8 +152,6 @@ class Review:
     def follow_code(self):
         """Threads follow their code: each one moves with it, or is outdated when
         its code changed. Returns the ids of the threads that became outdated."""
-        if self.code is None:
-            return []
         anchors = {t["id"]: t["anchor"] for t in self.store.threads() if t["anchor"] and not t["outdated"]}
         outdated = []
         for tid, found in self.code.follow(anchors).items():
@@ -228,12 +222,8 @@ class Review:
         """At start: the comments earlier runs were sent, from the store's runs.
         A run that never ended (its watcher was killed) ends as interrupted.
         Returns the open threads such a run left failed."""
-        runs = self.store.runs()
-        if runs is None:
-            self._recover_from_notes()
-            return []
         sent, replies_before, interrupted = set(), {}, []
-        for r in runs:
+        for r in self.store.runs():
             sent.update(r["sent"])
             replies_before.update((tid, set(ids)) for tid, ids in r["repliesBefore"].items())
             if r["outcome"] is None:
@@ -245,25 +235,6 @@ class Review:
             self.store.record_run_end(r["id"], "interrupted")
         ran = {tid for r in interrupted for tid in r["threads"]}
         return [t for t in self.threads("open") if t["id"] in ran and t["state"] == "failed"]
-
-    def _recover_from_notes(self):
-        """A reviewer comment followed by a progress note was sent to a run, even
-        one this watcher didn't record (an earlier watcher), and that run started
-        where its progress note is."""
-        sent, replies_before = set(), {}
-        for t in self.store.threads():
-            seen, replies = [], set()
-            for c in t["comments"]:
-                if c["author"] == REVIEWER:
-                    seen.append(c["id"])
-                elif c["kind"] == "reply":
-                    replies.add(c["id"])
-                elif c["kind"] == "progress":
-                    sent.update(seen)
-                    replies_before[t["id"]] = set(replies)
-        with self._lock:
-            self._sent |= sent
-            self._replies_before.update(replies_before)
 
     def _with_state(self, thread):
         with self._lock:

@@ -5,8 +5,7 @@
 # Starts the watcher (difftate-watch.py): it serves the review and dispatches
 # waiting threads to the coding agent, in its agent session when one is found.
 # Defaults: the base is the repository's default branch (origin/HEAD), --interval 1s.
-# Auto-attaches latest session. DT_STORE=local keeps the review in difftate's own
-# store (no diffity).
+# Auto-attaches latest session. The review is kept in the repository's git folder.
 #
 # Usage:
 #   difftate                       # Claude, the branch vs its base + auto-attach session

@@ -26,35 +26,21 @@ Run each check. Report all results together, then stop if anything **required** 
 | zsh (required) | `command -v zsh` | difftate is zsh-only; stop |
 | git (required) | `git --version` | macOS: `xcode-select --install` |
 | python3 3.9 or later (required, for the watcher) | `python3 --version` | macOS: `xcode-select --install`, or `brew install python` |
-| Node.js + npm (required, for diffity) | `node --version && npm --version` | Install Node 18+ (e.g. via nvm or `brew install node`) |
 | An agent CLI (one is required) | `zsh -c 'whence -p claude'` and `zsh -c 'whence -p opencode'`, run separately | Install [Claude Code](https://docs.claude.com/en/docs/claude-code) or [OpenCode](https://opencode.ai) |
 
 The agent CLI check passes when at least one of the two prints a path. Use `whence -p`, not `command -v`: `command -v` also reports aliases and functions, and difftate needs the real program.
 
 Tell the user which commands will work: `difftate` / `dtc` need `claude`, `dto` needs `opencode`. Both are defined either way; only the installed one is usable.
 
-## 2. Install diffity 0.9.5
-
-difftate is tested with diffity **0.9.5**, the last CLI release. Later versions of the upstream project are a Mac app, not this CLI.
-
-1. Check: `diffity --version`
-2. If it prints `0.9.5`, skip to step 3.
-3. If it prints another version, tell the user and ask before replacing it.
-4. Install: `npm install -g diffity@0.9.5`
-   - `EACCES` / permission error: stop. Tell the user their global npm folder needs fixing (nvm avoids this); don't use `sudo`.
-5. Verify: `diffity --version` prints `0.9.5`.
-
-diffity uses a native module (`better-sqlite3`). If it later fails after a Node upgrade, the fix is `npm rebuild -g diffity`.
-
-## 3. Clone the repo
+## 2. Clone the repo
 
 Use the folder from question 1 (default `~/difftate`). Call it `DT_HOME` below, and write it with `~` when it is under the home folder (e.g. `~/difftate`).
 
-1. If `DT_HOME/difftate.zsh` already exists and `git -C DT_HOME remote get-url origin` points at `TripathyM/difftate`: run `git -C DT_HOME pull --ff-only` and go to step 4.
+1. If `DT_HOME/difftate.zsh` already exists and `git -C DT_HOME remote get-url origin` points at `TripathyM/difftate`: run `git -C DT_HOME pull --ff-only` and go to section 3.
 2. If `DT_HOME` exists but is something else: stop and ask for another folder.
 3. Otherwise: `git clone https://github.com/TripathyM/difftate.git DT_HOME`
 
-## 4. Add difftate to `~/.zshrc`
+## 3. Add difftate to `~/.zshrc`
 
 Build one block of lines to add, back up once, confirm once.
 
@@ -65,12 +51,12 @@ Build one block of lines to add, back up once, confirm once.
    - It finds nothing: the block starts with:
 
      ```zsh
-     # difftate: review agent diffs in diffity (https://github.com/TripathyM/difftate)
+     # difftate: review agent diffs (https://github.com/TripathyM/difftate)
      source DT_HOME/difftate.zsh
      ```
 
 3. Only if question 2 was yes, add one line per Claude setup (see [Shortcuts](#shortcuts-for-several-claude-setups)). First check each name: `grep -n '^<name>()' ~/.zshrc`. If it is already defined, leave it out.
-   Only if question 3 was yes, add the Herdr lines (see [Herdr](#5-herdr-only-if-question-3-was-yes), step 2) unless `grep -n '^[^#]*DT_OPEN=' ~/.zshrc` already finds one.
+   Only if question 3 was yes, add the Herdr lines (see [Herdr](#4-herdr-only-if-question-3-was-yes), step 2) unless `grep -n '^[^#]*DT_OPEN=' ~/.zshrc` already finds one.
 4. If the block is empty, skip to step 5. Otherwise back up: `cp ~/.zshrc ~/.zshrc.bak-difftate-$(date +%Y%m%d%H%M%S)` and tell the user the backup path.
 5. Show the user the full block, with `DT_HOME` filled in, and wait for a yes.
 6. Append the block to the end of `~/.zshrc`. Shortcut lines must come after the `source` line.
@@ -87,12 +73,12 @@ dtcp() { CLAUDE_CONFIG_DIR=~/.claude-personal difftate --cmd ccp "$@"; }   # own
 - Set `CLAUDE_CONFIG_DIR` only when the setup uses a non-default dir. Never set it to `~/.claude`: leave it unset for the default.
 - For each shortcut being added (not ones already defined), check its command with `zsh -ic 'type <cmd>'` (an alias or wrapper is fine here). If it prints "not found", tell the user and ask for the right command. Don't write that line until they answer.
 
-## 5. Herdr (only if question 3 was yes)
+## 4. Herdr (only if question 3 was yes)
 
-Do steps 1 and 2 before showing the `~/.zshrc` block in step 4: the block needs their result.
+Do steps 1 and 2 before showing the `~/.zshrc` block in section 3: the block needs their result.
 
 1. **Find Herdr's command line.** Try `zsh -ic 'command -v herdr-app'` (Herdr adds it to `~/.local/bin` when it starts), then `/Applications/Herdr.app/Contents/MacOS/Herdr`. A candidate is right only if `"<candidate>" --help | head -1` starts with `herdr-app` (another app can be named Herdr). If neither is right, ask the user for the path of the Herdr app's binary. Call it `HERDR_BIN`, and note whether it came from the `herdr-app` check.
-2. **Lines for the `~/.zshrc` block** (step 4). Add the `DT_HERDR` line only if `HERDR_BIN` did **not** come from the `herdr-app` check:
+2. **Lines for the `~/.zshrc` block** (section 3). Add the `DT_HERDR` line only if `HERDR_BIN` did **not** come from the `herdr-app` check:
 
    ```zsh
    export DT_OPEN=herdr                 # difftate opens a Review tab in Herdr
@@ -108,12 +94,11 @@ Do steps 1 and 2 before showing the `~/.zshrc` block in step 4: the block needs 
 5. **Check:** `"HERDR_BIN" check ~/.config/herdr-app/mods/difftate` prints `check passed` (needs Herdr running; if it isn't, say so and skip).
 6. **ripgrep:** `command -v rg`. If missing, tell the user that go to definition in the Review tab needs it (`brew install ripgrep`); everything else works without it. Don't install it yourself.
 
-## 6. Verify
+## 5. Verify
 
 1. `zsh -ic 'type difftate dtc dto'`: each output line contains "is a shell function".
-2. `diffity --version`: prints `0.9.5`.
-3. If shortcuts were added: `zsh -ic 'type <name>'` for each, and the output contains "is a shell function".
-4. If Herdr was set up: `zsh -ic 'echo $DT_OPEN'` prints `herdr`.
+2. If shortcuts were added: `zsh -ic 'type <name>'` for each, and the output contains "is a shell function".
+3. If Herdr was set up: `zsh -ic 'echo $DT_OPEN'` prints `herdr`.
 
 Report what passed. Then show the user the quick guide below, as written. If shortcuts were added, also show one line per shortcut (e.g. `dtcw HEAD~1`): shortcuts take the same arguments as `difftate`.
 
@@ -135,12 +120,12 @@ First, open a new terminal (or run `source ~/.zshrc`). Then `cd` into a git repo
 - Each diff except `unstaged` and `staged` also includes uncommitted changes: it compares the given commit with the files on disk.
 - Use `dto` in place of `difftate` for OpenCode, with the same arguments.
 - The diff opens in the browser (with Herdr set up: in a **Review · ‹repo›** tab; press `?` there for its keys). Comment on a line, and the agent replies in the same thread.
-- Refresh the page to see new changes (the Herdr tab refreshes by itself).
-- To look at a different range, run the new command while the watcher runs: it switches the running watcher's view and exits. Every view is the same review, so threads stay. In the Herdr tab, `Space V` switches views too.
+- New changes show up by themselves, in the browser and in the Herdr tab.
+- To look at a different view, run the new command while the watcher runs: it switches the running watcher's view and exits. Every view is the same review, so threads stay. The browser's **View** menu and the Herdr tab's `Space V` switch views too.
 
 ## Questions
 
-Ask these, together, before step 3. If `~/.zshrc` already sources `difftate.zsh` (an earlier install), ask only question 1, unless the user asked to add shortcuts or Herdr.
+Ask these, together, before section 2. If `~/.zshrc` already sources `difftate.zsh` (an earlier install), ask only question 1, unless the user asked to add shortcuts or Herdr.
 
 1. **Where should difftate be cloned?** Default: `~/difftate`.
 2. **Do you run more than one Claude Code setup** (for example separate work and personal accounts, with different commands or config dirs)? Default: no. If yes, for each setup ask for:
@@ -154,4 +139,3 @@ Ask these, together, before step 3. If `~/.zshrc` already sources `difftate.zsh`
 1. Remove the difftate lines (the `source` line, any shortcuts, and `DT_OPEN` / `DT_HERDR`) from `~/.zshrc`.
 2. If Herdr was set up: `rm ~/.config/herdr-app/mods/difftate` (the link only), and the `cmd-shift-r` line from `~/.config/herdr-app/keys.json` if you added it.
 3. `rm -rf ~/difftate` (or your `DT_HOME`).
-4. Optional: `npm uninstall -g diffity`.

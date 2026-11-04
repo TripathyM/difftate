@@ -33,14 +33,13 @@ def now():
 
 
 class Dispatch:
-    def __init__(self, review, agent, cwd, review_folder, interval, api, problem):
+    def __init__(self, review, agent, cwd, review_folder, interval, api):
         self.review = review
         self.agent = agent
         self.cwd = cwd
         self.review_folder = review_folder  # the store and the token: kept out of the coding agent's reach
         self.interval = interval
         self.api = api  # ApiAddress, for the progress notes
-        self.problem = problem  # () -> None, or why the watcher must exit
         self.run = None
         self.run_folder = None  # where the coding agent leaves its replies
         self.reply_to = frozenset()  # the threads the run in progress may reply to
@@ -55,11 +54,8 @@ class Dispatch:
             return []
 
     def forever(self):
-        """Runs until the store goes away (returns its message) or Ctrl+C."""
+        """Runs until Ctrl+C."""
         while True:
-            problem = self.problem()
-            if problem:
-                return problem
             self.once()
             time.sleep(self.interval)
 
