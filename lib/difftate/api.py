@@ -273,38 +273,35 @@ def _handler(review, token, changeset, shown):
             pass
 
         def _send(self, status, payload):
-            data = json.dumps(payload).encode()
+            self._send_bytes(status, "application/json", json.dumps(payload).encode())
+
+        def _send_bytes(self, status, content_type, data, headers=()):
             self.send_response(status)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
+            for name, value in headers:
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(data)
 
         def _page(self, url):
             """The browser viewer's files: the token comes in the query, as a page
             and its scripts can't send a header."""
+            def text(status, content_type, body):
+                self._send_bytes(status, content_type, body.encode(), PAGE_HEADERS.items())
+
             given = (urllib.parse.parse_qs(url.query).get("token") or [""])[0].encode()
             if not hmac.compare_digest(given, token.encode()):
-                return self._send_text(401, "text/plain; charset=utf-8",
-                                       "difftate: missing or wrong token. Open the link the watcher printed.\n")
+                return text(401, "text/plain; charset=utf-8",
+                            "difftate: missing or wrong token. Open the link the watcher printed.\n")
             if url.path not in PAGE_FILES:
-                return self._send_text(404, "text/plain; charset=utf-8", "not found\n")
+                return text(404, "text/plain; charset=utf-8", "not found\n")
             if self.command != "GET":
-                return self._send_text(405, "text/plain; charset=utf-8", "method not allowed\n")
-            path, kind = PAGE_FILES[url.path]
+                return text(405, "text/plain; charset=utf-8", "method not allowed\n")
+            path, content_type = PAGE_FILES[url.path]
             with open(path, encoding="utf-8") as f:
-                text = f.read()
-            self._send_text(200, kind, text.replace("{{token}}", urllib.parse.quote(token, safe="")))
-
-        def _send_text(self, status, kind, text):
-            data = text.encode()
-            self.send_response(status)
-            self.send_header("Content-Type", kind)
-            self.send_header("Content-Length", str(len(data)))
-            for name, value in PAGE_HEADERS.items():
-                self.send_header(name, value)
-            self.end_headers()
-            self.wfile.write(data)
+                page = f.read()
+            text(200, content_type, page.replace("{{token}}", urllib.parse.quote(token, safe="")))
 
         def _handle(self):
             url = urllib.parse.urlsplit(self.path)

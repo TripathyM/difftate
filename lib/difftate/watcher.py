@@ -263,11 +263,9 @@ class Watcher:
     def open_viewer(self, where):
         """Open the review in the viewer (<where>: browser, herdr or both). Viewers
         show the API's view; diffity's browser viewer shows only its own ref."""
-        if self.diffity:
-            viewer.open_review(where, self.diffity.viewer_url(self.opts["ref"] or self.base), self.root)
-            return
-        # Both read the review API: the Review tab, and difftate's own page in the browser
-        viewer.open_review(where, self.api.page_url(), self.root)
+        # Without diffity, both read the review API: the Review tab, and difftate's own page
+        url = self.diffity.viewer_url(self.opts["ref"] or self.base) if self.diffity else self.api.page_url()
+        viewer.open_review(where, url, self.root)
 
     def view_shown(self, view, open_in):
         """A viewer, or another `difftate` call, switched the view."""

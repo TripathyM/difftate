@@ -15,5 +15,6 @@ The review (threads, comments, replies, notes and thread state) was diffity's da
 ## Consequences
 
 - diffity is transitional. The design aims at a difftate that doesn't need diffity at all: nothing outside its adapter may depend on it, and the diffity adapter is removed once difftate's own store and viewers replace it.
-- The browser viewer is diffity's own UI. We can't change it, so it works only with the diffity store.
+- The browser viewer is diffity's own UI. We can't change it, so it works only with the diffity store. (Since #25, the watcher also serves difftate's own browser viewer for difftate's own store; diffity's UI stays only as long as the diffity store.)
+- A browser page can't read the token file, so the watcher opens difftate's page with the token in its link. The token then also sits in the browser's history and the terminal, and briefly in the arguments of the command that opens the browser. Each watcher start makes a new one, so an old link stops working.
 - The agent writes only replies, through `dt-reply`. It no longer needs write access to diffity's data, so with Claude's sandbox on it can't resolve threads or edit notes.
