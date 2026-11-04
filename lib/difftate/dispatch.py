@@ -10,14 +10,16 @@ When the run ends (done, failed, or stopped by Ctrl+C), Dispatch writes each
 progress note's final line: the formatter's, when it reports how the run ended
 (a file Dispatch names, outside the coding agent's reach), else its own.
 Dispatch keeps the ids of the notes it hands out (the queued notes, and the run's
-progress notes): it never finds a note by its kind or its text. A thread the run didn't reply to is failed ("no
-reply"): its progress note says so, and it isn't sent again until the reviewer comments.
+progress notes): it never finds a note by its kind or its text.
+A thread the run didn't reply to is failed ("no reply"): its progress note says
+so, and it isn't sent again until the reviewer comments.
 A run whose watcher was killed is ended by the next watcher: its threads with
 no reply are failed the same way.
 Between runs, Dispatch asks <between_runs> first: the watcher moves to the
 checked-out branch's review there (switch_review), so a run in progress
 finishes on its own threads.
 """
+import glob
 import json
 import os
 import time
@@ -53,8 +55,16 @@ class Dispatch:
         self.reply_to = frozenset()  # the threads the run in progress may reply to
         self.started = None  # when the run in progress started
         self.notes = {}  # thread id: its progress note, for the run in progress
-        self.queued = {}  # thread id: its queued note, posted while a run was busy and not yet picked up
+        # thread id: its queued note, posted while a run was busy and not yet picked
+        # up. Thread ids are unique across reviews, so it outlasts a switch_review.
+        self.queued = {}
         self.run_end = None  # where the formatter reports how the run in progress ended
+        # A watcher killed during a run left its formatter's report behind
+        for path in glob.glob(os.path.join(glob.escape(review_folder), "run-end-*")):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
         self.tampered = set()  # threads whose stored lines were changed outside difftate during the run
 
     def _open_threads(self):
@@ -80,7 +90,6 @@ class Dispatch:
         """Dispatch for <review> from now on. <interrupted>: its threads that a run
         whose watcher was killed left failed (Review.recover_runs)."""
         self.review = review
-        self.queued = {}
         self.close_interrupted(interrupted)
 
     def once(self):

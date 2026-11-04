@@ -423,7 +423,7 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertIn("reviewer (new): Please try again.", self.prompts()[1])
         self.assertIn("reviewer: Why an f-string here?", self.prompts()[1])
 
-    def test_a_run_that_fails_keeps_the_agents_error_and_says_no_reply(self):
+    def test_a_run_that_fails_keeps_the_coding_agents_error_and_says_no_reply(self):
         self.silence_agent()
         os.makedirs(self.agent_dir, exist_ok=True)
         with open(os.path.join(self.agent_dir, "error"), "w") as f:
