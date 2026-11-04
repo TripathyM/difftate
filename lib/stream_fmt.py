@@ -177,10 +177,12 @@ class Status:
     def push(self):
         if not self.note_ids:
             return
+        # Send under the lock too: the review API applies edits in parallel, so an
+        # older body sent outside it could land after a newer one ("Done")
         with self.lock:
             body = self.render()
-        for cid in self.note_ids:
-            self.notes.edit(cid, body)
+            for cid in self.note_ids:
+                self.notes.edit(cid, body)
 
     def _ticker(self):
         while self.state in ("thinking", "working"):
