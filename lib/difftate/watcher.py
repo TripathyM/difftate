@@ -1,5 +1,7 @@
-"""The watcher: one per review. Opens the review in difftate's local store, serves
-the review API, and dispatches waiting threads to the coding agent until Ctrl+C.
+"""The watcher: one per repository. Opens the review of the checked-out branch in
+difftate's local store, serves the review API, and dispatches waiting threads to
+the coding agent until Ctrl+C. It follows the checked-out branch: between runs,
+it moves to that branch's review (started if new), and back again.
 
 The difftate / dtc / dto shell functions start it (difftate.zsh).
 """
@@ -147,6 +149,9 @@ class Watcher:
         self.opts = opts
         self.api = None
         self.dispatch = None
+        self.reviews = {}  # branch: its review, once opened
+        self.branch = None  # the branch whose review the watcher shows
+        self.unreadable = None  # a branch whose review couldn't be read (warned once)
 
     def setup(self):
         o = self.opts
@@ -209,12 +214,15 @@ class Watcher:
             self.view = changes.need_view(o["cwd"], o["ref"])
         except changes.ChangesError as e:
             raise Exit(1, f"Error: {e}")
-        store = self.local_store(base)
-        code = changes.Code(o["cwd"], base, store.info["branch"])
-        review = Review(store, code, lambda: changes.diff_hashes(changes.changeset(o["cwd"], base)["diff"]))
+        self.base = base
         try:
-            interrupted = review.recover_runs()
-        except StoreError as e:
+            self.branch = changes.review_branch(o["cwd"], base)
+        except changes.ChangesError as e:
+            raise Exit(1, str(e))
+        print(f"The review of {self.branch} against {base}, showing {changes.view_name(self.view)}")
+        try:
+            review, interrupted = self.open_review(self.branch)
+        except (StoreError, OSError) as e:
             raise Exit(1, f"Error: could not read the review ({e})")
         shown = ShownView(self.view, lambda view: changes.need_view(o["cwd"], view), self.view_shown)
         self.api = ReviewApi(review, self.folder, self.root, lambda view: changes.changeset(o["cwd"], base, view), shown)
@@ -233,7 +241,8 @@ class Watcher:
         print()
         print("Press Ctrl+C to stop")
         print()
-        self.dispatch = Dispatch(review, self.agent, o["cwd"], self.folder, o["interval"], self.api.address())
+        self.dispatch = Dispatch(review, self.agent, o["cwd"], self.folder, o["interval"], self.api.address(),
+                                 between_runs=self.follow_branch)
         self.dispatch.close_interrupted(interrupted)
 
     def open_viewer(self, where, url=None):
@@ -248,14 +257,42 @@ class Watcher:
         if open_in:
             self.open_viewer(open_in)
 
-    def local_store(self, base):
+    def open_review(self, branch):
+        """The review of <branch> against the base: the one this watcher opened
+        before, or the store's. Returns (review, the threads a run whose watcher
+        was killed left failed)."""
+        if branch in self.reviews:
+            return self.reviews[branch], []
         o = self.opts
+        store = LocalStore.open(self.folder, o["cwd"], branch, self.base, on_tamper=self.tampered)
+        code = changes.Code(o["cwd"], self.base, branch)
+        review = Review(store, code, lambda: changes.diff_hashes(changes.changeset(o["cwd"], self.base)["diff"]))
+        interrupted = review.recover_runs()
+        self.reviews[branch] = review
+        return review, interrupted
+
+    def follow_branch(self):
+        """Between runs: when another branch is checked out, the watcher and its
+        viewers move to that branch's review (started if new)."""
         try:
-            branch = changes.review_branch(o["cwd"], base)
-        except changes.ChangesError as e:
-            raise Exit(1, str(e))
-        print(f"The review of {branch} against {base}, showing {changes.view_name(self.view)}")
-        return LocalStore.open(self.folder, o["cwd"], branch, base, on_tamper=self.tampered)
+            branch = changes.review_branch(self.opts["cwd"], self.base)
+        except changes.ChangesError:
+            return  # no commit to stand in for the branch: stay
+        if branch == self.branch:
+            return
+        try:
+            review, interrupted = self.open_review(branch)
+        except (StoreError, OSError) as e:
+            if branch != self.unreadable:
+                print(f"[{now()}] Warning: could not read the review of {branch} ({e}): "
+                      f"still showing the review of {self.branch}")
+            self.unreadable = branch
+            return
+        self.branch, self.unreadable = branch, None
+        print(f"[{now()}] The review of {branch} against {self.base}, "
+              f"showing {changes.view_name(self.api.shown.current())}")
+        self.api.review = review
+        self.dispatch.switch_review(review, interrupted)
 
     def tampered(self, thread_ids):
         names = ", ".join(t[:8] for t in thread_ids) or "no thread named"

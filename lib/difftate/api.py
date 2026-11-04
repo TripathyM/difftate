@@ -4,8 +4,9 @@ Viewers and the progress notes reach the review only through it. Every request
 needs the token from the repository's difftate folder (`<git dir>/difftate/token`,
 readable only by the user); a request without it gets 401.
 
-  GET   /api/review                     start or reuse the review: {"id"} (the local
-                                        store adds "branch" and "base")
+  GET   /api/review                     start or reuse the review of the checked-out
+                                        branch: {"id", "branch", "base"}. The watcher
+                                        follows the branch, so they change after a checkout
   GET   /api/view                       the view viewers show: {"view"}
   PUT   /api/view                       show another view: {"view", "open"?: browser|herdr|both
                                         (also open the viewer on it)}
@@ -246,7 +247,7 @@ class ReviewApi:
     def start(self):
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
         os.chmod(self.folder, 0o700)
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self.review, self.token, self.changeset, self.shown, self.login))
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(lambda: self.review, self.token, self.changeset, self.shown, self.login))
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         _write_private(self.token_file, self.token + "\n")
@@ -273,7 +274,9 @@ class ReviewApi:
                     pass
 
 
-def _handler(review, token, changeset, shown, login):
+def _handler(current, token, changeset, shown, login):
+    """<current>() is the review the API serves now: the watcher follows the
+    checked-out branch."""
     expected = f"Bearer {token}".encode()
 
     def need(payload, key):
@@ -299,22 +302,22 @@ def _handler(review, token, changeset, shown, login):
         return where
 
     routes = [
-        ("GET", r"/api/review", lambda q, p: review.review()),
+        ("GET", r"/api/review", lambda q, p: current().review()),
         ("GET", r"/api/view", lambda q, p: {"view": shown.current()}),
         ("PUT", r"/api/view", lambda q, p: shown.switch(fields(p).get("view", ""), open_in(p))),
         ("GET", r"/api/changeset", lambda q, p: changeset(view_of(q))),
-        ("GET", r"/api/threads", lambda q, p: review.threads(
+        ("GET", r"/api/threads", lambda q, p: current().threads(
             (q.get("status") or [None])[0], shown.check(q["view"][0]) if "view" in q else None)),
-        ("POST", r"/api/threads", lambda q, p: review.open_thread(
+        ("POST", r"/api/threads", lambda q, p: current().open_thread(
             fields(p).get("anchor"), need(p, "body"), fields(p).get("author", "reviewer"),
             shown.check(fields(p).get("view", "")))),
         ("POST", r"/api/threads/([^/]+)/comments",
-         lambda q, p, tid: review.add_comment(tid, fields(p).get("kind", "comment"), need(p, "body"))),
-        ("PATCH", r"/api/notes/([^/]+)", lambda q, p, nid: review.edit_note(nid, need(p, "kind"), need(p, "body"))),
+         lambda q, p, tid: current().add_comment(tid, fields(p).get("kind", "comment"), need(p, "body"))),
+        ("PATCH", r"/api/notes/([^/]+)", lambda q, p, nid: current().edit_note(nid, need(p, "kind"), need(p, "body"))),
         ("PATCH", r"/api/threads/([^/]+)/status",
-         lambda q, p, tid: review.set_status(tid, need(p, "status"), fields(p).get("author", "reviewer"))),
-        ("GET", r"/api/viewed", lambda q, p: {"files": review.viewed()}),
-        ("PUT", r"/api/viewed", lambda q, p: {"files": review.mark_viewed(need(p, "file"), fields(p).get("viewed", True))}),
+         lambda q, p, tid: current().set_status(tid, need(p, "status"), fields(p).get("author", "reviewer"))),
+        ("GET", r"/api/viewed", lambda q, p: {"files": current().viewed()}),
+        ("PUT", r"/api/viewed", lambda q, p: {"files": current().mark_viewed(need(p, "file"), fields(p).get("viewed", True))}),
     ]
     routes = [(m, re.compile(f"^{path}$"), fn) for m, path, fn in routes]
 

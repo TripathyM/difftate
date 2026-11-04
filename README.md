@@ -58,6 +58,8 @@ Without `--session`, it attaches the latest agent session for the current folder
 
 **The base** is the repository's default branch (`origin/HEAD`; without one, a local `main` or `master`), unless `--base` gives another. It used to be `master`. A review is one branch against its base, like a pull request; with a detached HEAD, or on the base branch itself, the current commit stands in for the branch.
 
+**The watcher follows the checked-out branch.** Check out another branch and the watcher and its viewers move to that branch's review (a new one if it has none); check out the first branch again and its review is back as you left it. A run in progress finishes on its own threads first, and its replies land there.
+
 ## The review
 
 difftate keeps the review itself: commits don't end a review, so threads survive them. The changeset comes from git (`GET /api/changeset`). difftate's own browser viewer shows it (`DT_OPEN=browser`, the default), and so does the [Review tab in Herdr](#review-in-herdr-optional) (`DT_OPEN=herdr`). Other clients reach it through the [review API](#review-api). The argument is the starting **view** of the same review (`HEAD~1`, `staged`, …), and both viewers switch views (the browser's **View** menu, the Review tab's `Space V`): a thread written in any view belongs to the review, and the threads list shows every thread.
@@ -261,7 +263,7 @@ The watcher (Python 3.9 or later, nothing else) serves the **review API** on `12
 
 | Request | What it does |
 |---|---|
-| `GET /api/review` | Start or reuse the review: `id`, `branch` and `base` |
+| `GET /api/review` | Start or reuse the review of the checked-out branch: `id`, `branch` and `base` (they change when the watcher follows another branch) |
 | `GET /api/view` | The view viewers show: `view` (`""` all changes, a commit such as `HEAD~2` for the commits after it, `HEAD` uncommitted, `staged`, `unstaged`) |
 | `PUT /api/view` | Show another view: `view`, and `open` (`browser`, `herdr`, `both`) to open the viewer on it too. A second `difftate` in the repository sends this, then exits |
 | `GET /api/changeset?view=<view>` | The review's changeset in a view (default: the one viewers show), from git: `view`, `base`, `commit` (where the branch left the base), `diff` (unified, new untracked files included) |

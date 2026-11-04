@@ -11,6 +11,9 @@ progress note's final line. A thread the run didn't reply to is failed ("no
 reply"): its progress note says so, and it isn't sent again until the reviewer comments.
 A run whose watcher was killed is ended by the next watcher: its threads with
 no reply are failed the same way.
+Between runs, Dispatch asks <between_runs> first: the watcher moves to the
+checked-out branch's review there (switch_review), so a run in progress
+finishes on its own threads.
 """
 import json
 import os
@@ -33,8 +36,9 @@ def now():
 
 
 class Dispatch:
-    def __init__(self, review, agent, cwd, review_folder, interval, api):
+    def __init__(self, review, agent, cwd, review_folder, interval, api, between_runs=None):
         self.review = review
+        self.between_runs = between_runs or (lambda: None)
         self.agent = agent
         self.cwd = cwd
         self.review_folder = review_folder  # the store and the token: kept out of the coding agent's reach
@@ -66,7 +70,14 @@ class Dispatch:
         except StoreError as e:
             print(f"[{now()}] Warning: could not follow the threads' code ({e})")
 
+    def switch_review(self, review, interrupted=()):
+        """Dispatch for <review> from now on. <interrupted>: its threads that a run
+        whose watcher was killed left failed (Review.recover_runs)."""
+        self.review = review
+        self.close_interrupted(interrupted)
+
     def once(self):
+        self.between_runs()
         self.follow_code()
         open_threads = self._open_threads()
         waiting = [t for t in open_threads if t["state"] == "waiting"]
