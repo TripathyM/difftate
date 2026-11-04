@@ -4,14 +4,19 @@ Viewers and the progress notes reach the review only through it. Every request
 needs the token from the repository's difftate folder (`<git dir>/difftate/token`,
 readable only by the user); a request without it gets 401.
 
-  GET   /api/review                     start or reuse the review: {"id"} (the local
-                                        store adds "branch" and "base")
+  GET   /api/review                     start or reuse the review of the checked-out
+                                        branch: {"id", "branch", "base", "waitingForRun",
+                                        "checkedOut"}. The watcher follows the branch, so
+                                        they change after a checkout; until a run in
+                                        progress ends, "waitingForRun" is true and
+                                        "checkedOut" names the branch it moves to
   GET   /api/view                       the view viewers show: {"view"}
   PUT   /api/view                       show another view: {"view", "open"?: browser|herdr|both
                                         (also open the viewer on it)}
   GET   /api/changeset[?view=<view>]    the review's changeset in the view (default: the
                                         one viewers show), from git: {"view", "base",
-                                        "commit" (where the branch left the base), "diff"}
+                                        "commit" (where the branch left the base), "diff",
+                                        "waitingForRun", "checkedOut" (as /api/review)}
   GET   /api/threads[?status=open][&view=<view>]
                                         list threads; with a view, each anchor's lines
                                         are where its code is in that view
@@ -52,7 +57,11 @@ A comment's kind says who wrote it: a comment is the reviewer's (the default), a
 reply the coding agent's, and a queued or progress note difftate's. "author" says who
 opens a thread or sets its status, and must be "reviewer" (the default): anyone
 else gets 403. Only notes can be edited (403 otherwise). Errors are
-{"error": <message>} with status 400, 403, 404 or 502.
+{"error": <message>} with status 400, 403, 404, 409 or 502. While another branch is
+checked out and a run keeps the watcher on this review, opening a thread or
+marking a file viewed gets 409, and every thread with an anchor is listed with
+"inView": false and its own lines (the code on disk is the other branch's): the
+watcher moves to that branch's review once the run ends.
 
 A viewed file belongs to the review, like a thread: it stays viewed in every
 view, after a reload and after a commit, until its diff in all changes changes
@@ -236,6 +245,10 @@ class ReviewApi:
         self.token_file = os.path.join(folder, "token")
         self.api_file = os.path.join(folder, "api.json")
 
+    def switch_review(self, review):
+        """Serve <review> from now on: the watcher follows the checked-out branch."""
+        self.review = review
+
     def address(self):
         return ApiAddress(f"http://127.0.0.1:{self.server.server_address[1]}", self.token_file)
 
@@ -246,7 +259,7 @@ class ReviewApi:
     def start(self):
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
         os.chmod(self.folder, 0o700)
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self.review, self.token, self.changeset, self.shown, self.login))
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(lambda: self.review, self.token, self.changeset, self.shown, self.login))
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         _write_private(self.token_file, self.token + "\n")
@@ -273,7 +286,9 @@ class ReviewApi:
                     pass
 
 
-def _handler(review, token, changeset, shown, login):
+def _handler(current, token, changeset, shown, login):
+    """<current>() is the review the API serves now: the watcher follows the
+    checked-out branch."""
     expected = f"Bearer {token}".encode()
 
     def need(payload, key):
@@ -299,22 +314,22 @@ def _handler(review, token, changeset, shown, login):
         return where
 
     routes = [
-        ("GET", r"/api/review", lambda q, p: review.review()),
+        ("GET", r"/api/review", lambda q, p: current().review()),
         ("GET", r"/api/view", lambda q, p: {"view": shown.current()}),
         ("PUT", r"/api/view", lambda q, p: shown.switch(fields(p).get("view", ""), open_in(p))),
-        ("GET", r"/api/changeset", lambda q, p: changeset(view_of(q))),
-        ("GET", r"/api/threads", lambda q, p: review.threads(
+        ("GET", r"/api/changeset", lambda q, p: dict(changeset(view_of(q)), **current().waiting())),
+        ("GET", r"/api/threads", lambda q, p: current().threads(
             (q.get("status") or [None])[0], shown.check(q["view"][0]) if "view" in q else None)),
-        ("POST", r"/api/threads", lambda q, p: review.open_thread(
+        ("POST", r"/api/threads", lambda q, p: current().open_thread(
             fields(p).get("anchor"), need(p, "body"), fields(p).get("author", "reviewer"),
             shown.check(fields(p).get("view", "")))),
         ("POST", r"/api/threads/([^/]+)/comments",
-         lambda q, p, tid: review.add_comment(tid, fields(p).get("kind", "comment"), need(p, "body"))),
-        ("PATCH", r"/api/notes/([^/]+)", lambda q, p, nid: review.edit_note(nid, need(p, "kind"), need(p, "body"))),
+         lambda q, p, tid: current().add_comment(tid, fields(p).get("kind", "comment"), need(p, "body"))),
+        ("PATCH", r"/api/notes/([^/]+)", lambda q, p, nid: current().edit_note(nid, need(p, "kind"), need(p, "body"))),
         ("PATCH", r"/api/threads/([^/]+)/status",
-         lambda q, p, tid: review.set_status(tid, need(p, "status"), fields(p).get("author", "reviewer"))),
-        ("GET", r"/api/viewed", lambda q, p: {"files": review.viewed()}),
-        ("PUT", r"/api/viewed", lambda q, p: {"files": review.mark_viewed(need(p, "file"), fields(p).get("viewed", True))}),
+         lambda q, p, tid: current().set_status(tid, need(p, "status"), fields(p).get("author", "reviewer"))),
+        ("GET", r"/api/viewed", lambda q, p: {"files": current().viewed()}),
+        ("PUT", r"/api/viewed", lambda q, p: {"files": current().mark_viewed(need(p, "file"), fields(p).get("viewed", True))}),
     ]
     routes = [(m, re.compile(f"^{path}$"), fn) for m, path, fn in routes]
 

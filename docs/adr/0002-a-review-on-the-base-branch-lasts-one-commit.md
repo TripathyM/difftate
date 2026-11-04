@@ -4,7 +4,7 @@ status: accepted
 
 # A review on the base branch itself lasts one commit
 
-A review is identified by its branch and its base, like a pull request, so on a branch it survives every commit. On the base branch itself (`main` against `origin/main`), or on a detached HEAD, there is no branch to identify it with, so the current commit stands in for the branch. After a commit there, the next watcher opens a new, empty review. The earlier review's threads stay in its folder and in the review history; they just aren't shown. We accept this because changes are made on a branch and reach the base through a pull request (or merge request), as they would on GitHub, where a pull request from `main` into `main` can't exist.
+A review is identified by its branch and its base, like a pull request, so on a branch it survives every commit. On the base branch itself (`main` against `origin/main`), or on a detached HEAD, there is no branch to identify it with, so the current commit stands in for the branch. After a commit there, the watcher moves to a new, empty review (it follows the checked-out branch, and the commit was the branch). The earlier review's threads stay in its folder and in the review history; they just aren't shown. We accept this because changes are made on a branch and reach the base through a pull request (or merge request), as they would on GitHub, where a pull request from `main` into `main` can't exist.
 
 ## Considered options
 

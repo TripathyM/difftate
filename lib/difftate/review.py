@@ -15,6 +15,12 @@ the API can.
 A file the reviewer marked viewed stays viewed until its diff in the changeset
 (all changes) changes: a commit doesn't change it, any edit to the file does.
 
+While another branch is checked out (the watcher moves to its review after the
+run in progress), the files on disk aren't this review's: nothing reads them to
+change it. Marks stay, opening a thread or marking a file viewed gets 409, no
+thread is placed in that code (each is listed not in view, with its own lines),
+and the review says it is waiting for the run to end (waiting()).
+
 Dispatch records which comments each run was sent: in the watcher's memory,
 and as a run in the store. When the watcher starts, it reads the runs back.
 """
@@ -74,7 +80,14 @@ class Review:
 
     # ── Reading ──────────────────────────────────────────────────────────────
     def review(self):
-        return self.store.review()
+        return dict(self.store.review(), **self.waiting())
+
+    def waiting(self):
+        """{"waitingForRun": whether another branch is checked out, so the watcher
+        moves to its review once the run in progress ends, "checkedOut": what a
+        review of the checkout would be of (None when git can't say)}."""
+        checked_out = self.code.checked_out()
+        return {"waitingForRun": checked_out != self.code.branch, "checkedOut": checked_out}
 
     def threads(self, status=None, view=None):
         """The threads, each with its thread state. With a <view>, each anchor's
@@ -84,7 +97,12 @@ class Review:
         threads = self.store.threads(status)
         for t in threads:
             self._with_state(t)
-        if view is not None:
+        if not self.code.on_branch():
+            # The code on disk is the other branch's: no thread sits in it
+            for t in threads:
+                if t["anchor"]:
+                    t["inView"] = False
+        elif view is not None:
             self.code.place(threads, view)
         return threads
 
@@ -101,6 +119,8 @@ class Review:
 
     def _viewed(self, now):
         marked = self.store.viewed()
+        if not self.code.on_branch():
+            return sorted(marked)
         for f, diff_hash in marked.items():
             if now.get(f) != diff_hash:
                 self.store.mark_viewed(f, None)
@@ -119,6 +139,7 @@ class Review:
         need_text(file, "file")
         if not isinstance(viewed, bool):
             raise StoreError(400, "viewed must be true or false")
+        self._need_branch()
         now = self._diff_hashes()
         if viewed and file not in now:
             raise StoreError(404, f"{file} is not in the changeset")
@@ -131,6 +152,7 @@ class Review:
         if author != REVIEWER:
             raise StoreError(403, "only a reviewer opens a thread")
         anchor, body = need_anchor(anchor), need_text(body)
+        self._need_branch()
         outdated = False
         if anchor is not None:
             # A thread is written on the code it names: if the file no longer has
@@ -189,6 +211,11 @@ class Review:
         if author != REVIEWER:
             raise StoreError(403, "only a reviewer changes a thread's status")
         return self.store.set_status(thread_id, need_status(status))
+
+    def _need_branch(self):
+        if not self.code.on_branch():
+            raise StoreError(409, "another branch is checked out: the watcher moves to its review "
+                                  "once the run in progress ends")
 
     # ── Runs (Dispatch) ──────────────────────────────────────────────────────
     def start_run(self, threads):

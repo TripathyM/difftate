@@ -44,6 +44,8 @@ header .views { display: flex; gap: 6px; align-items: center; margin-left: auto;
 header #commit { width: 110px; }
 #message { flex-basis: 100%; color: var(--failed); }
 #message:empty { display: none; }
+#waiting { flex-basis: 100%; color: var(--waiting); }
+#waiting:empty { display: none; }
 #message.info { color: var(--muted); }
 
 .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
@@ -137,6 +139,7 @@ section.elsewhere > h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted); 
     </select>
     <input id="commit" placeholder="or a commit" aria-label="Commits after this one" title="The commits after this one (Enter)">
   </span>
+  <span id="waiting" role="status"></span>
   <span id="message" role="status"></span>
 </header>
 <div class="layout">

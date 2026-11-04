@@ -360,11 +360,17 @@ class Code:
                                     1 if m[4] is None else int(m[4])) for m in HUNK.finditer(out)]
         return self._diffs[(a, b)]
 
-    def _on_branch(self):
+    def checked_out(self):
+        """What a review of the checkout now would be of (review_branch), or None
+        when git can't say."""
         try:
-            return review_branch(self.cwd, self.base) == self.branch
+            return review_branch(self.cwd, self.base)
         except ChangesError:
-            return False
+            return None
+
+    def on_branch(self):
+        """Whether the review's branch (or the commit standing in for it) is checked out."""
+        return self.checked_out() == self.branch
 
     def snapshot(self, anchor, view=""):
         """The snapshot for a new anchor written in <view>, and the code on its lines
@@ -381,7 +387,7 @@ class Code:
         outdated. Nothing is followed while another branch is checked out, or
         when git fails: a thread only moves on a sure answer."""
         found = {}
-        if not anchors or not self._on_branch():
+        if not anchors or not self.on_branch():
             return found
         try:
             left = self._branch_left_base() if any(a["side"] == "old" for a in anchors.values()) else None
@@ -409,7 +415,7 @@ class Code:
             elif lines != (a["startLine"], a["endLine"]):
                 found[tid] = ("moved", lines[0], lines[1], now)
         # A checkout while this ran: what it found may come from the other branch
-        return found if not found or self._on_branch() else {}
+        return found if not found or self.on_branch() else {}
 
     def place(self, threads, view):
         """Each thread's lines where its code is in <view>, in place: its snapshot

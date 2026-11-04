@@ -248,7 +248,17 @@ export default class Review extends View {
     this.applyChangeset(await this.api.changeset());
   }
 
+  // While a run holds the watcher on this review after a checkout: the branch checked out
+  // (the banner's), or null. True when it changed.
+  waitingOn(c) {
+    const waiting = c.waitingForRun ? (c.checkedOut ?? "another branch") : null;
+    if (waiting === this.waitingFor) return false;
+    this.waitingFor = waiting;
+    return true;
+  }
+
   applyChangeset(c) {
+    this.waitingOn(c);
     this.diffText = c.diff;
     this.base = c.base;
     this.commit = c.commit;
@@ -310,6 +320,7 @@ export default class Review extends View {
           if (!e.status || e.status === 401) { this.api = null; this.msg = "difftate stopped. Run difftate again to keep commenting."; cx.notify(); return; }
           throw e;
         }
+        if (this.waitingOn(c)) cx.notify();
         if (c.diff !== this.diffText || c.view !== this.reviewView) {
           this.applyChangeset(c);
           // Never reload over edits in progress; catch up once they're saved or dropped.
@@ -1283,6 +1294,11 @@ export default class Review extends View {
         .when(this.dirty, (el) => el.child(div().text_color(t.ansi3).font_semibold().child("[+] unsaved")))
         .child(div().max_w(420).truncate().text_color(t.muted).child(`${this.view.path}  ${r?.new ?? r?.old ?? "-"}:${this.cur.col + 1}`)));
 
+    const waitingBar = this.waitingFor
+      ? h_flex().flex_none().px(14).h(26).items_center().bg(t.chrome).border_b(1).border_color(t.border).text_size(12).text_color(t.ansi3)
+        .child(div().truncate().child(`⏳ ${this.waitingFor} is checked out: this review stays until the run in progress ends, then the watcher moves to its review`))
+      : null;
+
     return v_flex().id("dt-root").size_full().min_h(0).bg(t.background).text_color(t.foreground).relative()
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.onKey(e, cx))
@@ -1294,6 +1310,7 @@ export default class Review extends View {
         cx.notify();
       })
       .child(header)
+      .when(Boolean(waitingBar), (el) => el.child(waitingBar))
       .child(h_flex().flex_1().min_h(0)
         .when(this.explorer, (el) => el.child(this.explorerEl(t)))
         .child(code))

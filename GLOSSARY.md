@@ -91,7 +91,7 @@ The note a run keeps on each of its threads: its steps while it works, then one 
 _Avoid_: status comment, checklist
 
 **Watcher**:
-The difftate process for one review: it opens the review, watches its threads, and dispatches runs until it is stopped.
+The difftate process for one repository: it opens the review of the checked-out branch, watches its threads, and dispatches runs until it is stopped. It follows the checked-out branch: between runs, it moves to that branch's review.
 
 ### Coding agent
 
