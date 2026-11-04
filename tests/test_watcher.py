@@ -6,6 +6,7 @@ HOME points into the temporary folder, so diffity's data and the review history
 stay there too. The shared tests run on both stores: diffity (skipped when
 diffity 0.9.5 isn't installed) and the local store (with no diffity on PATH).
 """
+import http.client
 import json
 import os
 import re
@@ -702,25 +703,97 @@ class LocalWatcherTest(Harness, SharedTests, unittest.TestCase):
 
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertEqual(self.bodies(tid)[-1], f"Fake answer to {tid[:8]}.")
-        self.assertIn("(no browser viewer for the local store yet", self.terminal())
 
-    def test_open_herdr_opens_a_review_tab_on_the_local_store(self):
-        # A fake Herdr app: no tabs yet, and it records what it was asked to do
-        calls = os.path.join(self.tmp, "herdr-calls")
-        herdr = os.path.join(self.tmp, "bin", "herdr-app")
-        with open(herdr, "w") as f:
-            f.write(f'#!/bin/sh\necho "$@" >> {calls}\n[ "$1" = ls ] && echo \'{{"spaces": []}}\'\nexit 0\n')
-        os.chmod(herdr, 0o755)
-        self.env["DT_HERDR"] = herdr
-        self.extra_args = ["--open", "herdr"]
+    def opened_urls(self):
+        try:
+            with open(os.path.join(self.tmp, "opened")) as f:
+                return f.read().splitlines()
+        except FileNotFoundError:
+            return []
+
+    def page(self, path, cookie=None, headers=None):
+        """(status, headers, body) of a GET of the browser viewer's <path>, with no
+        redirect followed."""
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            conn.request("GET", path, headers=dict(headers or {}, **({"Cookie": cookie} if cookie else {})))
+            r = conn.getresponse()
+            return r.status, r.headers, r.read().decode()
+        finally:
+            conn.close()
+
+    def launch_page(self, link):
+        """Open <link> as the browser would: its launch code for the page's cookie."""
+        status, headers, _ = self.page(link[len(f"http://127.0.0.1:{self.port}"):])
+        self.assertEqual((status, headers["Location"]), (303, "/"))
+        cookie = headers["Set-Cookie"]
+        for attribute in ("HttpOnly", "SameSite=Strict", "Path=/"):
+            self.assertIn(attribute, cookie)
+        return cookie.split(";")[0]
+
+    def test_open_browser_opens_difftates_own_page_with_a_launch_code(self):
+        # A fake `open` that records what it was asked to open
+        with open(os.path.join(self.tmp, "bin", "open"), "w") as f:
+            f.write(f'#!/bin/sh\necho "$@" >> {os.path.join(self.tmp, "opened")}\n')
+        self.env["DT_OPEN"] = "browser"
         self.start_watcher()
-        wait_for("the Review tab", lambda: 'Herdr: opened the "Review · ' in self.terminal())
 
-        with open(calls) as f:
-            new_tab = [line for line in f.read().splitlines() if line.startswith("do tab.new ")]
-        self.assertEqual(len(new_tab), 1)
-        args = json.loads(new_tab[0][len("do tab.new "):])
-        self.assertEqual((args["mod"], args["props"]["folder"]), ("difftate", os.path.realpath(self.repo)))
+        [link] = wait_for("the browser to open", self.opened_urls)
+        self.assertRegex(link, rf"^http://127\.0\.0\.1:{self.port}/\?launch=[\w-]+$")
+        self.assertNotIn(self.token, link, "the review token never leaves its file")
+        self.assertIn(link, self.terminal(), "the terminal shows the link too")
+        cookie = self.launch_page(link)
+        self.assertNotIn(self.token, cookie)
+
+        status, headers, html = self.page("/", cookie)
+        self.assertEqual((status, headers["Content-Type"]), (200, "text/html; charset=utf-8"))
+        self.assertNotIn(self.token, html)
+        scripts = re.findall(r'<script[^>]* src="([^"]+)"', html)
+        self.assertTrue(scripts, html)
+        for src in [*scripts, "diff.js"]:
+            status, headers, _ = self.page("/" + src, cookie)
+            self.assertEqual((status, headers["Content-Type"]), (200, "text/javascript; charset=utf-8"), src)
+        # The page calls the API with its cookie, and a header no other site's page can send
+        status, _, body = self.page("/api/view", cookie, {"X-Difftate": "page"})
+        self.assertEqual((status, json.loads(body)), (200, {"view": ""}))
+
+        # A second `difftate --open browser` opens it again, with a new launch code
+        self.assertEqual(self.second_watcher("--open", "browser").returncode, 0)
+        links = wait_for("the browser to open again", lambda: len(self.opened_urls()) == 2 and self.opened_urls())
+        self.assertNotEqual(links[1], link)
+        self.launch_page(links[1])
+
+    def test_a_used_launch_code_is_refused(self):
+        with open(os.path.join(self.tmp, "bin", "open"), "w") as f:
+            f.write(f'#!/bin/sh\necho "$@" >> {os.path.join(self.tmp, "opened")}\n')
+        self.env["DT_OPEN"] = "browser"
+        self.start_watcher()
+        [link] = wait_for("the browser to open", self.opened_urls)
+        self.launch_page(link)
+
+        status, headers, body = self.page(link[len(f"http://127.0.0.1:{self.port}"):])
+        self.assertEqual(status, 401)
+        self.assertIsNone(headers["Set-Cookie"], "no cookie for a used code")
+        self.assertNotIn("<script", body)
+
+    def test_the_browser_viewer_refuses_requests_without_its_cookie(self):
+        with open(os.path.join(self.tmp, "bin", "open"), "w") as f:
+            f.write(f'#!/bin/sh\necho "$@" >> {os.path.join(self.tmp, "opened")}\n')
+        self.env["DT_OPEN"] = "browser"
+        self.start_watcher()
+        cookie = self.launch_page(wait_for("the browser to open", self.opened_urls)[0])
+        name = cookie.split("=")[0]
+
+        for path in ("/", "/?launch=wrong", f"/?token={self.token}", "/app.js", "/diff.js"):
+            for given in (None, f"{name}=wrong"):
+                status, headers, body = self.page(path, given)
+                self.assertEqual(status, 401, (path, given))
+                self.assertIsNone(headers["Set-Cookie"], path)
+                self.assertNotIn("<script", body, path)
+        # The API takes the cookie only with the page's header, and only from its own origin
+        for headers in ({}, {"X-Difftate": "page", "Origin": "http://127.0.0.1:1"}):
+            status, _, _ = self.page("/api/view", cookie, headers)
+            self.assertEqual(status, 401, headers)
 
     def test_a_thread_survives_a_commit(self):
         self.release_agent()

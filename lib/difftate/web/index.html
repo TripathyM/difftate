@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>difftate review</title>
+<!-- difftate's own browser viewer: a client of the review API (lib/difftate/api.py),
+     served by the watcher with its token. app.js does the rest. -->
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --border: #d0d7de; --panel: #f6f8fa;
+  --add-bg: #dafbe1; --add-num: #ccffd8; --del-bg: #ffebe9; --del-num: #ffd7d5; --hunk: #ddf4ff;
+  --sel: #fff8c5; --accent: #0969da; --card: #ffffff; --note: #f6f8fa;
+  --waiting: #9a6700; --queued: #8250df; --working: #0969da; --replied: #1a7f37; --failed: #cf222e; --closed: #656d76;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --border: #30363d; --panel: #161b22;
+    --add-bg: #12261e; --add-num: #1b4721; --del-bg: #25171c; --del-num: #542426; --hunk: #121d2f;
+    --sel: #3b2e00; --accent: #4493f8; --card: #0d1117; --note: #161b22;
+    --waiting: #d29922; --queued: #ab7df8; --working: #4493f8; --replied: #3fb950; --failed: #f85149; --closed: #8d96a0;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+select, input { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
+textarea { width: 100%; min-height: 64px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; resize: vertical; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+header { position: sticky; top: 0; z-index: 3; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+header .brand { font-weight: 600; }
+header .what { color: var(--muted); }
+header .views { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+header #commit { width: 110px; }
+#message { flex-basis: 100%; color: var(--failed); }
+#message:empty { display: none; }
+#message.info { color: var(--muted); }
+
+.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; }
+aside { position: sticky; top: var(--header-h, 48px); max-height: calc(100vh - var(--header-h, 48px)); overflow: auto;
+  border-right: 1px solid var(--border); padding: 12px; }
+aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 6px; display: flex; gap: 8px; align-items: center; }
+aside h2:first-child { margin-top: 0; }
+aside h2 select { font-size: 12px; text-transform: none; letter-spacing: 0; margin-left: auto; }
+aside ul { list-style: none; margin: 0; padding: 0; }
+aside li a { display: block; padding: 3px 6px; border-radius: 6px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+aside li a:hover { background: var(--panel); text-decoration: none; }
+aside .counts { font-family: var(--mono); font-size: 12px; }
+aside .thread-item .where { font-family: var(--mono); font-size: 12px; }
+aside .thread-item .gist { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.empty { color: var(--muted); padding: 3px 6px; }
+
+main { padding: 12px 16px 40vh; min-width: 0; }
+.add { color: var(--replied); } .del { color: var(--failed); }
+
+.file { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 16px; }
+.file > h3 { position: sticky; top: var(--header-h, 48px); z-index: 2; margin: 0; padding: 6px 10px; font: 600 13px var(--mono);
+  background: var(--panel); border-bottom: 1px solid var(--border); border-radius: 6px 6px 0 0; display: flex; gap: 10px; }
+.file > h3 .status { font-weight: 400; color: var(--muted); }
+.file > h3 .counts { margin-left: auto; font-weight: 400; }
+.file .note { padding: 8px 10px; color: var(--muted); }
+table.diff { width: 100%; border-collapse: collapse; font: 12px/1.5 var(--mono); table-layout: fixed; }
+table.diff col.num { width: 52px; }
+table.diff td { padding: 0 8px; vertical-align: top; }
+table.diff td.num { text-align: right; color: var(--muted); cursor: pointer; user-select: none; }
+table.diff td.num:hover { color: var(--accent); text-decoration: underline; }
+table.diff td.num.none { cursor: default; text-decoration: none; }
+table.diff td.code { white-space: pre-wrap; word-break: break-all; }
+tr.add td.code { background: var(--add-bg); } tr.add td.num { background: var(--add-num); }
+tr.delete td.code { background: var(--del-bg); } tr.delete td.num { background: var(--del-num); }
+tr.hunk td { background: var(--hunk); color: var(--muted); padding: 2px 8px; }
+tr.selected td { background: var(--sel) !important; }
+tr.below > td { padding: 6px 10px; background: var(--panel); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+
+.thread { background: var(--card); border: 1px solid var(--border); border-radius: 6px; margin: 4px 0; max-width: 900px; }
+.thread.flash { outline: 2px solid var(--accent); }
+.thread > .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.thread.closed > .head { border-bottom: 0; }
+.thread .where { font: 12px var(--mono); }
+.badge { font-size: 12px; border: 1px solid currentColor; border-radius: 10px; padding: 0 7px; white-space: nowrap; }
+.s-waiting { color: var(--waiting); } .s-queued { color: var(--queued); } .s-working { color: var(--working); }
+.s-replied { color: var(--replied); } .s-failed { color: var(--failed); } .s-resolved, .s-dismissed { color: var(--closed); }
+.badge.outdated { color: var(--waiting); }
+.badge.elsewhere { color: var(--muted); }
+.thread .written { padding: 6px 10px 0; color: var(--muted); font-size: 12px; }
+.thread pre.code { margin: 4px 10px 6px; padding: 6px 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; }
+.comment { padding: 6px 10px; }
+.comment + .comment { border-top: 1px solid var(--border); }
+.comment .who { font-size: 12px; color: var(--muted); }
+.comment .who b { color: var(--fg); }
+.comment.k-queued, .comment.k-progress { background: var(--note); }
+.comment .body { white-space: pre-wrap; word-wrap: break-word; }
+.comment .body code { font: 12px var(--mono); background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 0 3px; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px 8px; align-items: flex-start; }
+.actions textarea { flex-basis: 100%; min-height: 40px; }
+.actions .hint { color: var(--muted); font-size: 12px; margin-right: auto; align-self: center; }
+.new-thread { max-width: 900px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); }
+.new-thread .title { font: 12px var(--mono); margin-bottom: 6px; }
+.new-thread .actions { padding: 6px 0 0; }
+section.elsewhere { margin-bottom: 16px; }
+section.elsewhere > h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
+
+@media (max-width: 800px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  aside { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--border); }
+  header .views { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">difftate</span>
+  <span class="what" id="what">loading…</span>
+  <span class="views">
+    <label for="view">View</label>
+    <select id="view">
+      <option value="">All changes</option>
+      <option value="HEAD">Uncommitted</option>
+      <option value="staged">Staged</option>
+      <option value="unstaged">Unstaged</option>
+      <option value="HEAD~1">Last commit</option>
+      <option value="HEAD~2">Last 2 commits</option>
+      <option value="HEAD~3">Last 3 commits</option>
+    </select>
+    <input id="commit" placeholder="or a commit" aria-label="Commits after this one" title="The commits after this one (Enter)">
+  </span>
+  <span id="message" role="status"></span>
+</header>
+<div class="layout">
+  <aside>
+    <h2>Files</h2>
+    <ul id="files"></ul>
+    <h2>Threads
+      <select id="filter" aria-label="Which threads">
+        <option value="open">Open</option>
+        <option value="all">All</option>
+      </select>
+    </h2>
+    <ul id="threads"></ul>
+  </aside>
+  <main id="main"></main>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
