@@ -151,7 +151,7 @@ class Watcher:
         self.dispatch = None
         self.reviews = {}  # branch: its review, once opened
         self.branch = None  # the branch whose review the watcher shows
-        self.unreadable = None  # a branch whose review couldn't be read (warned once)
+        self.unreadable_branch = None  # whose review couldn't be read (warned once)
 
     def setup(self):
         o = self.opts
@@ -219,7 +219,7 @@ class Watcher:
             self.branch = changes.review_branch(o["cwd"], base)
         except changes.ChangesError as e:
             raise Exit(1, str(e))
-        print(f"The review of {self.branch} against {base}, showing {changes.view_name(self.view)}")
+        print(self.banner(self.branch, self.view))
         try:
             review, interrupted = self.open_review(self.branch)
         except (StoreError, OSError) as e:
@@ -283,16 +283,24 @@ class Watcher:
         try:
             review, interrupted = self.open_review(branch)
         except (StoreError, OSError) as e:
-            if branch != self.unreadable:
+            if branch != self.unreadable_branch:
                 print(f"[{now()}] Warning: could not read the review of {branch} ({e}): "
                       f"still showing the review of {self.branch}")
-            self.unreadable = branch
+            self.unreadable_branch = branch
             return
-        self.branch, self.unreadable = branch, None
-        print(f"[{now()}] The review of {branch} against {self.base}, "
-              f"showing {changes.view_name(self.api.shown.current())}")
-        self.api.review = review
+        self.branch, self.unreadable_branch = branch, None
+        shown = self.api.shown
+        try:
+            shown.check(shown.current())
+            print(f"[{now()}] {self.banner(branch, shown.current())}")
+        except changes.ViewError:
+            print(f"[{now()}] {self.banner(branch, shown.current())}: not on this branch")
+            shown.switch("")
+        self.api.switch_review(review)
         self.dispatch.switch_review(review, interrupted)
+
+    def banner(self, branch, view):
+        return f"The review of {branch} against {self.base}, showing {changes.view_name(view)}"
 
     def tampered(self, thread_ids):
         names = ", ".join(t[:8] for t in thread_ids) or "no thread named"

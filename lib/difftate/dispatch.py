@@ -36,9 +36,9 @@ def now():
 
 
 class Dispatch:
-    def __init__(self, review, agent, cwd, review_folder, interval, api, between_runs=None):
+    def __init__(self, review, agent, cwd, review_folder, interval, api, between_runs):
         self.review = review
-        self.between_runs = between_runs or (lambda: None)
+        self.between_runs = between_runs  # () -> None
         self.agent = agent
         self.cwd = cwd
         self.review_folder = review_folder  # the store and the token: kept out of the coding agent's reach

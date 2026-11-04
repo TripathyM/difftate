@@ -15,6 +15,10 @@ the API can.
 A file the reviewer marked viewed stays viewed until its diff in the changeset
 (all changes) changes: a commit doesn't change it, any edit to the file does.
 
+While another branch is checked out (the watcher moves to its review after the
+run in progress), the files on disk aren't this review's: nothing reads them to
+change it. Marks stay, and opening a thread or marking a file viewed gets 409.
+
 Dispatch records which comments each run was sent: in the watcher's memory,
 and as a run in the store. When the watcher starts, it reads the runs back.
 """
@@ -101,6 +105,8 @@ class Review:
 
     def _viewed(self, now):
         marked = self.store.viewed()
+        if not self.code.on_branch():
+            return sorted(marked)
         for f, diff_hash in marked.items():
             if now.get(f) != diff_hash:
                 self.store.mark_viewed(f, None)
@@ -119,6 +125,7 @@ class Review:
         need_text(file, "file")
         if not isinstance(viewed, bool):
             raise StoreError(400, "viewed must be true or false")
+        self._need_branch()
         now = self._diff_hashes()
         if viewed and file not in now:
             raise StoreError(404, f"{file} is not in the changeset")
@@ -131,6 +138,7 @@ class Review:
         if author != REVIEWER:
             raise StoreError(403, "only a reviewer opens a thread")
         anchor, body = need_anchor(anchor), need_text(body)
+        self._need_branch()
         outdated = False
         if anchor is not None:
             # A thread is written on the code it names: if the file no longer has
@@ -189,6 +197,11 @@ class Review:
         if author != REVIEWER:
             raise StoreError(403, "only a reviewer changes a thread's status")
         return self.store.set_status(thread_id, need_status(status))
+
+    def _need_branch(self):
+        if not self.code.on_branch():
+            raise StoreError(409, "another branch is checked out: the watcher moves to its review "
+                                  "once the run in progress ends")
 
     # ── Runs (Dispatch) ──────────────────────────────────────────────────────
     def start_run(self, threads):

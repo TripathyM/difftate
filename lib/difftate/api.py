@@ -53,7 +53,10 @@ A comment's kind says who wrote it: a comment is the reviewer's (the default), a
 reply the coding agent's, and a queued or progress note difftate's. "author" says who
 opens a thread or sets its status, and must be "reviewer" (the default): anyone
 else gets 403. Only notes can be edited (403 otherwise). Errors are
-{"error": <message>} with status 400, 403, 404 or 502.
+{"error": <message>} with status 400, 403, 404, 409 or 502. While another branch is
+checked out and a run keeps the watcher on this review, opening a thread or
+marking a file viewed gets 409: the watcher moves to that branch's review once
+the run ends.
 
 A viewed file belongs to the review, like a thread: it stays viewed in every
 view, after a reload and after a commit, until its diff in all changes changes
@@ -236,6 +239,10 @@ class ReviewApi:
         self.server = None
         self.token_file = os.path.join(folder, "token")
         self.api_file = os.path.join(folder, "api.json")
+
+    def switch_review(self, review):
+        """Serve <review> from now on: the watcher follows the checked-out branch."""
+        self.review = review
 
     def address(self):
         return ApiAddress(f"http://127.0.0.1:{self.server.server_address[1]}", self.token_file)

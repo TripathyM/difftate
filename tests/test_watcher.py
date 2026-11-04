@@ -1153,6 +1153,53 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertTrue(self.bodies(tid)[1].startswith("✅ **Done** in "), self.bodies(tid))
         self.assertFalse(self.thread(tid)["outdated"], "the other branch's code didn't make it outdated")
 
+    def test_while_a_run_keeps_the_watcher_on_its_branch_the_other_branchs_files_change_nothing(self):
+        git(self.repo, self.env, "commit", "-q", "-am", "Say hello")
+        self.start_watcher()
+        self.assertEqual(self.mark_viewed("app.py"), ["app.py"])
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
+
+        git(self.repo, self.env, "checkout", "-q", "-b", "other", "main")
+        self.write("app.py", "def greet(name):\n    return 'hey ' + name\n")
+        time.sleep(1)  # several polls of the run with the other branch checked out
+        self.assertEqual(self.viewed(), ["app.py"], "the other branch's diff doesn't clear a mark")
+        self.assertEqual(self.refused("PUT", "/api/viewed", {"file": "app.py"}), 409)
+        self.assertEqual(self.refused("POST", "/api/threads", {"body": "On which branch?"}), 409)
+        self.assertFalse(self.thread(tid)["outdated"])
+
+        self.release_agent()
+        wait_for("the review of other", lambda: self.api("GET", "/api/review")["branch"] == "other")
+        git(self.repo, self.env, "checkout", "-q", "--", "app.py")
+        self.checkout("feature")
+        self.assertEqual(self.viewed(), ["app.py"])
+        self.assertEqual(self.state(tid), "replied")
+
+    def test_a_review_on_the_base_branch_lasts_one_commit(self):
+        git(self.repo, self.env, "checkout", "-q", "main")
+        self.write("app.py", "def greet(name):\n    return f'hello {name}'\n")
+        self.release_agent()
+        self.start_watcher()
+        review = self.api("GET", "/api/review")
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+        git(self.repo, self.env, "commit", "-q", "-am", "Say hello")
+        wait_for("a new review", lambda: self.api("GET", "/api/review")["id"] != review["id"])
+        self.assertEqual(self.api("GET", "/api/threads"), [], "ADR 0002: the commit stood in for the branch")
+
+    def test_a_view_the_new_branch_doesnt_have_falls_back_to_all_changes(self):
+        for n in range(3):
+            self.write(f"f{n}.py", f"n = {n}\n")
+            git(self.repo, self.env, "add", ".")
+            git(self.repo, self.env, "commit", "-q", "-m", f"commit {n}")
+        self.extra_args = ["--ref", "HEAD~3"]
+        self.start_watcher()
+        git(self.repo, self.env, "checkout", "-q", "--orphan", "lone")
+        git(self.repo, self.env, "commit", "-q", "-m", "only one")
+        wait_for("the review of lone", lambda: self.api("GET", "/api/review")["branch"] == "lone")
+        self.assertEqual(self.api("GET", "/api/view")["view"], "")
+
 
 if __name__ == "__main__":
     unittest.main()
