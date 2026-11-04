@@ -14,6 +14,12 @@ The store port:
                                         the note won't change again (a store may
                                         keep only final notes: see local.py)
   set_status(thread_id, status)         open, resolved or dismissed
+  move_thread(thread_id, start, end, snapshot)
+                                        the thread's code moved to lines start..end
+                                        (the file now is <snapshot>)
+  mark_outdated(thread_id)              the thread's code changed: it stays outdated
+                                        (diffity keeps neither: its threads never
+                                        move and are never outdated)
   record_run(run)                       a run starts: {"id", "threads", "sent" (the ids
                                         of the comments it was sent), "repliesBefore"
                                         ({thread id: ids of its replies then})}
@@ -23,8 +29,8 @@ The store port:
                                         can't keep runs (diffity)
 
 A thread:
-  {"id", "anchor": {"file", "side", "startLine", "endLine", "code", "commit"} or None
-   for a general thread, "outdated", "status", "comments": [{"id", "author", "kind",
+  {"id", "anchor": {"file", "side", "startLine", "endLine", "code", "commit",
+   "snapshot"} or None for a general thread, "outdated", "status", "comments": [{"id", "author", "kind",
    "body", "time"}]}
 The Review adds "state" (thread state) before the API returns it.
 """

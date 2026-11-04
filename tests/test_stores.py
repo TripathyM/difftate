@@ -27,6 +27,24 @@ ANCHOR = {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2, "code":
 class StoreContract:
     """The behaviour every store shares. Subclasses set self.store in setUp."""
     KEEPS_RUNS = True  # diffity has no place for runs
+    FOLLOWS_CODE = True  # diffity's threads never move and are never outdated
+
+    def test_a_thread_moves_with_its_code_and_stays_outdated_once_it_changed(self):
+        tid = self.store.open_thread(dict(ANCHOR, snapshot="a" * 40), "Why an f-string here?")["id"]
+
+        self.store.move_thread(tid, 5, 6, "b" * 40)
+        moved = self.store.threads()[0]
+        self.store.mark_outdated(tid)
+        [outdated] = self.store.threads()
+
+        if not self.FOLLOWS_CODE:
+            self.assertEqual((outdated["anchor"]["startLine"], outdated["outdated"]), (2, False))
+            return
+        self.assertEqual({k: moved["anchor"][k] for k in ("startLine", "endLine", "code", "snapshot")},
+                         {"startLine": 5, "endLine": 6, "code": ANCHOR["code"], "snapshot": "b" * 40})
+        self.assertFalse(moved["outdated"])
+        self.assertTrue(outdated["outdated"])
+        self.assertEqual(outdated["anchor"], moved["anchor"], "an outdated thread keeps its anchor")
 
     def test_a_run_is_kept_with_what_it_was_sent_until_it_ends(self):
         if not self.KEEPS_RUNS:
@@ -187,10 +205,14 @@ class LocalStoreTest(StoreContract, unittest.TestCase):
         tid = self.store.open_thread(ANCHOR, "Why an f-string here?")["id"]
         self.store.add_comment(tid, "reply", "It reads better.")
         self.store.set_status(tid, "resolved")
+        self.store.move_thread(tid, 5, 5, "b" * 40)
+        self.store.mark_outdated(tid)
 
         [thread] = self.open_store().threads()
         self.assertEqual(thread, self.store.threads()[0])
         self.assertEqual(thread["status"], "resolved")
+        self.assertEqual((thread["anchor"]["startLine"], thread["anchor"]["snapshot"], thread["outdated"]),
+                         (5, "b" * 40, True))
         self.assertEqual(thread["anchor"]["commit"], git(self.repo, "rev-parse", "HEAD").strip())
 
     def test_runs_are_kept(self):
@@ -263,6 +285,7 @@ class DiffityStoreTest(StoreContract, unittest.TestCase):
     """A real diffity per test, in a temporary repository. HOME points into the
     temporary folder, so diffity's data stays there too."""
     KEEPS_RUNS = False
+    FOLLOWS_CODE = False
 
     def setUp(self):
         tmp = tempfile.mkdtemp(prefix="difftate-store-test-")

@@ -248,7 +248,7 @@ export default class Review extends View {
     if (!this.api) return;
     const list = await this.api.threads().catch(() => null);
     if (!list) return;
-    const sig = JSON.stringify(list.map((t) => [t.id, t.status, t.state, t.outdated, t.comments.length, t.comments.at(-1)?.body]));
+    const sig = JSON.stringify(list.map((t) => [t.id, t.status, t.state, t.outdated, t.startLine, t.endLine, t.comments.length, t.comments.at(-1)?.body]));
     if (sig === this.threadSig) return false;
     this.threadSig = sig;
     this.threads = list;
@@ -404,7 +404,10 @@ export default class Review extends View {
     return best;
   }
 
+  // The row a thread sits under, or -1. An outdated thread's code is no longer on its
+  // lines, so it never sits next to them: it is listed below the code, with the code it was written on.
   anchorRow(th) {
+    if (th.outdated) return -1;
     const m = th.side === "old" ? this.rowOfOld : this.rowOfNew;
     return m?.get(th.endLine) ?? -1;
   }
@@ -427,6 +430,12 @@ export default class Review extends View {
     const state = stateOf(th);
     const range = th.startLine === th.endLine ? `${th.startLine}` : `${th.startLine}-${th.endLine}`;
     const lines = [{ k: "head", text: `${state === "resolved" || state === "dismissed" ? "○" : "●"} ${STATE_LABEL[state] ?? state}  ·  ${th.side === "old" ? "old " : ""}line ${range}${th.outdated ? "  ·  outdated" : ""}` }];
+    if (th.outdated && th.code) {
+      const code = th.code.replace(/\n$/, "").split("\n");
+      lines.push({ k: "author", text: "code when written (it changed since)" });
+      for (const l of code.slice(0, 8)) lines.push({ k: "code", text: detab(l, this.opts.tab_width).slice(0, cols) });
+      if (code.length > 8) lines.push({ k: "dim", text: `… ${code.length - 8} more lines` });
+    }
     if (state === "resolved" || state === "dismissed") {
       const first = (th.comments[0]?.body ?? "").split("\n")[0];
       lines.push({ k: "dim", text: first.slice(0, cols) });
@@ -448,10 +457,11 @@ export default class Review extends View {
 
   rebuildItems() {
     const items = [], itemOfRow = [];
-    const byRow = new Map(), orphans = [];
+    const byRow = new Map(), orphans = [], outdated = [];
     for (const th of this.threadsHere()) {
       const i = this.anchorRow(th);
-      if (i < 0) orphans.push(th);
+      if (th.outdated) outdated.push(th);
+      else if (i < 0) orphans.push(th);
       else byRow.set(i, [...(byRow.get(i) ?? []), th]);
     }
     const RH = this.rowH();
@@ -463,6 +473,10 @@ export default class Review extends View {
     if (orphans.length) {
       items.push({ t: "note", h: RH + 8, key: "orphans", text: `${orphans.length} thread(s) on lines this view doesn't show. <leader>v switches diff / full file.` });
       for (const th of orphans) items.push({ t: "thread", th, i: -1, key: `t${th.id}`, ...this.layoutThread(th) });
+    }
+    if (outdated.length) {
+      items.push({ t: "note", h: RH + 8, key: "outdated", text: `${outdated.length} outdated thread(s): their code changed after they were written.` });
+      for (const th of outdated) items.push({ t: "thread", th, i: -1, key: `t${th.id}`, ...this.layoutThread(th) });
     }
     this.items = items;
     this.itemOfRow = itemOfRow;
@@ -721,10 +735,10 @@ export default class Review extends View {
     cx.spawn(async (cx) => {
       if (this.view?.path !== th.filePath) await this.openFile(th.filePath, this.fileOf(th.filePath) ? "diff" : "file", { line: th.endLine, side: th.side });
       let row = this.anchorRow(th);
-      if (row < 0 && this.view.mode === "diff") { await this.openFile(th.filePath, "file", { line: th.endLine }, false); row = this.anchorRow(th); }
-      if (row >= 0) this.setRow(row, false);
+      if (row < 0 && !th.outdated && this.view.mode === "diff") { await this.openFile(th.filePath, "file", { line: th.endLine }, false); row = this.anchorRow(th); }
       this.curThread = th.id;
-      this.reveal();
+      if (row >= 0) { this.setRow(row, false); this.reveal(); }
+      else { const idx = this.items.findIndex((x) => x.key === `t${th.id}`); if (idx >= 0) this.scroll.scroll_to_item(idx); }
       cx.notify();
     });
   }
@@ -755,7 +769,9 @@ export default class Review extends View {
 
   threadAtCursor() {
     const here = this.threadsHere().filter((t) => this.anchorRow(t) === this.cur.row);
-    return here.find((t) => t.id === this.curThread) ?? here.find((t) => t.status === "open") ?? here[0] ?? null;
+    // A thread below the code (outdated, say) is picked by clicking it, ]d or the threads picker
+    return here.find((t) => t.id === this.curThread) ?? here.find((t) => t.status === "open") ?? here[0]
+      ?? this.threadsHere().find((t) => t.id === this.curThread && this.anchorRow(t) < 0) ?? null;
   }
 
   startReply() {
@@ -1054,9 +1070,9 @@ export default class Review extends View {
 
   threadEl(it, t) {
     const th = it.th, state = stateOf(th);
-    const on = th.id === this.curThread && this.anchorRow(th) === this.cur.row;
+    const on = th.id === this.curThread && (it.i < 0 || this.anchorRow(th) === this.cur.row);
     const stripe = { waiting: t.blocked, queued: t.blocked, working: t.working, replied: t.done, failed: t.ansi1 }[state] ?? t.dim;
-    const tc = (k) => ({ head: stripe, author: t.dim, agent: t.foreground, status: t.muted, hint: t.dim, dim: t.dim }[k] ?? t.foreground);
+    const tc = (k) => ({ head: stripe, author: t.dim, agent: t.foreground, status: t.muted, hint: t.dim, dim: t.dim, code: t.muted }[k] ?? t.foreground);
     return h_flex().h(it.h).w_full().flex_none().pl(this.gutterW()).pr(20).py(5)
       .child(h_flex().h_full().flex_1().min_w(0).rounded(6).overflow_hidden().border_1().border_color(on ? t.accent : t.border).bg(t.surface)
         .child(div().w(3).h_full().flex_none().bg(stripe))

@@ -177,15 +177,17 @@ class Watcher:
             if o["store"] == "local" or o["base"] or not o["ref"]:
                 raise Exit(1, str(e))
             base = None
+        code = None
         if o["store"] == "local":
             store, problem = self.local_store(base), lambda: None
+            code = changes.Code(o["cwd"], base, store.info["branch"])
         else:
             try:
                 self.diffity = diffity.launch(o["ref"] or base, o["cwd"])
             except diffity.DiffityStartError as e:
                 raise Exit(1, str(e))
             store, problem = self.diffity.store(), self.diffity.problem
-        review = Review(store)
+        review = Review(store, code)
         try:
             interrupted = review.recover_runs()
         except StoreError as e:

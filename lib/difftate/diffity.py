@@ -245,6 +245,13 @@ class DiffityStore:
         self._call("PATCH", f"/api/comments/{note_id}", {"body": text})
         return _comment(dict(found, body=text))
 
+    # diffity only checks that a thread's lines are still in its diff: they never move
+    def move_thread(self, thread_id, start, end, snapshot):
+        pass
+
+    def mark_outdated(self, thread_id):
+        pass
+
     # diffity has no place for runs: the Review finds them from the progress notes
     def record_run(self, run):
         pass

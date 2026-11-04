@@ -7,6 +7,11 @@ store or the caller (a viewer through the API, or Dispatch):
   3. Only difftate writes notes, and only notes can be edited.
   4. One rule gives the thread state (thread_state below).
 
+A thread follows its code (follow_code): when only line numbers change, it moves
+with its code; when its code changes, it is outdated, and keeps the code it was
+written on. Only difftate moves threads or marks them outdated: no caller of
+the API can.
+
 Dispatch records which comments each run was sent: in the watcher's memory,
 and as a run in the store. When the watcher starts, it reads the runs back. A
 store that can't keep runs (diffity) has them recovered from the progress notes
@@ -15,6 +20,7 @@ instead (a run's progress note comes after every comment the run was sent).
 import threading
 import uuid
 
+from .changes import OUTDATED, ChangesError, same_code
 from .store import AUTHOR_OF, KINDS, NOTE_KINDS, StoreError, need_anchor, need_kind, need_status, need_text
 
 REVIEWER = AUTHOR_OF["comment"]
@@ -53,8 +59,9 @@ def thread_state(thread, sent, running, replies_before):
 
 
 class Review:
-    def __init__(self, store):
+    def __init__(self, store, code=None):
         self.store = store
+        self.code = code  # changes.Code: where each thread's code is now (None: threads stay put)
         self._sent = set()  # ids of the comments sent to a run
         self._running = frozenset()  # ids of the threads in the run in progress
         self._run_id = None  # the run in progress
@@ -85,8 +92,39 @@ class Review:
     def open_thread(self, anchor, body, author=REVIEWER):
         if author != REVIEWER:
             raise StoreError(403, "only a reviewer opens a thread")
-        thread = self.store.open_thread(need_anchor(anchor), need_text(body))
+        anchor, body = need_anchor(anchor), need_text(body)
+        outdated = False
+        if anchor is not None and self.code is not None:
+            # A thread is written on the code it names: if the file no longer has
+            # that code there (it changed since the viewer showed it), it is outdated at once
+            try:
+                anchor["snapshot"], written_on = self.code.snapshot(anchor)
+            except ChangesError as e:
+                raise StoreError(502, f"could not read {anchor['file']}: {e}")
+            if anchor["code"] is None:
+                anchor["code"] = written_on
+            outdated = written_on is None or not same_code(anchor["code"], written_on)
+        thread = self.store.open_thread(anchor, body)
+        if outdated:
+            self.store.mark_outdated(thread["id"])
+            thread["outdated"] = True
         return self._with_state(thread)
+
+    def follow_code(self):
+        """Threads follow their code: each one moves with it, or is outdated when
+        its code changed. Returns the ids of the threads that became outdated."""
+        if self.code is None:
+            return []
+        anchors = {t["id"]: t["anchor"] for t in self.store.threads() if t["anchor"] and not t["outdated"]}
+        outdated = []
+        for tid, found in self.code.follow(anchors).items():
+            if found == OUTDATED:
+                self.store.mark_outdated(tid)
+                outdated.append(tid)
+            else:
+                _, start, end, snapshot = found
+                self.store.move_thread(tid, start, end, snapshot)
+        return outdated
 
     def add_comment(self, thread_id, kind, body):
         """A reviewer's comment, the coding agent's reply, or difftate's note: <kind> says which."""

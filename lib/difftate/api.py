@@ -17,9 +17,13 @@ readable only by the user); a request without it gets 401.
 A thread (difftate's thread format):
   {"id",
    "anchor": {"file", "side": "old"|"new", "startLine", "endLine",
-              "code" (the code when written), "commit" (the commit when written)}
+              "code" (the code when written), "commit" (the commit when written),
+              "snapshot" (local store: the whole file with that code on those lines, a
+              blob in git's object database)}
              or null for a general thread,
-   "outdated": true when the anchored code changed after the thread was written,
+   "outdated": true when the anchored code changed after the thread was written.
+               Until then the thread follows its code (its lines change when only
+               line numbers move); after, it keeps the lines and code it had,
    "status": "open"|"resolved"|"dismissed",
    "state": "waiting"|"queued"|"working"|"replied"|"failed" (null unless open),
    "comments": [{"id", "author": "reviewer"|"agent"|"difftate",
