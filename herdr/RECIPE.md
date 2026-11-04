@@ -19,7 +19,7 @@ Top to bottom, filling the tab (the theme's colors throughout, light and dark):
 
 ## How it behaves
 
-- **Thread states**, from the review API (the same in every viewer and in the watcher): *waiting for agent* (`blocked` stripe), *queued* (`blocked`), *agent working* (`working`), *agent replied* (`done`), *failed: no reply* (its run ended without answering; `ansi1`), *resolved* (folded to one line, `dim`). An outdated thread says so in its header. Comments show as *you*, *agent* or *status* (difftate's notes, first 6 lines), from each comment's author.
+- **Thread states**, from the review API (the same in every viewer and in the watcher): *waiting for agent* (`blocked` stripe), *queued* (`blocked`), *agent working* (`working`), *agent replied* (`done`), *failed: no reply* (its run ended without answering; `ansi1`), *resolved* (folded to one line, `dim`). An outdated thread says so in its header. Comments show as *you*, *agent* or *note* (difftate's notes, first 6 lines), from each comment's author.
 - **Live**: threads refresh every 2 s. The diff refreshes when the changeset changes (an agent edit, your save), but never over unsaved edits or while in insert mode; it catches up afterwards. Without a running difftate the tab says how to start one and checks again every 2 s.
 - **Keys** (all rebindable): `hjkl`, `w b e`, `0 ^ $`, `gg G`, `C-d C-u C-f C-b`, `zz`, with counts (`5j`). `]h [h` next/previous change, which crosses into the next file after the last one. `L H` next/previous file. `]d [d` next/previous open thread, across files. `V` to select lines. `gc` comments on the line or selection. `r` replies and `R` resolves the thread on the cursor's line. `gd` jumps to the definition (a picker if several), `gr` lists references, `C-o`/`Tab` move through the jump list. `Space Space` finds any file, `Space f c` changed files, `Space s d` threads. `Space v` switches diff ↔ full file, `Space e` hides the file list. `/ n N *` search. `?` lists every key, and Enter runs one.
 - **Editing**: `i a I A o O` enter insert mode, `x dd yy p P` edit lines, `u`/`C-r` undo/redo. Edits happen in full-file view: an edit key on a diff line switches there at the same line (deleted lines can't be edited). `C-s`, `Cmd-S` or `:w` saves; `:w!` overwrites; `:e!` reloads; `:42` goes to a line. With unsaved edits, the tab won't switch files.
@@ -51,7 +51,7 @@ Top to bottom, filling the tab (the theme's colors throughout, light and dark):
 ## Done when
 
 1. `herdr-app check ~/.config/herdr-app/mods/difftate` passes.
-2. With `difftate HEAD~1` running in a repo, `herdr-app do tab.new '{"name":"Review · repo","mod":"difftate","props":{"folder":"<repo>"}}'` shows its changed files and the first file's diff, and the header says "review API :<port>".
+2. With `difftate` running in a repo, `herdr-app do tab.new '{"name":"Review · repo","mod":"difftate","props":{"folder":"<repo>"}}'` shows its changed files and the first file's diff, and the header says "review API :<port>".
 3. A thread made with `POST /api/threads` shows under its line within 2 s; `herdr-app do difftate.next_thread` moves the cursor to it.
 4. `difftate.find_files` opens a picker with every file in the repo.
 5. `difftate.yank_line`, `difftate.put_below`, `difftate.save` on a changed line write the file; its tabs and permissions stay, and the diff refreshes by itself.

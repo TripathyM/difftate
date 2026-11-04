@@ -22,7 +22,7 @@ export async function findApi(root) {
   } catch { return null; }
   if (!info?.port || !token) return null;
   const api = new ReviewApi(info.port, token);
-  try { api.review = await api.call("GET", "/api/review"); } catch { return null; } // a stale file: no watcher there
+  try { await api.call("GET", "/api/review"); } catch { return null; } // a stale file: no watcher there
   return api;
 }
 
@@ -41,7 +41,6 @@ export class ReviewApi {
     this.port = port;
     this.token = token;
     this.base = `http://127.0.0.1:${port}`;
-    this.review = null;
   }
 
   async call(method, path, payload) {

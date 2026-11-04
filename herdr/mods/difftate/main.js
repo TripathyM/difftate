@@ -235,7 +235,10 @@ export default class Review extends View {
   }
 
   async loadDiff() {
-    const c = await this.api.changeset();
+    this.applyChangeset(await this.api.changeset());
+  }
+
+  applyChangeset(c) {
     this.diffText = c.diff;
     this.base = c.base;
     this.files = c.files;
@@ -273,9 +276,7 @@ export default class Review extends View {
           throw e;
         }
         if (c.diff !== this.diffText) {
-          this.diffText = c.diff;
-          this.base = c.base;
-          this.files = c.files;
+          this.applyChangeset(c);
           // Never reload over edits in progress; catch up once they're saved or dropped.
           if (this.view) { if (this.busyEditing()) this.needsReopen = true; else await this.reopen(); }
           cx.notify();
@@ -434,7 +435,7 @@ export default class Review extends View {
       for (const c of th.comments) {
         let body = c.body ?? "", who = "you", k = "body";
         if (c.author === "agent") { who = "agent"; k = "agent"; }
-        else if (c.author === "difftate") { body = body.split("\n").slice(0, 6).join("\n"); who = "status"; k = "status"; }
+        else if (c.author === "difftate") { body = body.split("\n").slice(0, 6).join("\n"); who = "note"; k = "status"; }
         lines.push({ k: "author", text: who });
         const w = wrap(body, cols);
         for (const l of w.slice(0, 40)) lines.push({ k, text: l });
@@ -818,7 +819,7 @@ export default class Review extends View {
         } else if (p.kind === "reply") {
           await this.api.comment(p.thread.id, text);
           this.curThread = p.thread.id;
-          this.msg = "Reply sent";
+          this.msg = "Comment sent";
         }
         this.threadSig = null;
         await this.loadThreads();
