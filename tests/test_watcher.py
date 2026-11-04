@@ -370,6 +370,34 @@ class WatcherTest(Harness, unittest.TestCase):
         ])
         self.assertTrue(self.note(second, "progress").startswith("✅ **Done** in "))
 
+    def test_a_run_whose_formatter_dies_fails_its_reused_queued_note_and_leaves_the_last_runs_note(self):
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        done = self.note(tid, "progress")
+        self.assertTrue(done.startswith("✅ **Done** in "), done)
+
+        # A follow-up while another thread's run is busy: the thread gets a queued note
+        os.remove(os.path.join(self.agent_dir, "go"))
+        other = self.open_thread("Rename greet to welcome?", line=1)["id"]
+        wait_for("a working progress note", lambda: self.note(other, "progress", "Working"))
+        self.api("POST", f"/api/threads/{tid}/comments", {"body": "And why not str.format?"})
+        wait_for("a queued note", lambda: self.note(tid, "queued"))
+
+        # The next run reuses that queued note, and its formatter dies at once
+        with open(os.path.join(self.agent_dir, "kill_formatter"), "w") as f:
+            f.write("3")
+        self.release_agent()
+        wait_for("a third run", lambda: len(self.prompts()) == 3)
+        wait_for("the failed progress note", lambda: "no reply" in self.bodies(tid)[-1])
+        self.assertEqual(self.state(tid), "failed")
+
+        comments = self.comments(tid)
+        self.assertEqual([k for k, _ in comments], ["comment", "progress", "reply", "comment", "progress"])
+        self.assertEqual(comments[1][1], done, "the last run's note is unchanged")
+        self.assertRegex(comments[4][1], r"^❌ \*\*Failed\*\* after \d+s — no reply$")
+
     def test_a_follow_up_during_a_run_on_the_same_thread_is_answered_in_the_next_run(self):
         self.start_watcher()
         tid = self.open_thread("Why an f-string here?")["id"]
