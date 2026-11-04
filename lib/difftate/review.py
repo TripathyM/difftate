@@ -74,13 +74,16 @@ class Review:
     def review(self):
         return self.store.review()
 
-    def threads(self, status=None):
-        """The threads, each with its thread state."""
+    def threads(self, status=None, view=None):
+        """The threads, each with its thread state. With a <view>, each anchor's
+        lines are where its code is in that view (see Code.place)."""
         if status is not None:
             need_status(status)
         threads = self.store.threads(status)
         for t in threads:
             self._with_state(t)
+        if view is not None and self.code is not None:
+            self.code.place(threads, view)
         return threads
 
     def unsent(self, thread):
@@ -89,7 +92,9 @@ class Review:
             return _unsent(thread, self._sent)
 
     # ── Changing the review (rules 1–3) ──────────────────────────────────────
-    def open_thread(self, anchor, body, author=REVIEWER):
+    def open_thread(self, anchor, body, author=REVIEWER, view=""):
+        """A thread on <anchor>'s lines in <view>: it belongs to the review, and
+        follows its code from there."""
         if author != REVIEWER:
             raise StoreError(403, "only a reviewer opens a thread")
         anchor, body = need_anchor(anchor), need_text(body)
@@ -98,7 +103,8 @@ class Review:
             # A thread is written on the code it names: if the file no longer has
             # that code there (it changed since the viewer showed it), it is outdated at once
             try:
-                anchor["snapshot"], written_on = self.code.snapshot(anchor)
+                anchor["snapshot"], written_on = self.code.snapshot(anchor, view)
+                anchor["view"] = view  # its code is followed in the view it was written in
             except ChangesError as e:
                 raise StoreError(502, f"could not read {anchor['file']}: {e}")
             if anchor["code"] is None:

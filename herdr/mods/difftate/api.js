@@ -26,13 +26,14 @@ export async function findApi(root) {
   return api;
 }
 
-// A thread from the API, flattened for the view: file, side, lines and the code it was written
-// on from its anchor (file null for a general thread), the API's thread state, and its comments as they are.
+// A thread from the API, flattened for the view: file, side, lines (where its code is in the view
+// asked for) and the code it was written on from its anchor (file null for a general thread),
+// whether its code is in that view and the view it was written in, the API's thread state, and its comments as they are.
 function viewThread(t) {
   const a = t.anchor;
   return {
-    id: t.id, filePath: a?.file ?? null, side: a?.side ?? "new", startLine: a?.startLine ?? 0, endLine: a?.endLine ?? 0, code: a?.code ?? null,
-    status: t.status, state: t.state, outdated: !!t.outdated, comments: t.comments ?? [],
+    id: t.id, filePath: a?.file ?? null, side: a?.side ?? "new", startLine: a?.startLine ?? 0, endLine: a?.endLine ?? 0, code: a?.code ?? null, writtenIn: a?.view ?? "",
+    inView: t.inView !== false, status: t.status, state: t.state, outdated: !!t.outdated, comments: t.comments ?? [],
   };
 }
 
@@ -57,16 +58,19 @@ export class ReviewApi {
     return body;
   }
 
-  // {base, commit, diff (the unified diff text), files (parsed)}
+  // The changeset in the view viewers show: {view, base, commit, diff (the unified diff text), files (parsed)}
   async changeset() {
     const c = await this.call("GET", "/api/changeset");
-    return { ...c, files: parseDiff(c.diff) };
+    return { ...c, view: c.view ?? "", files: parseDiff(c.diff) };
   }
 
-  async threads() { return (await this.call("GET", "/api/threads")).map(viewThread); }
+  // Show another view in every viewer: "" (all changes), a commit (the commits after it), HEAD, staged or unstaged
+  setView(view) { return this.call("PUT", "/api/view", { view }); }
 
-  async openThread({ filePath, side, startLine, endLine, code }, body) {
-    return viewThread(await this.call("POST", "/api/threads", { anchor: { file: filePath, side, startLine, endLine, code }, body }));
+  async threads(view = "") { return (await this.call("GET", `/api/threads?view=${encodeURIComponent(view)}`)).map(viewThread); }
+
+  async openThread({ filePath, side, startLine, endLine, code }, body, view = "") {
+    return viewThread(await this.call("POST", "/api/threads", { anchor: { file: filePath, side, startLine, endLine, code }, body, view }));
   }
 
   comment(threadId, body) { return this.call("POST", `/api/threads/${encodeURIComponent(threadId)}/comments`, { kind: "comment", body }); }

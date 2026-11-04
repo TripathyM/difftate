@@ -6,9 +6,15 @@ readable only by the user); a request without it gets 401.
 
   GET   /api/review                     start or reuse the review: {"id"} (the local
                                         store adds "branch" and "base")
-  GET   /api/changeset                  the review's changeset, from git: {"base",
+  GET   /api/view                       the view viewers show: {"view"}
+  PUT   /api/view                       show another view: {"view", "open"?: browser|herdr|both
+                                        (also open the viewer on it)}
+  GET   /api/changeset[?view=<view>]    the review's changeset in the view (default: the
+                                        one viewers show), from git: {"view", "base",
                                         "commit" (where the branch left the base), "diff"}
-  GET   /api/threads[?status=open]      list threads
+  GET   /api/threads[?status=open][&view=<view>]
+                                        list threads; with a view, each anchor's lines
+                                        are where its code is in that view
   POST  /api/threads                    open a thread: {"anchor", "body", "author"?}
   POST  /api/threads/<id>/comments      add a comment: {"kind"?, "body"}
   PATCH /api/notes/<id>                 edit a note: {"kind", "body"}
@@ -19,7 +25,8 @@ A thread (difftate's thread format):
    "anchor": {"file", "side": "old"|"new", "startLine", "endLine",
               "code" (the code when written), "commit" (the commit when written),
               "snapshot" (local store: the whole file with that code on those lines, a
-              blob in git's object database)}
+              blob in git's object database), "view" (local store: the view it was
+              written in; it follows its code there)}
              or null for a general thread,
    "outdated": true when the anchored code changed after the thread was written.
                Until then the thread follows its code (its lines change when only
@@ -28,6 +35,14 @@ A thread (difftate's thread format):
    "state": "waiting"|"queued"|"working"|"replied"|"failed" (null unless open),
    "comments": [{"id", "author": "reviewer"|"agent"|"difftate",
                  "kind": "comment"|"reply"|"queued"|"progress", "body", "time"}]}
+
+A view ("" for all changes, a commit such as HEAD~2 for the commits after it, HEAD
+for the uncommitted changes, staged or unstaged) shows part of the review: every
+thread belongs to the review, whatever view it was written in. POST /api/threads
+takes the "view" it was written in (default all changes): its lines are that
+view's. A thread listed with a view has "inView": false when its code isn't in
+that view (its lines are then those of the view it was written in, its anchor's
+"view"). A view that isn't one gets 400.
 
 A comment's kind says who wrote it: a comment is the reviewer's (the default), a
 reply the coding agent's, and a queued or progress note difftate's. "author" says who
@@ -44,11 +59,14 @@ import re
 import secrets
 import socket
 import threading
+import urllib.error
 import urllib.parse
+import urllib.request
 from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .changes import ChangesError
+from .changes import ChangesError, ViewError
+from .viewer import OPEN_IN
 from .store import StoreError
 
 MAX_BODY = 1 << 20
@@ -85,6 +103,27 @@ def running_watcher(folder):
     return pid
 
 
+def ask_running_watcher(folder, method, path, payload=None):
+    """Call the review API of the watcher serving this repository, as a viewer
+    would: (status, the JSON answer)."""
+    with open(os.path.join(folder, "api.json")) as f:
+        port = int(json.load(f)["port"])
+    with open(os.path.join(folder, "token")) as f:
+        token = f.read().strip()
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", method=method,
+                                 data=None if payload is None else json.dumps(payload).encode(),
+                                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status, json.loads(r.read() or b"null")
+    except urllib.error.HTTPError as e:
+        with e:
+            try:
+                return e.code, json.loads(e.read() or b"null")
+            except ValueError:
+                return e.code, None
+
+
 def _write_private(path, text):
     """Write <path> readable only by the user, replacing it atomically."""
     tmp = f"{path}.{os.getpid()}.tmp"
@@ -94,10 +133,33 @@ def _write_private(path, text):
     os.replace(tmp, path)
 
 
+class ShownView:
+    """The view viewers show. <check>(view) gives it as a view, or raises ViewError;
+    <on_switch>(view, open_in) runs when a request switches the view."""
+
+    def __init__(self, view, check, on_switch=None):
+        self.view = view
+        self.check = check
+        self.on_switch = on_switch or (lambda view, open_in: None)
+        self._lock = threading.Lock()
+
+    def current(self):
+        with self._lock:
+            return self.view
+
+    def switch(self, view, open_in=None):
+        view = self.check(view)
+        with self._lock:
+            self.view = view
+        self.on_switch(view, open_in)
+        return {"view": view}
+
+
 class ReviewApi:
-    def __init__(self, review, folder, root, changeset):
+    def __init__(self, review, folder, root, changeset, shown):
         self.review = review
-        self.changeset = changeset  # () -> the review's changeset
+        self.changeset = changeset  # (view) -> the review's changeset in that view
+        self.shown = shown
         self.folder = folder
         self.root = root
         self.token = secrets.token_urlsafe(32)
@@ -111,7 +173,7 @@ class ReviewApi:
     def start(self):
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
         os.chmod(self.folder, 0o700)
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self.review, self.token, self.changeset))
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self.review, self.token, self.changeset, self.shown))
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         _write_private(self.token_file, self.token + "\n")
@@ -138,7 +200,7 @@ class ReviewApi:
                     pass
 
 
-def _handler(review, token, changeset):
+def _handler(review, token, changeset, shown):
     expected = f"Bearer {token}".encode()
 
     def need(payload, key):
@@ -153,12 +215,26 @@ def _handler(review, token, changeset):
             raise StoreError(400, "need a JSON object")
         return payload
 
+    def view_of(query):
+        given = query.get("view")
+        return shown.check(given[0]) if given else shown.current()
+
+    def open_in(payload):
+        where = fields(payload).get("open")
+        if where is not None and where not in OPEN_IN:
+            raise StoreError(400, "open must be browser, herdr or both")
+        return where
+
     routes = [
         ("GET", r"/api/review", lambda q, p: review.review()),
-        ("GET", r"/api/changeset", lambda q, p: changeset()),
-        ("GET", r"/api/threads", lambda q, p: review.threads((q.get("status") or [None])[0])),
+        ("GET", r"/api/view", lambda q, p: {"view": shown.current()}),
+        ("PUT", r"/api/view", lambda q, p: shown.switch(fields(p).get("view", ""), open_in(p))),
+        ("GET", r"/api/changeset", lambda q, p: changeset(view_of(q))),
+        ("GET", r"/api/threads", lambda q, p: review.threads(
+            (q.get("status") or [None])[0], shown.check(q["view"][0]) if "view" in q else None)),
         ("POST", r"/api/threads", lambda q, p: review.open_thread(
-            fields(p).get("anchor"), need(p, "body"), fields(p).get("author", "reviewer"))),
+            fields(p).get("anchor"), need(p, "body"), fields(p).get("author", "reviewer"),
+            shown.check(fields(p).get("view", "")))),
         ("POST", r"/api/threads/([^/]+)/comments",
          lambda q, p, tid: review.add_comment(tid, fields(p).get("kind", "comment"), need(p, "body"))),
         ("PATCH", r"/api/notes/([^/]+)", lambda q, p, nid: review.edit_note(nid, need(p, "kind"), need(p, "body"))),
@@ -206,13 +282,15 @@ def _handler(review, token, changeset):
             except ValueError:
                 return self._send(400, {"error": "bad JSON"})
             try:
-                result = fn(urllib.parse.parse_qs(url.query), payload, *match.groups())
+                result = fn(urllib.parse.parse_qs(url.query, keep_blank_values=True), payload, *match.groups())
             except StoreError as e:
                 return self._send(e.status, {"error": str(e)})
+            except ViewError as e:
+                return self._send(400, {"error": str(e)})
             except ChangesError as e:
                 return self._send(502, {"error": str(e)})
             self._send(200, result)
 
-        do_GET = do_POST = do_PATCH = _handle
+        do_GET = do_POST = do_PATCH = do_PUT = _handle
 
     return Handler

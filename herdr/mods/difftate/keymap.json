@@ -36,7 +36,7 @@
     "<C-o>": "jump_back", "<Tab>": "jump_forward",
 
     "<leader><Space>": "find_files", "<leader>ff": "find_files",
-    "<leader>fc": "changed_files", "<leader>sd": "threads",
+    "<leader>fc": "changed_files", "<leader>sd": "threads", "<leader>V": "views",
     "<leader>e": "toggle_explorer", "<leader>v": "toggle_view",
     "/": "search", "n": "search_next", "N": "search_prev", "*": "search_word",
     "<leader>o": "open_in_editor",

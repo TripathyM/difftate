@@ -45,6 +45,7 @@ difftate HEAD               # only uncommitted changes (capital HEAD: `head` bre
 difftate unstaged           # only unstaged changes
 difftate staged             # only staged changes
 dto                         # OpenCode, same arguments
+difftate HEAD~1             # again, while it runs: switches the running watcher to that view and exits
 difftate --session <uuid>   # attach a specific session
 difftate --no-session       # headless, no session context
 difftate --model <model>    # force the coding agent's model (default: the session's model)
@@ -64,7 +65,7 @@ Without `--session`, it attaches the latest agent session for the current folder
 export DT_STORE=local   # default: diffity
 ```
 
-difftate keeps the review itself, with no diffity: commits don't end a review, so threads survive them. The changeset comes from git (`GET /api/changeset`). The [Review tab in Herdr](#review-in-herdr-optional) shows it (`DT_OPEN=herdr`); difftate's own browser viewer comes later. Other clients reach it through the [review API](#review-api). Views (`HEAD~1`, `staged`, …) come later too: the local store shows all changes against the base.
+difftate keeps the review itself, with no diffity: commits don't end a review, so threads survive them. The changeset comes from git (`GET /api/changeset`). The [Review tab in Herdr](#review-in-herdr-optional) shows it (`DT_OPEN=herdr`); difftate's own browser viewer comes later. Other clients reach it through the [review API](#review-api). The argument is the starting **view** of the same review (`HEAD~1`, `staged`, …), and the Review tab switches views (`Space V`): a thread written in any view belongs to the review, and the threads list shows every thread.
 
 - Each review is stored in `.git/difftate/reviews/<review>/` (shared by worktrees, never committed): `review.json` (branch, base, start) and `events.jsonl`, plain JSON lines that are only ever appended (threads opened, comments, replies, final notes, status changes, and runs: which comments each run was sent, and how it ended). The current state comes from reading them in order.
 - Progress notes show a run's steps live from the watcher's memory. Only their final line is stored, when the run ends.
@@ -85,7 +86,7 @@ Sessions are found in `$CLAUDE_CONFIG_DIR` (default `~/.claude`), the same rule 
 
 ## Review in Herdr (optional)
 
-If you use the [Herdr](https://herdr.dev) app, the review can open in a Herdr tab instead of the browser: a small code editor with vim keys, comment threads under the lines, go to definition, fuzzy file open, and quick edits you save yourself. The tab reads and writes through difftate's [review API](#review-api), with whichever store the watcher uses, so the coding agent answers its comments as it does in the browser, and both stay in sync. The tab always shows all changes against the review's base, whatever `--ref` the browser shows.
+If you use the [Herdr](https://herdr.dev) app, the review can open in a Herdr tab instead of the browser: a small code editor with vim keys, comment threads under the lines, go to definition, fuzzy file open, and quick edits you save yourself. The tab reads and writes through difftate's [review API](#review-api), with whichever store the watcher uses, so the coding agent answers its comments as it does in the browser, and both stay in sync. The tab shows the review's view (all changes unless the argument or `Space V` picks another); with diffity, the browser stays on diffity's own view.
 
 ![The Review tab in Herdr](herdr/preview.png)
 
@@ -206,7 +207,7 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 
 ### Watcher flags (`difftate-watch.py --help`)
 
-`--base` (default: `origin/HEAD`), `--ref` (diffity's view; default: the base), `--tool`, `--session`, `--model`, `--cwd`, `--interval` (poll seconds, default 1), `--cmd`, `--open` (browser, herdr, both).
+`--base` (default: `origin/HEAD`), `--ref` (the starting view; default: all changes), `--tool`, `--session`, `--model`, `--cwd`, `--interval` (poll seconds, default 1), `--cmd`, `--open` (browser, herdr, both).
 
 ### Internal env vars (set by the watcher, don't set yourself)
 
@@ -262,9 +263,11 @@ The watcher (Python 3.9 or later, nothing else) serves the **review API** on `12
 | Request | What it does |
 |---|---|
 | `GET /api/review` | Start or reuse the review: `id` (the local store adds `branch` and `base`) |
-| `GET /api/changeset` | The review's changeset, from git: `base`, `commit` (where the branch left the base), `diff` (unified, new untracked files included) |
-| `GET /api/threads?status=open` | List threads |
-| `POST /api/threads` | Open a thread: `anchor` (`file`, `side` `old`/`new`, `startLine`, `endLine`, `code`; `null` for a general thread), `body` |
+| `GET /api/view` | The view viewers show: `view` (`""` all changes, a commit such as `HEAD~2` for the commits after it, `HEAD` uncommitted, `staged`, `unstaged`) |
+| `PUT /api/view` | Show another view: `view`, and `open` (`browser`, `herdr`, `both`) to open the viewer on it too. A second `difftate` in the repository sends this, then exits |
+| `GET /api/changeset?view=<view>` | The review's changeset in a view (default: the one viewers show), from git: `view`, `base`, `commit` (where the branch left the base), `diff` (unified, new untracked files included) |
+| `GET /api/threads?status=open&view=<view>` | List threads. With a view, each anchor's lines are where its code is in that view, and a thread whose code isn't in it has `inView: false` |
+| `POST /api/threads` | Open a thread: `anchor` (`file`, `side` `old`/`new`, `startLine`, `endLine`, `code`; `null` for a general thread), `body`, `view` (the view its lines are in; default all changes) |
 | `POST /api/threads/<id>/comments` | Add a comment: `kind` (`comment`, the default; `reply`; `queued` or `progress` for a note), `body` |
 | `PATCH /api/notes/<id>` | Edit a note: `kind`, `body`. Anything that isn't a note gets 403; a note whose run has ended gets 409 |
 | `PATCH /api/threads/<id>/status` | Set the thread status: `open`, `resolved` or `dismissed` |

@@ -4,21 +4,25 @@ API, and dispatches waiting threads to the coding agent until Ctrl+C.
 
 The difftate / dtc / dto shell functions start it (difftate.zsh).
 """
+import fcntl
 import os
 import shutil
 import signal
 import subprocess
 import sys
+import time
 
 from . import changes, diffity, viewer
 from .agent import AGENTS
-from .api import ReviewApi, running_watcher
+from .api import ReviewApi, ShownView, ask_running_watcher, running_watcher
 from .dispatch import Dispatch, now
 from .local import LocalStore
 from .review import Review
 from .store import StoreError
 
 STORES = ("diffity", "local")
+# How long a second watcher waits for one that is starting (diffity can take a while)
+STARTING_S = 60
 
 USAGE = """difftate-watch.py — Open the review and poll for comments, dispatching them to the coding agent.
 (Normally run via the difftate / dtc / dto shell functions.)
@@ -32,8 +36,9 @@ Required:
 Optional:
   --base <branch>        The branch the review compares against (default: the repository's
                          default branch, origin/HEAD; else main or master)
-  --ref <ref>            Git ref for diffity's view (default: the base; HEAD~3, HEAD, ...).
-                         The local store shows all changes against the base
+  --ref <view>           The starting view of the review (default: all changes). HEAD~2: the
+                         commits after it; HEAD: uncommitted; staged; unstaged. Viewers
+                         switch views; with diffity, its viewer stays on this one
   --session <id>         Resume an existing session (full conversation context)
   --cwd <path>           Repo path for headless mode (default: current directory)
   --interval <seconds>   Polling interval in seconds (default: 1)
@@ -154,6 +159,8 @@ class Watcher:
 
     def setup(self):
         o = self.opts
+        self.folder, self.root = review_folder(o["cwd"])
+        self.claim()
         agent_cls = AGENTS[o["tool"]]
         cmd = resolve_cmd(o["cmd"] or agent_cls.default_cmd)
         self.agent = agent_cls(cmd, o["session"], o["model"])
@@ -162,11 +169,44 @@ class Watcher:
                 f"Error: session '{o['session']}' not found for {o['tool']}.",
                 f"  Make sure the {o['tool']} session is running in this project directory ({o['cwd']}).",
                 "  Available sessions:", *self.agent.list_sessions()]))
-        self.folder, self.root = review_folder(o["cwd"])
-        other = running_watcher(self.folder)
-        if other:
-            raise Exit(1, f"Error: a watcher is already running for this repository (pid {other}). "
-                          "Stop it first, or use its review.")
+
+    def claim(self):
+        """Become this repository's watcher: hold the lock file in its difftate folder
+        until exit. When another watcher holds it, ask that one to show the view
+        asked for (once it serves the review API), and exit."""
+        os.makedirs(self.folder, mode=0o700, exist_ok=True)
+        fd = os.open(os.path.join(self.folder, "watcher.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+        deadline = time.time() + STARTING_S
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.lock = fd  # held until the process exits
+                other = running_watcher(self.folder)  # one from before the lock file
+                if other:
+                    self.switch_running(other)
+                return
+            except BlockingIOError:
+                pass
+            other = running_watcher(self.folder)
+            if other:
+                self.switch_running(other)
+            if time.time() > deadline:
+                os.close(fd)
+                raise Exit(1, "Error: another watcher is starting for this repository, and it didn't serve "
+                              f"the review within {STARTING_S}s")
+            time.sleep(0.1)
+
+    def switch_running(self, pid):
+        o = self.opts
+        try:
+            status, answer = ask_running_watcher(self.folder, "PUT", "/api/view", {"view": o["ref"], "open": o["open"]})
+        except (OSError, ValueError, KeyError) as e:
+            raise Exit(1, f"Error: difftate is already running for this repository (pid {pid}), "
+                          f"but it didn't answer ({e})")
+        if status != 200:
+            raise Exit(1, f"Error: {(answer or {}).get('error') or status}")
+        raise Exit(0, f"difftate is already running for this repository (pid {pid}): "
+                      f"switched it to {changes.view_name(answer['view'])}")
 
     def start(self):
         o = self.opts
@@ -177,6 +217,10 @@ class Watcher:
             if o["store"] == "local" or o["base"] or not o["ref"]:
                 raise Exit(1, str(e))
             base = None
+        try:
+            self.view = changes.need_view(o["cwd"], o["ref"])
+        except changes.ChangesError as e:
+            raise Exit(1, f"Error: {e}")
         code = None
         if o["store"] == "local":
             store, problem = self.local_store(base), lambda: None
@@ -192,20 +236,16 @@ class Watcher:
             interrupted = review.recover_runs()
         except StoreError as e:
             raise Exit(1, f"Error: could not read the review ({e})")
-        self.api = ReviewApi(review, self.folder, self.root, lambda: changes.changeset(o["cwd"], base))
+        shown = ShownView(self.view, lambda view: changes.need_view(o["cwd"], view), self.view_shown)
+        self.api = ReviewApi(review, self.folder, self.root, lambda view: changes.changeset(o["cwd"], base, view), shown)
         self.api.start()
 
+        self.base = base
         if self.diffity:
-            url = self.diffity.viewer_url(o["ref"] or base)
-            print(f"  → {url}")
-            viewer.open_review(o["open"], url, self.root)
+            print(f"  → {self.diffity.viewer_url(o['ref'] or base)}")
         else:
             print(f"  → review API {self.api.address().url}")
-            # The Review tab reads the review API, so it works with any store; the browser viewer comes later
-            if o["open"] in ("herdr", "both"):
-                viewer.open_in_herdr(self.root)
-            else:
-                print("  (no browser viewer for the local store yet: DT_OPEN=herdr opens a Review tab)")
+        self.open_viewer(o["open"])
         print()
         print(f"Watching for comments every {o['interval']:g}s")
         print(f"  Tool: {o['tool']} (cmd: {self.agent.cmd})")
@@ -220,15 +260,33 @@ class Watcher:
                                  self.api.address(), problem)
         self.dispatch.close_interrupted(interrupted)
 
+    def open_viewer(self, where):
+        """Open the review in the viewer (<where>: browser, herdr or both). Viewers
+        show the API's view; diffity's browser viewer shows only its own ref."""
+        if self.diffity:
+            viewer.open_review(where, self.diffity.viewer_url(self.opts["ref"] or self.base), self.root)
+            return
+        # The Review tab reads the review API, so it works with any store; the browser viewer comes later
+        if where in ("herdr", "both"):
+            viewer.open_in_herdr(self.root)
+        else:
+            print("  (no browser viewer for the local store yet: DT_OPEN=herdr opens a Review tab)")
+
+    def view_shown(self, view, open_in):
+        """A viewer, or another `difftate` call, switched the view."""
+        print(f"[{now()}] Showing {changes.view_name(view)}")
+        if self.diffity and view != self.view:
+            print("  (diffity's browser viewer stays on its own view: DT_STORE=local has views)")
+        if open_in:
+            self.open_viewer(open_in)
+
     def local_store(self, base):
         o = self.opts
         try:
             branch = changes.review_branch(o["cwd"], base)
         except changes.ChangesError as e:
             raise Exit(1, str(e))
-        if o["ref"]:
-            print(f"Views come later for the local store: showing all changes, not just {o['ref']}")
-        print(f"Local store: the review of {branch} against {base}")
+        print(f"Local store: the review of {branch} against {base}, showing {changes.view_name(self.view)}")
         return LocalStore.open(self.folder, o["cwd"], branch, base, on_tamper=self.tampered)
 
     def tampered(self, thread_ids):
