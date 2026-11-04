@@ -121,7 +121,7 @@ First, open a new terminal (or run `source ~/.zshrc`). Then `cd` into a git repo
 - Use `dto` in place of `difftate` for OpenCode, with the same arguments.
 - The diff opens in the browser (with Herdr set up: in a **Review · ‹repo›** tab; press `?` there for its keys). Comment on a line, and the agent replies in the same thread.
 - New changes show up by themselves, in the browser and in the Herdr tab.
-- To look at a different range, run the new command while the watcher runs: it switches the running watcher's view and exits. Every view is the same review, so threads stay. The browser's **View** menu and the Herdr tab's `Space V` switch views too.
+- To look at a different view, run the new command while the watcher runs: it switches the running watcher's view and exits. Every view is the same review, so threads stay. The browser's **View** menu and the Herdr tab's `Space V` switch views too.
 
 ## Questions
 

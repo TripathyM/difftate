@@ -37,6 +37,7 @@ Run from inside the repo, **on the branch you want reviewed**:
 ```bash
 difftate                    # Claude Code, whole branch vs the default branch, origin/HEAD (short: dtc)
 difftate --base develop     # whole branch vs develop
+difftate main               # the commits after main (a view of the same review)
 difftate HEAD~1             # the last commit
 difftate HEAD~3             # the last 3 commits
 difftate HEAD               # only uncommitted changes (capital HEAD: `head` breaks in worktrees on macOS)
@@ -120,7 +121,7 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 | File | What it does |
 |---|---|
 | `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the session, then start `difftate-watch.py` |
-| `difftate-watch.py`, `lib/difftate/` | The watcher: opens the [review](#the-review) in its store, serves the [review API](#review-api) and the browser viewer, dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
+| `difftate-watch.py`, `lib/difftate/` | The watcher: opens the [review](#the-review), serves the [review API](#review-api) and the browser viewer, dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
 | `bin/dt-reply` | How the coding agent answers a thread: `dt-reply <thread> "<answer>"` |
 | `lib/stream_fmt.py` | Reads the coding agent's JSON event stream; prints live progress lines and keeps the progress note updated |
 | `lib/difftate/web/` | difftate's own browser viewer, a client of the review API |
@@ -143,7 +144,7 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 ❌ Failed after 30s  (+ checklist and reason)
 ```
 
-The coding agent's reply follows as a separate comment of kind `reply`: the coding agent writes only the answer, and difftate marks it a reply. Notes are never sent to the model (see [What the coding agent gets](#what-the-coding-agent-gets)).
+The coding agent's reply follows as a separate entry in the thread (kind `reply`): the coding agent writes only the answer, and difftate marks it a reply. Notes are never sent to the model (see [What the coding agent gets](#what-the-coding-agent-gets)).
 
 **In the watcher terminal**:
 
