@@ -10,6 +10,10 @@ reviews/<review id>/` (shared by worktrees, never committed):
     {"type": "note",    the same fields: a note's final body (a later line for
                         the same id replaces it)}
     {"type": "status",  "thread", "status", "time"}
+    {"type": "moved",   "thread", "startLine", "endLine", "snapshot", "time"}
+                        the thread's code moved: lines the changeset didn't touch
+    {"type": "outdated", "thread", "time"}
+                        the thread's code changed
     {"type": "run",     "run", "threads", "sent", "repliesBefore", "time"}
                         a run starts: the comments it was sent, and the replies
                         its threads had then
@@ -137,6 +141,10 @@ class LocalStore:
         thread = self._threads[e["thread"]]
         if kind == "status":
             thread["status"] = e["status"]
+        elif kind == "moved":
+            thread["anchor"].update(startLine=e["startLine"], endLine=e["endLine"], snapshot=e["snapshot"])
+        elif kind == "outdated":
+            thread["outdated"] = True
         elif kind in ("comment", "note"):
             comment = {k: e[k] for k in ("id", "author", "kind", "body", "time", "seq")}
             comment["stored"] = True
@@ -286,6 +294,21 @@ class LocalStore:
         with self._lock:
             self._check()
             return copy.deepcopy(list(self._runs.values()))
+
+    def move_thread(self, thread_id, start, end, snapshot):
+        with self._lock:
+            self._check()
+            anchor = self._find(thread_id)["anchor"]
+            self._append([{"type": "moved", "thread": thread_id, "startLine": start, "endLine": end,
+                           "snapshot": snapshot, "time": now()}])
+            anchor.update(startLine=start, endLine=end, snapshot=snapshot)
+
+    def mark_outdated(self, thread_id):
+        with self._lock:
+            self._check()
+            self._find(thread_id)
+            self._append([{"type": "outdated", "thread": thread_id, "time": now()}])
+            self._threads[thread_id]["outdated"] = True
 
     def set_status(self, thread_id, status):
         with self._lock:

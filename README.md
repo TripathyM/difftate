@@ -292,6 +292,8 @@ The **thread state** of an open thread (`null` otherwise) is the one rule the wa
 
 So a follow-up you write while the agent works on the same thread is answered in the next run ([#3](https://github.com/TripathyM/difftate/issues/3)). A comment from a separate reviewing agent (written to diffity as an agent, without a `[dt-…]` prefix) counts as yours. diffity's `[dt-…]` prefixes stay inside the diffity store: the API has comment kinds instead.
 
+**Outdated threads** (local store): when a thread is written, difftate stores a snapshot of the whole file in git's object database (`anchor.snapshot`). When the file changes, it diffs the snapshot against the file now: if only line numbers moved, the thread follows its code (line 12 becomes 15); if any of the thread's lines changed, the thread is `outdated` for good, and keeps the lines and `code` it was written on. Old-side threads follow the file where the branch left the base. A thread whose code isn't on its lines when it is written (the file changed since the viewer showed it) is outdated at once. An outdated thread is still dispatched when you comment on it: the prompt marks it outdated, with its original code. diffity's threads never move and are never outdated.
+
 ## Tests
 
 ```bash

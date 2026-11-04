@@ -63,7 +63,15 @@ class Dispatch:
             self.once()
             time.sleep(self.interval)
 
+    def follow_code(self):
+        try:
+            for tid in self.review.follow_code():
+                print(f"[{now()}] Thread {tid[:8]} is outdated: its code changed")
+        except StoreError as e:
+            print(f"[{now()}] Warning: could not follow the threads' code ({e})")
+
     def once(self):
+        self.follow_code()
         open_threads = self._open_threads()
         waiting = [t for t in open_threads if t["state"] == "waiting"]
         if not waiting:
@@ -100,6 +108,7 @@ class Dispatch:
             return
         # Threads that arrive meanwhile get a queued note right away. Runs stay one at a time.
         while self.run.running():
+            self.follow_code()
             self.post_replies()
             for tid in self.post_queued_notes():
                 print(f"[{now()}] Queued thread {tid[:8]} (agent busy)")

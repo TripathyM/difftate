@@ -26,12 +26,12 @@ export async function findApi(root) {
   return api;
 }
 
-// A thread from the API, flattened for the view: file, side and lines from its anchor
-// (file null for a general thread), the API's thread state, and its comments as they are.
+// A thread from the API, flattened for the view: file, side, lines and the code it was written
+// on from its anchor (file null for a general thread), the API's thread state, and its comments as they are.
 function viewThread(t) {
   const a = t.anchor;
   return {
-    id: t.id, filePath: a?.file ?? null, side: a?.side ?? "new", startLine: a?.startLine ?? 0, endLine: a?.endLine ?? 0,
+    id: t.id, filePath: a?.file ?? null, side: a?.side ?? "new", startLine: a?.startLine ?? 0, endLine: a?.endLine ?? 0, code: a?.code ?? null,
     status: t.status, state: t.state, outdated: !!t.outdated, comments: t.comments ?? [],
   };
 }

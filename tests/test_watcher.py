@@ -172,10 +172,17 @@ class Harness:
         with urllib.request.urlopen(req, timeout=10) as r:
             return json.loads(r.read() or b"null")
 
-    def open_thread(self, body, line=2, **payload):
+    def read(self, path):
+        with open(os.path.join(self.repo, path)) as f:
+            return f.read()
+
+    def open_thread(self, body, line=2, file="app.py", end=None, **payload):
+        """A thread on <file>'s lines <line>..<end> (new side), with the code on them now."""
+        end = end or line
+        code = "\n".join(self.read(file).split("\n")[line - 1:end])
         return self.api("POST", "/api/threads", dict({
-            "anchor": {"file": "app.py", "side": "new", "startLine": line, "endLine": line,
-                       "code": "    return f'hello {name}'"}, "body": body}, **payload))
+            "anchor": {"file": file, "side": "new", "startLine": line, "endLine": end, "code": code},
+            "body": body}, **payload))
 
     def thread(self, tid):
         return next(t for t in self.api("GET", "/api/threads") if t["id"] == tid)
@@ -548,7 +555,6 @@ class SharedTests:
         self.assertTrue(out.rstrip().endswith("Done."), out)
         self.assertFalse(os.path.exists(os.path.join(self.repo, ".git", "difftate", "api.json")))
 
-
     def test_a_thread_the_agent_answered_stays_replied_when_ctrl_c_stops_the_run(self):
         os.makedirs(self.agent_dir, exist_ok=True)
         with open(os.path.join(self.agent_dir, "linger"), "w"):
@@ -769,6 +775,148 @@ class LocalWatcherTest(Harness, SharedTests, unittest.TestCase):
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertIn("changed outside difftate", self.note(tid, "progress"))
         self.assertNotIn("Forged.", self.bodies(tid))
+
+    # ── Threads follow their code, or become outdated ────────────────────────
+    LONG = "".join(f"line_{n} = {n}\n" for n in range(1, 21))
+
+    def anchor(self, tid):
+        a = self.thread(tid)["anchor"]
+        return a["startLine"], a["endLine"]
+
+    def test_lines_added_above_a_thread_move_it_and_keep_it_current(self):
+        self.write("long.py", self.LONG)
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why 12?", line=12, file="long.py")["id"]
+
+        self.write("long.py", "import os\nimport re\nimport sys\n" + self.LONG)
+
+        wait_for("the thread to move", lambda: self.anchor(tid) == (15, 15))
+        thread = self.thread(tid)
+        self.assertFalse(thread["outdated"])
+        self.assertEqual(thread["anchor"]["code"], "line_12 = 12")
+        self.assertEqual(self.read("long.py").split("\n")[14], "line_12 = 12", "it sits next to its code")
+
+    def test_changing_a_threads_line_makes_it_outdated_with_its_original_code(self):
+        self.write("long.py", self.LONG)
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why 12 and 13?", line=12, end=13, file="long.py")["id"]
+
+        self.write("long.py", "import os\n" + self.LONG.replace("line_13 = 13", "line_13 = 'thirteen'"))
+
+        wait_for("the outdated thread", lambda: self.thread(tid)["outdated"])
+        anchor = self.thread(tid)["anchor"]
+        self.assertEqual(anchor["code"], "line_12 = 12\nline_13 = 13", "it keeps the code it was written on")
+        self.assertEqual((anchor["startLine"], anchor["endLine"]), (12, 13))
+        self.assertIn(f"Thread {tid[:8]} is outdated", self.terminal())
+
+        # Outdated stays outdated, also after a restart
+        self.write("long.py", self.LONG)
+        self.stop_watcher()
+        self.start_watcher()
+        time.sleep(0.5)  # a few polls
+        self.assertTrue(self.thread(tid)["outdated"])
+
+    def test_the_same_code_twice_never_moves_a_thread_to_the_wrong_copy(self):
+        twice = "def hi(name):\n    return 'hi ' + name\n\n\ndef hey(name):\n    return 'hi ' + name\n"
+        self.write("changed.py", twice)
+        self.write("moved.py", twice)
+        self.release_agent()
+        self.start_watcher()
+        changed = self.open_thread("Why the same as hi?", line=6, file="changed.py")["id"]
+        moved = self.open_thread("Why the same as hi?", line=6, file="moved.py")["id"]
+
+        # The second copy changes, the first is still there: outdated, not moved to the first copy
+        self.write("changed.py", twice[:twice.rindex("'hi '")] + "'hey ' + name\n")
+        # The first copy goes: the thread on the second copy follows it, to line 2
+        self.write("moved.py", "def hey(name):\n    return 'hi ' + name\n")
+
+        wait_for("the outdated thread", lambda: self.thread(changed)["outdated"])
+        self.assertEqual(self.anchor(changed), (6, 6))
+        wait_for("the thread to move", lambda: self.anchor(moved) == (2, 2))
+        self.assertFalse(self.thread(moved)["outdated"])
+
+    def test_a_comment_on_an_outdated_thread_is_dispatched_marked_outdated_with_its_original_code(self):
+        self.write("long.py", self.LONG)
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why 12?", line=12, file="long.py")["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        self.write("long.py", self.LONG.replace("line_12 = 12", "line_12 = 'twelve'"))
+        wait_for("the outdated thread", lambda: self.thread(tid)["outdated"])
+
+        self.api("POST", f"/api/threads/{tid}/comments", {"body": "Is it better now?"})
+
+        wait_for("the second reply", lambda: len(self.prompts()) == 2 and self.state(tid) == "replied")
+        thread = self.prompts()[1].split("## Reply to these threads")[1]
+        self.assertIn(f"### Thread {tid[:8]} — long.py:12 — outdated: its code changed after the thread was written",
+                      thread)
+        self.assertIn("Code when the thread was written:\n```\nline_12 = 12\n```", thread)
+        self.assertIn("reviewer (new): Is it better now?", thread)
+
+    def test_an_old_side_thread_follows_its_code_in_the_base(self):
+        git(self.repo, self.env, "commit", "-q", "-am", "Say hello")
+        self.release_agent()
+        self.start_watcher()
+        tid = self.api("POST", "/api/threads", {"body": "Why was this a concatenation?", "anchor": {
+            "file": "app.py", "side": "old", "startLine": 2, "endLine": 2, "code": "    return 'hi ' + name"}})["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+        # The base gets an import on top, and the branch is rebased onto it
+        git(self.repo, self.env, "checkout", "-q", "main")
+        self.write("app.py", "import os\n\n" + self.read("app.py"))
+        git(self.repo, self.env, "commit", "-q", "-am", "Import os")
+        git(self.repo, self.env, "checkout", "-q", "feature")
+        git(self.repo, self.env, "rebase", "-q", "main")
+
+        wait_for("the thread to move", lambda: self.anchor(tid) == (4, 4))
+        self.assertFalse(self.thread(tid)["outdated"])
+
+    def test_a_thread_written_on_code_no_longer_there_is_outdated_at_once(self):
+        self.start_watcher()
+        thread = self.api("POST", "/api/threads", {"body": "Why an f-string here?", "anchor": {
+            "file": "app.py", "side": "new", "startLine": 2, "endLine": 2, "code": "    return 'hi ' + name"}})
+
+        self.assertTrue(thread["outdated"], "the file changed since the viewer showed that code")
+        self.assertEqual(thread["anchor"]["code"], "    return 'hi ' + name")
+
+    def test_a_thread_written_before_snapshots_existed_starts_following_its_code(self):
+        self.write("long.py", self.LONG)
+        self.start_watcher()
+        tid = self.open_thread("Why 12?", line=12, file="long.py")["id"]
+        self.stop_watcher()
+        # A thread an older difftate wrote: its anchor has no snapshot
+        with open(self.events_file()) as f:
+            events = [json.loads(line) for line in f]
+        for e in events:
+            if e["type"] == "opened":
+                del e["anchor"]["snapshot"]
+        with open(self.events_file(), "w") as f:
+            f.write("".join(json.dumps(e) + "\n" for e in events))
+
+        self.start_watcher()
+        time.sleep(0.5)  # a few polls
+        self.assertFalse(self.thread(tid)["outdated"], "its code is still on its lines")
+        self.write("long.py", "import os\nimport re\nimport sys\n" + self.LONG)
+
+        wait_for("the thread to move", lambda: self.anchor(tid) == (15, 15))
+        self.assertFalse(self.thread(tid)["outdated"])
+
+    def test_a_file_that_isnt_utf8_is_followed_too(self):
+        latin = "".join(f"caf\xe9_{n} = {n}\n" for n in range(1, 21)).encode("latin-1")
+        with open(os.path.join(self.repo, "latin.py"), "wb") as f:
+            f.write(latin)
+        self.release_agent()
+        self.start_watcher()
+        tid = self.api("POST", "/api/threads", {"body": "Why 12?", "anchor": {
+            "file": "latin.py", "side": "new", "startLine": 12, "endLine": 12}})["id"]
+
+        with open(os.path.join(self.repo, "latin.py"), "wb") as f:
+            f.write(b"import os\n" + latin.replace(b"_12 = 12", b"_12 = 'twelve'"))
+
+        wait_for("the outdated thread", lambda: self.thread(tid)["outdated"])
+        self.assertIsNone(self.watcher.poll(), "the watcher keeps going:\n" + self.terminal())
 
 
 if __name__ == "__main__":

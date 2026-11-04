@@ -48,6 +48,14 @@ class MemoryStore:
             self._find(thread_id)["status"] = status
         return {"id": thread_id, "status": status}
 
+    def move_thread(self, thread_id, start, end, snapshot):
+        with self._lock:
+            self._find(thread_id)["anchor"].update(startLine=start, endLine=end, snapshot=snapshot)
+
+    def mark_outdated(self, thread_id):
+        with self._lock:
+            self._find(thread_id)["outdated"] = True
+
     def record_run(self, run):
         with self._lock:
             self._runs.append(dict(copy.deepcopy(run), outcome=None))

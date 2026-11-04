@@ -1,6 +1,9 @@
 """The prompt for one run: the threads it answers in full, a summary of the other
 open threads, and the rules.
 
+An outdated thread says so, and shows the code it was written on: that code
+is no longer on its lines.
+
 Notes are left out: they cost tokens on every run and say nothing about the code.
 The coding agent answers with dt-reply (bin/dt-reply), and nothing in the prompt names
 the store.
@@ -25,6 +28,7 @@ Rules:
 - Change code ONLY when the reviewer explicitly asks ('fix this', 'rename X to Y', 'add X'). Then reply with what you changed (file:line).
 - Questions: answer. Suggestions, 'should we…?', nits: give your take and ask before changing anything. Unclear: ask for clarification. Never skip a thread silently.
 - NEVER resolve or dismiss threads, and never edit or delete comments.
+- A thread marked 'outdated' was written on code that changed since: its code block is the code then, not the file now.
 - Read files as needed for context.
 - Write replies in ASD-STE100 Simplified Technical English.
 Summarize briefly what you handled."""
@@ -61,14 +65,18 @@ def short(s, n):
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+OUTDATED_MARK = " — outdated: its code changed after the thread was written"
+
+
 def render_full(t, new_ids):
-    lines = [f"### Thread {t['id'][:8]} — {location(t)}"]
+    outdated = t.get("outdated")
+    lines = [f"### Thread {t['id'][:8]} — {location(t)}{OUTDATED_MARK if outdated else ''}"]
     code = ((t["anchor"] or {}).get("code") or "").rstrip("\n")
     if code:
         code = code.split("\n")
         if len(code) > ANCHOR_MAX_LINES:
             code = code[:ANCHOR_MAX_LINES] + [f"… ({len(code) - ANCHOR_MAX_LINES} more lines)"]
-        lines += ["Code:", "```", *code, "```"]
+        lines += ["Code when the thread was written:" if outdated else "Code:", "```", *code, "```"]
     lines += [f"{_speaker(c, new_ids)}: {c['body'].strip()}" for c in _conversation(t)]
     return "\n".join(lines)
 
@@ -83,7 +91,7 @@ def render_summary(t):
         if i == 1 and len(comments) > 2:
             parts.append(f"  … {len(comments) - 2} more")
         parts.append(f"  {_speaker(c)}: {short(c['body'], SUMMARY_MAX)}")
-    return "\n".join([f"- {t['id'][:8]} — {location(t)}", *parts])
+    return "\n".join([f"- {t['id'][:8]} — {location(t)}{' (outdated)' if t.get('outdated') else ''}", *parts])
 
 
 def threads_part(threads, ids, new_ids):
