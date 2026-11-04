@@ -122,8 +122,6 @@ def remote_url(cwd):
 def changeset(cwd, base, view=""):
     """The review's changeset in <view>: {"view", "base", "commit" (where the branch
     left the base), "diff" (a unified diff, new untracked files included)}."""
-    if base is None:
-        raise ChangesError("no base: pass --base <branch>")
     view = need_view(cwd, view)
     commit = _git(cwd, "merge-base", base, "HEAD") or head(cwd)
     if not commit:

@@ -1,6 +1,5 @@
-"""The watcher: one per review. Opens the review in its store (diffity, started or
-reused; or difftate's own local store with DT_STORE=local), serves the review
-API, and dispatches waiting threads to the coding agent until Ctrl+C.
+"""The watcher: one per review. Opens the review in difftate's local store, serves
+the review API, and dispatches waiting threads to the coding agent until Ctrl+C.
 
 The difftate / dtc / dto shell functions start it (difftate.zsh).
 """
@@ -12,7 +11,7 @@ import subprocess
 import sys
 import time
 
-from . import changes, diffity, viewer
+from . import changes, viewer
 from .agent import AGENTS
 from .api import ReviewApi, ShownView, ask_running_watcher, running_watcher
 from .dispatch import Dispatch, now
@@ -20,8 +19,7 @@ from .local import LocalStore
 from .review import Review
 from .store import StoreError
 
-STORES = ("diffity", "local")
-# How long a second watcher waits for one that is starting (diffity can take a while)
+# How long a second watcher waits for one that is starting
 STARTING_S = 60
 
 USAGE = """difftate-watch.py — Open the review and poll for comments, dispatching them to the coding agent.
@@ -38,7 +36,7 @@ Optional:
                          default branch, origin/HEAD; else main or master)
   --ref <view>           The starting view of the review (default: all changes). HEAD~2: the
                          commits after it; HEAD: uncommitted; staged; unstaged. Viewers
-                         switch views; with diffity, its viewer stays on this one
+                         switch views
   --session <id>         Resume an existing session (full conversation context)
   --cwd <path>           Repo path for headless mode (default: current directory)
   --interval <seconds>   Polling interval in seconds (default: 1)
@@ -49,10 +47,6 @@ Optional:
                          herdr opens a Review tab in the Herdr app, or switches to it;
                          if Herdr can't be reached it falls back to the browser
   --help                 Show this help
-
-Environment:
-  DT_STORE               diffity (default) or local: difftate's own store, in the
-                         repository's git folder, with no diffity
 
 Examples:
   # Claude Code — headless (no session context)
@@ -79,7 +73,7 @@ class Exit(Exception):
 
 
 def parse(argv):
-    opts = {"ref": "", "base": "", "store": os.environ.get("DT_STORE") or "diffity", "tool": "", "session": "", "model": "", "cwd": "", "interval": "1", "cmd": "",
+    opts = {"ref": "", "base": "", "tool": "", "session": "", "model": "", "cwd": "", "interval": "1", "cmd": "",
             "open": os.environ.get("DT_OPEN") or "browser"}
     i = 0
     while i < len(argv):
@@ -95,8 +89,6 @@ def parse(argv):
     opts["cwd"] = opts["cwd"] or os.getcwd()
     if opts["open"] not in viewer.OPEN_IN:
         raise Exit(1, f"Error: --open (or DT_OPEN) must be browser, herdr or both, not '{opts['open']}'")
-    if opts["store"] not in STORES:
-        raise Exit(1, f"Error: DT_STORE must be diffity or local, not '{opts['store']}'")
     if opts["tool"] not in AGENTS:
         raise Exit(1, f"Error: unsupported tool '{opts['tool']}'. Supported: {' '.join(AGENTS)}")
     try:
@@ -153,7 +145,6 @@ def _hangup(signum, frame):
 class Watcher:
     def __init__(self, opts):
         self.opts = opts
-        self.diffity = None
         self.api = None
         self.dispatch = None
 
@@ -213,26 +204,14 @@ class Watcher:
         try:
             base = changes.resolve_base(o["cwd"], o["base"])
         except changes.ChangesError as e:
-            # diffity shown an explicit --ref needs no base (as before the local store)
-            if o["store"] == "local" or o["base"] or not o["ref"]:
-                raise Exit(1, str(e))
-            base = None
+            raise Exit(1, str(e))
         try:
             self.view = changes.need_view(o["cwd"], o["ref"])
         except changes.ChangesError as e:
             raise Exit(1, f"Error: {e}")
-        code = None
-        if o["store"] == "local":
-            store, problem = self.local_store(base), lambda: None
-            code = changes.Code(o["cwd"], base, store.info["branch"])
-        else:
-            try:
-                self.diffity = diffity.launch(o["ref"] or base, o["cwd"])
-            except diffity.DiffityStartError as e:
-                raise Exit(1, str(e))
-            store, problem = self.diffity.store(), self.diffity.problem
-        diff_hashes = None if base is None else lambda: changes.diff_hashes(changes.changeset(o["cwd"], base)["diff"])
-        review = Review(store, code, diff_hashes)
+        store = self.local_store(base)
+        code = changes.Code(o["cwd"], base, store.info["branch"])
+        review = Review(store, code, lambda: changes.diff_hashes(changes.changeset(o["cwd"], base)["diff"]))
         try:
             interrupted = review.recover_runs()
         except StoreError as e:
@@ -241,8 +220,7 @@ class Watcher:
         self.api = ReviewApi(review, self.folder, self.root, lambda view: changes.changeset(o["cwd"], base, view), shown)
         self.api.start()
 
-        self.base = base
-        url = self.viewer_url()
+        url = self.api.page_url()
         print(f"  → {url}")
         self.open_viewer(o["open"], url)
         print()
@@ -255,26 +233,18 @@ class Watcher:
         print()
         print("Press Ctrl+C to stop")
         print()
-        self.dispatch = Dispatch(review, self.agent, o["cwd"], self.folder, o["interval"],
-                                 self.api.address(), problem)
+        self.dispatch = Dispatch(review, self.agent, o["cwd"], self.folder, o["interval"], self.api.address())
         self.dispatch.close_interrupted(interrupted)
-
-    def viewer_url(self):
-        """The browser viewer's link: diffity's, or difftate's own page with a new
-        single-use launch code (it never carries the review token)."""
-        return self.diffity.viewer_url(self.opts["ref"] or self.base) if self.diffity else self.api.page_url()
 
     def open_viewer(self, where, url=None):
         """Open the review in the viewer (<where>: browser, herdr or both), at <url>
-        (default: a new link). Viewers show the API's view; diffity's browser viewer
-        shows only its own ref. Without diffity, both read the review API."""
-        viewer.open_review(where, url or self.viewer_url(), self.root)
+        (default: a new link to difftate's own page, with a single-use launch code:
+        it never carries the review token). Both viewers read the review API."""
+        viewer.open_review(where, url or self.api.page_url(), self.root)
 
     def view_shown(self, view, open_in):
         """A viewer, or another `difftate` call, switched the view."""
         print(f"[{now()}] Showing {changes.view_name(view)}")
-        if self.diffity and view != self.view:
-            print("  (diffity's browser viewer stays on its own view: DT_STORE=local has views)")
         if open_in:
             self.open_viewer(open_in)
 
@@ -284,7 +254,7 @@ class Watcher:
             branch = changes.review_branch(o["cwd"], base)
         except changes.ChangesError as e:
             raise Exit(1, str(e))
-        print(f"Local store: the review of {branch} against {base}, showing {changes.view_name(self.view)}")
+        print(f"The review of {branch} against {base}, showing {changes.view_name(self.view)}")
         return LocalStore.open(self.folder, o["cwd"], branch, base, on_tamper=self.tampered)
 
     def tampered(self, thread_ids):
@@ -294,7 +264,7 @@ class Watcher:
             self.dispatch.warn_tampered(thread_ids)
 
     def stop(self, say=True):
-        """Stop the run, every process it started, diffity (when started here) and the API."""
+        """Stop the run, every process it started, and the API."""
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             signal.signal(sig, signal.SIG_IGN)
         if say:
@@ -302,8 +272,6 @@ class Watcher:
             print("Stopping watcher...")
         if self.dispatch:
             self.dispatch.stop_run(say)
-        if self.diffity:
-            self.diffity.stop(say)
         if self.api:
             self.api.stop()
         if say:
@@ -323,10 +291,7 @@ def main(argv):
         watcher = Watcher(opts)
         watcher.setup()
         watcher.start()
-        problem = watcher.dispatch.forever()
-        print(problem)
-        watcher.stop(say=False)
-        return 1
+        watcher.dispatch.forever()
     except Exit as e:
         if e.message:
             print(e.message)

@@ -18,11 +18,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      # The watcher tests run against a real diffity, pinned like the install guide
-      - run: npm install -g diffity@0.9.5
       - run: python -m unittest discover -s tests -v
 
   # ShellCheck has no zsh support, so the one shell file gets zsh's own syntax check

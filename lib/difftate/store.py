@@ -18,15 +18,12 @@ The store port:
                                         the thread's code moved to lines start..end
                                         (the file now is <snapshot>)
   mark_outdated(thread_id)              the thread's code changed: it stays outdated
-                                        (diffity keeps neither: its threads never
-                                        move and are never outdated)
   record_run(run)                       a run starts: {"id", "threads", "sent" (the ids
                                         of the comments it was sent), "repliesBefore"
                                         ({thread id: ids of its replies then})}
   record_run_end(run_id, outcome)       the run ended: done, failed, stopped or interrupted
   runs()                                the runs, oldest first, each with "outcome"
-                                        (None while it runs); None from a store that
-                                        can't keep runs (diffity)
+                                        (None while it runs)
   viewed()                              the files the reviewer marked viewed: {file:
                                         the hash of its diff when marked}
   mark_viewed(file, diff_hash)          the reviewer viewed <file> when its diff had

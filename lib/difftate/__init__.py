@@ -5,7 +5,6 @@ Modules follow the contexts in GLOSSARY.md and ADR 0001:
   api       the review API that viewers and the progress notes use
   review    the Review: the thread rules and thread state, over a store
   store     the store port and difftate's thread format
-  diffity   the diffity store (an anti-corruption layer over diffity 0.9.5)
   memory    the memory store (tests)
   local     the local store: difftate's own, in the git folder, and the review history
   changes   the base, the review's branch and the changeset, from git
