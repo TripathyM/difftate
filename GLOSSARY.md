@@ -11,7 +11,7 @@ The review of one branch in one repository, against its base, like a pull reques
 _Avoid_: session (that word belongs to the coding agent), diff, pull request
 
 **View**:
-The part of a review's changes that the reviewer looks at: all of them, one commit, the last few commits, or only the staged or unstaged changes. A thread written in any view belongs to the review.
+The part of a review's changes that the reviewer looks at: all of them, one commit, the last few commits, or only the staged or unstaged changes. A thread written in any view belongs to the review. A thread whose code the view doesn't show is listed, but not placed on a line.
 _Avoid_: range, filter, review (a view is not a separate review)
 
 **Review history**:
@@ -30,8 +30,8 @@ A conversation about one anchor, or about the changeset as a whole (a general th
 _Avoid_: comment (a thread holds comments), issue
 
 **Anchor**:
-Where a thread is attached: a file, a side, a line range, and the code on those lines when the thread was opened.
-_Avoid_: location, position
+Where a thread is attached: a file, a side, a line range, and the code on those lines when the thread was opened. When only the line numbers of its code change, the anchor moves with it; when the code itself changes, the thread is outdated.
+_Avoid_: location, position, follow (that is what the Watcher does with the branch)
 
 **Side**:
 The version of a file that an anchor points into: old (before the change) or new (after it).
