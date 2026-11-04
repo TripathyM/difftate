@@ -6,6 +6,7 @@ edits in the order it applies them.
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -68,7 +69,8 @@ class ProgressNoteTest(unittest.TestCase):
         threading.Thread(target=self.api.serve_forever, daemon=True).start()
         self.addCleanup(self.api.server_close)
         self.addCleanup(self.api.shutdown)
-        tmp = tempfile.mkdtemp()
+        tmp = tempfile.mkdtemp(prefix="difftate-stream-fmt-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         token_file = os.path.join(tmp, "token")
         with open(token_file, "w") as f:
             f.write("secret")
@@ -77,7 +79,13 @@ class ProgressNoteTest(unittest.TestCase):
         env.pop("DT_RUN_END", None)
         self.proc = subprocess.Popen([sys.executable, "-u", STREAM_FMT, "claude"], env=env,
                                      stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True)
-        self.addCleanup(self.proc.kill)
+        self.addCleanup(self.stop_formatter)
+
+    def stop_formatter(self):
+        if not self.proc.stdin.closed:
+            self.proc.stdin.close()
+        self.proc.kill()
+        self.proc.wait()
 
     def send(self, event):
         self.proc.stdin.write(json.dumps(event) + "\n")
