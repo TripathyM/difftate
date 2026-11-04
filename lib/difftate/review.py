@@ -62,10 +62,10 @@ def thread_state(thread, sent, running, replies_before):
 
 
 class Review:
-    def __init__(self, store, code=None, diffs=None):
+    def __init__(self, store, code=None, diff_hashes=None):
         self.store = store
         self.code = code  # changes.Code: where each thread's code is now (None: threads stay put)
-        self.diffs = diffs  # () -> each file's diff in the changeset, {file: hash} (changes.file_diffs)
+        self.diff_hashes = diff_hashes  # () -> {file: the hash of its diff in the changeset} (changes.diff_hashes)
         self._sent = set()  # ids of the comments sent to a run
         self._running = frozenset()  # ids of the threads in the run in progress
         self._run_id = None  # the run in progress
@@ -96,15 +96,23 @@ class Review:
             return _unsent(thread, self._sent)
 
     def viewed(self):
-        """The files marked viewed whose diff hasn't changed since, in order."""
-        marked, now = self.store.viewed(), self._diffs()
-        return sorted(f for f, diff in marked.items() if now.get(f) == diff)
+        """The files marked viewed whose diff hasn't changed since, in order. A
+        mark whose file's diff changed is cleared, so undoing the change doesn't
+        bring it back."""
+        return self._viewed(self._diff_hashes())
 
-    def _diffs(self):
-        if self.diffs is None:
+    def _viewed(self, now):
+        marked = self.store.viewed()
+        for f, diff_hash in marked.items():
+            if now.get(f) != diff_hash:
+                self.store.mark_viewed(f, None)
+        return sorted(f for f, diff_hash in marked.items() if now.get(f) == diff_hash)
+
+    def _diff_hashes(self):
+        if self.diff_hashes is None:
             raise StoreError(501, "this review keeps no viewed files")
         try:
-            return self.diffs()
+            return self.diff_hashes()
         except ChangesError as e:
             raise StoreError(502, f"could not read the changeset: {e}")
 
@@ -115,11 +123,11 @@ class Review:
         need_text(file, "file")
         if not isinstance(viewed, bool):
             raise StoreError(400, "viewed must be true or false")
-        diff = self._diffs().get(file)
-        if viewed and diff is None:
+        now = self._diff_hashes()
+        if viewed and file not in now:
             raise StoreError(404, f"{file} is not in the changeset")
-        self.store.mark_viewed(file, diff if viewed else None)
-        return self.viewed()
+        self.store.mark_viewed(file, now[file] if viewed else None)
+        return self._viewed(now)
 
     def open_thread(self, anchor, body, author=REVIEWER, view=""):
         """A thread on <anchor>'s lines in <view>: it belongs to the review, and

@@ -234,6 +234,11 @@ export default class Review extends View {
     }
     this.api = api;
     this.msg = "";
+    await this.loadReview();
+  }
+
+  // The changeset, the threads and the viewed files
+  async loadReview() {
     await this.loadDiff();
     await this.loadThreads();
     await this.loadViewed();
@@ -1095,7 +1100,7 @@ export default class Review extends View {
     this.fileCache = null;
     cx.spawn(async (cx) => {
       await this.loadKeymap(); // picks up edits to ~/.config/difftate/keymap.json
-      if (this.api) { await this.loadDiff().catch(() => {}); await this.loadThreads(); await this.loadViewed(); }
+      if (this.api) await this.loadReview().catch((e) => { this.msg = String(e.message ?? e); });
       else await this.attach(cx);
       if (this.view) await this.reopen();
       this.msg = "Refreshed";

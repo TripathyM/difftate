@@ -18,9 +18,9 @@ reviews/<review id>/` (shared by worktrees, never committed):
                         a run starts: the comments it was sent, and the replies
                         its threads had then
     {"type": "run-ended", "run", "outcome", "time"}
-    {"type": "viewed",  "file", "diff", "time"}
-                        the reviewer marked the file viewed, with that diff (a
-                        hash of it); "diff" null: unmarked
+    {"type": "viewed",  "file", "diffHash", "time"}
+                        the reviewer marked the file viewed when its diff had
+                        that hash; "diffHash" null: unmarked
 The current state comes from reading the lines in order. "seq" is a comment's
 place in its thread, so a note stored when its run ends keeps the place where
 it was posted.
@@ -140,10 +140,10 @@ class LocalStore:
             self._runs[e["run"]]["outcome"] = e["outcome"]
             return
         if kind == "viewed":
-            if e["diff"] is None:
+            if e["diffHash"] is None:
                 self._viewed.pop(e["file"], None)
             else:
-                self._viewed[e["file"]] = e["diff"]
+                self._viewed[e["file"]] = e["diffHash"]
             return
         if kind == "opened":
             self._threads[e["thread"]] = self._new_thread(e["thread"], e.get("anchor"))
@@ -310,14 +310,12 @@ class LocalStore:
             self._check()
             return dict(self._viewed)
 
-    def mark_viewed(self, file, diff):
+    def mark_viewed(self, file, diff_hash):
         with self._lock:
             self._check()
-            self._append([{"type": "viewed", "file": file, "diff": diff, "time": now()}])
-            if diff is None:
-                self._viewed.pop(file, None)
-            else:
-                self._viewed[file] = diff
+            event = {"type": "viewed", "file": file, "diffHash": diff_hash, "time": now()}
+            self._append([event])
+            self._apply(event)
 
     def move_thread(self, thread_id, start, end, snapshot):
         with self._lock:

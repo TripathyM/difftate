@@ -840,6 +840,8 @@ class LocalWatcherTest(Harness, SharedTests, unittest.TestCase):
         self.write("app.py", "def greet(name):\n    return f'hey {name}'\n")
 
         self.assertEqual(self.viewed(), ["other.py"], "same line counts, other code: no longer viewed")
+        self.write("app.py", "def greet(name):\n    return f'hello {name}'\n")
+        self.assertEqual(self.viewed(), ["other.py"], "the mark was cleared: undoing the edit doesn't bring it back")
 
     def test_an_edit_inside_a_new_untracked_file_clears_the_viewed_mark(self):
         self.write("new.py", "x = 1\n")

@@ -188,6 +188,8 @@ def _git_paths(rest):
         m = re.match(r'^("(?:[^"\\]|\\.)*")\s+(.*)$', rest)
         if m:
             return _path_of(m[1], "a/"), _path_of(m[2], "b/")
+    # Unquoted, the same path on both sides: "a/<p> b/<p>" has <p> in each half
+    # (this finds it even when <p> has " b/" in it)
     half = (len(rest) - 1) // 2
     if (len(rest) - 1) % 2 == 0 and rest[2:half] == rest[half + 3:]:
         return rest[2:half], rest[half + 3:]
@@ -195,7 +197,7 @@ def _git_paths(rest):
     return (m[1], m[2]) if m else (rest, rest)
 
 
-def file_diffs(diff):
+def diff_hashes(diff):
     """Each file's diff in a unified <diff>, as a hash: {path: sha1}. The path is
     the one viewers show (herdr/mods/difftate/diff.js): the old one for a deleted
     file, else the new one. Any change to a file's diff changes its hash, even one
@@ -225,7 +227,7 @@ def file_diffs(diff):
         elif line.startswith("+++ ") and _path_of(line[4:], "b/"):
             b["new"] = _path_of(line[4:], "b/")
     return {b["old"] if b["deleted"] else b["new"]:
-            hashlib.sha1("\n".join(b["lines"]).encode("utf-8", "surrogateescape")).hexdigest() for b in blocks}
+            hashlib.sha1("\n".join(b["lines"]).encode()).hexdigest() for b in blocks}
 
 
 # ── Where each thread's code is now ──────────────────────────────────────────

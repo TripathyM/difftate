@@ -231,8 +231,8 @@ class Watcher:
             except diffity.DiffityStartError as e:
                 raise Exit(1, str(e))
             store, problem = self.diffity.store(), self.diffity.problem
-        diffs = None if base is None else lambda: changes.file_diffs(changes.changeset(o["cwd"], base)["diff"])
-        review = Review(store, code, diffs)
+        diff_hashes = None if base is None else lambda: changes.diff_hashes(changes.changeset(o["cwd"], base)["diff"])
+        review = Review(store, code, diff_hashes)
         try:
             interrupted = review.recover_runs()
         except StoreError as e:

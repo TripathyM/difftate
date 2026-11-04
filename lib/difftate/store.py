@@ -29,8 +29,8 @@ The store port:
                                         can't keep runs (diffity)
   viewed()                              the files the reviewer marked viewed: {file:
                                         the hash of its diff when marked}
-  mark_viewed(file, diff)               the reviewer viewed <file> with that diff (its
-                                        hash), or unmarked it (<diff> None)
+  mark_viewed(file, diff_hash)          the reviewer viewed <file> when its diff had
+                                        that hash, or unmarked it (<diff_hash> None)
 
 A thread:
   {"id", "anchor": {"file", "side", "startLine", "endLine", "code", "commit",

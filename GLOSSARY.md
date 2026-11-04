@@ -21,6 +21,10 @@ _Avoid_: log, archive
 **Outdated**:
 A thread whose anchored code changed after the thread was written. It stays in the review, and shows the code it was written on.
 
+**Viewed file**:
+A file of the changeset that the reviewer marked as read. It stays viewed in every view, across reloads and commits, until the file's diff changes; then the mark is cleared.
+_Avoid_: seen, reviewed, read
+
 **Thread**:
 A conversation about one anchor, or about the changeset as a whole (a general thread).
 _Avoid_: comment (a thread holds comments), issue
