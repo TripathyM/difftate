@@ -5,6 +5,7 @@ switching stores (and later removing diffity) is safe. The diffity store runs
 against a real diffity 0.9.5 in a temporary repository, and is skipped when
 diffity isn't installed.
 """
+import json
 import os
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
 from difftate import diffity  # noqa: E402
+from difftate.local import LocalStore  # noqa: E402
 from difftate.memory import MemoryStore  # noqa: E402
 from difftate.store import StoreError  # noqa: E402
 
@@ -24,6 +26,21 @@ ANCHOR = {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2, "code":
 
 class StoreContract:
     """The behaviour every store shares. Subclasses set self.store in setUp."""
+    KEEPS_RUNS = True  # diffity has no place for runs
+
+    def test_a_run_is_kept_with_what_it_was_sent_until_it_ends(self):
+        if not self.KEEPS_RUNS:
+            self.assertIsNone(self.store.runs())
+            return
+        tid = self.store.open_thread(ANCHOR, "Why an f-string here?")["id"]
+        comment = self.store.threads()[0]["comments"][0]["id"]
+        run = {"id": "run-1", "threads": [tid], "sent": [comment], "repliesBefore": {tid: []}}
+
+        self.store.record_run(run)
+        self.assertEqual(self.store.runs(), [dict(run, outcome=None)])
+
+        self.store.record_run_end("run-1", "done")
+        self.assertEqual(self.store.runs(), [dict(run, outcome="done")])
 
     def test_a_thread_opens_with_the_reviewers_comment(self):
         opened = self.store.open_thread(ANCHOR, "Why an f-string here?")
@@ -113,10 +130,139 @@ def git(repo, *args):
     return subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, text=True).stdout
 
 
+def temp_repo(test):
+    """A git repository with one commit, in a temporary folder the test removes."""
+    tmp = tempfile.mkdtemp(prefix="difftate-store-test-")
+    test.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+    repo = os.path.join(tmp, "repo")
+    os.makedirs(repo)
+    git(repo, "init", "-q", "-b", "main")
+    with open(os.path.join(repo, "app.py"), "w") as f:
+        f.write("def greet(name):\n    return 'hi ' + name\n")
+    git(repo, "add", ".")
+    git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false",
+        "commit", "-q", "-m", "first")
+    return tmp, repo
+
+
+class LocalStoreTest(StoreContract, unittest.TestCase):
+    """difftate's own store, in a temporary repository's git folder, with its
+    review history in a temporary home folder."""
+
+    def setUp(self):
+        self.tmp, self.repo = temp_repo(self)
+        self.folder = os.path.join(self.repo, ".git", "difftate")
+        self.history = os.path.join(self.tmp, "home", ".difftate", "history")
+        self.warnings = []
+        self.store = self.open_store()
+
+    def open_store(self):
+        return LocalStore.open(self.folder, self.repo, branch="feature", base="main", history=self.history,
+                               on_tamper=self.warnings.append)
+
+    def events_file(self):
+        [review] = os.listdir(os.path.join(self.folder, "reviews"))
+        return os.path.join(self.folder, "reviews", review, "events.jsonl")
+
+    def read(self, path):
+        with open(path, "rb") as f:
+            return f.read()
+
+    def history_lines(self):
+        lines = []
+        for name in sorted(os.listdir(self.history)):
+            with open(os.path.join(self.history, name)) as f:
+                lines += [json.loads(line) for line in f]
+        return lines
+
+    def test_the_review_is_one_branch_against_its_base(self):
+        review = self.store.review()
+
+        self.assertEqual((review["branch"], review["base"]), ("feature", "main"))
+        self.assertEqual(self.open_store().review()["id"], review["id"], "reused")
+        other = LocalStore.open(self.folder, self.repo, branch="feature", base="develop", history=self.history)
+        self.assertNotEqual(other.review()["id"], review["id"], "another base is another review")
+
+    def test_the_review_is_kept_and_read_back_in_order(self):
+        tid = self.store.open_thread(ANCHOR, "Why an f-string here?")["id"]
+        self.store.add_comment(tid, "reply", "It reads better.")
+        self.store.set_status(tid, "resolved")
+
+        [thread] = self.open_store().threads()
+        self.assertEqual(thread, self.store.threads()[0])
+        self.assertEqual(thread["status"], "resolved")
+        self.assertEqual(thread["anchor"]["commit"], git(self.repo, "rev-parse", "HEAD").strip())
+
+    def test_runs_are_kept(self):
+        tid = self.store.open_thread(ANCHOR, "Why an f-string here?")["id"]
+        self.store.record_run({"id": "run-1", "threads": [tid], "sent": ["c1"], "repliesBefore": {tid: []}})
+        self.store.record_run_end("run-1", "stopped")
+        self.store.record_run({"id": "run-2", "threads": [tid], "sent": ["c2"], "repliesBefore": {tid: ["r1"]}})
+
+        self.assertEqual([(r["id"], r["outcome"]) for r in self.open_store().runs()],
+                         [("run-1", "stopped"), ("run-2", None)])
+        self.assertEqual(self.open_store().runs(), self.store.runs())
+
+    def test_a_note_is_kept_only_when_final_and_keeps_its_place(self):
+        tid = self.store.open_thread(ANCHOR, "Why an f-string here?")["id"]
+        note = self.store.add_comment(tid, "progress", "⏳ **Working…**")
+        self.store.add_comment(tid, "reply", "It reads better.")
+        queued = self.store.add_comment(tid, "queued", "🕒 **Queued**")
+        self.assertEqual([c["kind"] for c in self.open_store().threads()[0]["comments"]], ["comment", "reply"],
+                         "live notes are not stored")
+
+        self.store.edit_note(note["id"], "progress", "✅ **Done** in 3s", final=True)
+
+        comments = self.open_store().threads()[0]["comments"]
+        self.assertEqual([(c["kind"], c["body"]) for c in comments], [
+            ("comment", "Why an f-string here?"), ("progress", "✅ **Done** in 3s"), ("reply", "It reads better.")])
+        self.assertNotIn(queued["id"], [c["id"] for c in comments])
+
+    def test_stored_lines_are_only_appended_and_go_to_the_review_history_too(self):
+        tid = self.store.open_thread(ANCHOR, "Why an f-string here?")["id"]
+        before = self.read(self.events_file())
+        note = self.store.add_comment(tid, "progress", "⏳ **Working…**")
+        self.store.edit_note(note["id"], "progress", "✅ **Done** in 3s", final=True)
+        self.store.add_comment(tid, "reply", "It reads better.")
+        self.store.set_status(tid, "resolved")
+
+        after = self.read(self.events_file())
+        self.assertTrue(after.startswith(before), "only appended")
+        stored = [json.loads(line) for line in after.decode().splitlines()]
+        self.assertEqual([e["type"] for e in stored], ["opened", "comment", "note", "comment", "status"])
+        history = self.history_lines()
+        self.assertEqual(len(history), len(stored))
+        for line, kept in zip(stored, history):
+            self.assertEqual({k: v for k, v in kept.items() if k in line}, line)
+            self.assertEqual(kept["branch"], "feature")
+            self.assertEqual(kept["base"], "main")
+            self.assertEqual(kept["repo"]["path"], os.path.realpath(self.repo))
+
+    def test_lines_the_store_didnt_write_are_restored_and_reported(self):
+        tid = self.store.open_thread(ANCHOR, "Why an f-string here?")["id"]
+        other = self.store.open_thread(ANCHOR, "And the name?")["id"]
+        kept = self.read(self.events_file())
+
+        # An edit (the thread resolved by hand) and an appended line (a forged reply)
+        text = kept.decode().replace('"Why an f-string here?"', '"Fine."')
+        text += json.dumps({"type": "comment", "thread": other, "id": "x", "author": "agent", "kind": "reply",
+                            "body": "Forged.", "time": "2026-01-01T00:00:00.000Z", "seq": 99}) + "\n"
+        with open(self.events_file(), "w") as f:
+            f.write(text)
+
+        threads = self.store.threads()
+        self.assertEqual(self.read(self.events_file()), kept)
+        self.assertEqual(self.warnings, [sorted([tid, other])])
+        self.assertEqual([c["body"] for t in threads for c in t["comments"]], ["Why an f-string here?", "And the name?"])
+        self.store.threads()
+        self.assertEqual(len(self.warnings), 1, "reported once")
+
+
 @unittest.skipUnless(shutil.which("diffity"), "diffity 0.9.5 is not installed")
 class DiffityStoreTest(StoreContract, unittest.TestCase):
     """A real diffity per test, in a temporary repository. HOME points into the
     temporary folder, so diffity's data stays there too."""
+    KEEPS_RUNS = False
 
     def setUp(self):
         tmp = tempfile.mkdtemp(prefix="difftate-store-test-")

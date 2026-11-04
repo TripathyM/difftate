@@ -1,14 +1,9 @@
 """The memory store: the review in this process's memory, for tests."""
 import copy
-import datetime
 import threading
 import uuid
 
-from .store import AUTHOR_OF, StoreError
-
-
-def _now():
-    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+from .store import AUTHOR_OF, StoreError, now
 
 
 class MemoryStore:
@@ -16,6 +11,7 @@ class MemoryStore:
         self.commit = commit
         self.review_id = str(uuid.uuid4())
         self._threads = []
+        self._runs = []
         self._lock = threading.Lock()
 
     def review(self):
@@ -38,7 +34,7 @@ class MemoryStore:
             self._find(thread_id)["comments"].append(comment)
             return dict(comment)
 
-    def edit_note(self, note_id, kind, body):
+    def edit_note(self, note_id, kind, body, final=False):
         with self._lock:
             for t in self._threads:
                 for c in t["comments"]:
@@ -52,6 +48,20 @@ class MemoryStore:
             self._find(thread_id)["status"] = status
         return {"id": thread_id, "status": status}
 
+    def record_run(self, run):
+        with self._lock:
+            self._runs.append(dict(copy.deepcopy(run), outcome=None))
+
+    def record_run_end(self, run_id, outcome):
+        with self._lock:
+            for r in self._runs:
+                if r["id"] == run_id:
+                    r["outcome"] = outcome
+
+    def runs(self):
+        with self._lock:
+            return copy.deepcopy(self._runs)
+
     def _find(self, thread_id):
         for t in self._threads:
             if t["id"] == thread_id:
@@ -60,4 +70,4 @@ class MemoryStore:
 
     @staticmethod
     def _comment(kind, body):
-        return {"id": str(uuid.uuid4()), "author": AUTHOR_OF[kind], "kind": kind, "body": body, "time": _now()}
+        return {"id": str(uuid.uuid4()), "author": AUTHOR_OF[kind], "kind": kind, "body": body, "time": now()}

@@ -36,8 +36,9 @@ source ~/.zshrc
 Run from inside the repo, **on the branch you want reviewed**:
 
 ```bash
-difftate                    # Claude Code, whole branch vs master (short: dtc)
-difftate main               # whole branch vs main
+difftate                    # Claude Code, whole branch vs the default branch, origin/HEAD (short: dtc)
+difftate --base develop     # whole branch vs develop
+difftate main               # the changes since main (diffity's view)
 difftate HEAD~1             # the last commit
 difftate HEAD~3             # the last 3 commits
 difftate HEAD               # only uncommitted changes (capital HEAD: `head` breaks in worktrees on macOS)
@@ -53,7 +54,23 @@ difftate --open herdr       # review in a Herdr tab instead of the browser (see 
 
 Without `--session`, it attaches the latest agent session for the current folder, so comments are answered with that session's full context.
 
-**Always run from the branch's checkout.** The coding agent edits files in the current directory. There is deliberately no "source branch" option: it would let the coding agent write fixes onto the wrong branch. To review another branch without switching, use a worktree (`git worktree add ../repo-x feature-x`, `cd` there, run `difftate master`).
+**Always run from the branch's checkout.** The coding agent edits files in the current directory. There is deliberately no "source branch" option: it would let the coding agent write fixes onto the wrong branch. To review another branch without switching, use a worktree (`git worktree add ../repo-x feature-x`, `cd` there, run `difftate`).
+
+**The base** is the repository's default branch (`origin/HEAD`; without one, a local `main` or `master`), unless `--base` gives another. It used to be `master`. A review is one branch against its base, like a pull request; with a detached HEAD, or on the base branch itself, the current commit stands in for the branch.
+
+## Local store (try it early)
+
+```bash
+export DT_STORE=local   # default: diffity
+```
+
+difftate keeps the review itself, with no diffity: commits don't end a review, so threads survive them. The changeset comes from git (`GET /api/changeset`). There is no viewer for it yet (the Review tab still reads diffity, and difftate's own browser viewer comes later), so for now you reach it through the [review API](#review-api). Views (`HEAD~1`, `staged`, …) come later too: the local store shows all changes against the base.
+
+- Each review is stored in `.git/difftate/reviews/<review>/` (shared by worktrees, never committed): `review.json` (branch, base, start) and `events.jsonl`, plain JSON lines that are only ever appended (threads opened, comments, replies, final notes, status changes, and runs: which comments each run was sent, and how it ended). The current state comes from reading them in order.
+- Progress notes show a run's steps live from the watcher's memory. Only their final line is stored, when the run ends.
+- A watcher killed during a run (not Ctrl+C) loses nothing: the next one sees the run that never ended, doesn't send its threads again, and marks those with no reply as failed ("no reply (the watcher stopped)").
+- Every stored line also goes to the **review history**, `~/.difftate/history/<year>-<month>.jsonl`, with the repository (path and remote), branch and base added, so deleting a clone doesn't lose it.
+- Only the watcher writes the store. If `events.jsonl` changes in a way it didn't make (say, the coding agent with the sandbox off), the watcher prints a warning, restores the file, and says so in the final progress note of a thread in the run.
 
 ## Example: several Claude setups
 
@@ -103,7 +120,7 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 | File | What it does |
 |---|---|
 | `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the session, then start `difftate-watch.py` |
-| `difftate-watch.py`, `lib/difftate/` | The watcher: starts (or reuses) diffity, serves the [review API](#review-api), dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
+| `difftate-watch.py`, `lib/difftate/` | The watcher: opens the review in its store (diffity, started or reused; or the [local store](#local-store-try-it-early)), serves the [review API](#review-api), dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
 | `bin/dt-reply` | How the coding agent answers a thread: `dt-reply <thread> "<answer>"` |
 | `lib/stream_fmt.py` | Reads the coding agent's JSON event stream; prints live progress lines and keeps the progress note updated |
 | `tests/` | Watcher tests: a temporary repository, the real watcher, a fake coding agent. See [Tests](#tests) |
@@ -173,6 +190,7 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 | `DT_CONTEXT_WINDOW` | unset (Claude auto-detects) | Context window in tokens, for the % when the tool doesn't report it. E.g. `export DT_CONTEXT_WINDOW=200000` for OpenCode |
 | `DT_OPEN` | `browser` | Where the review opens: `browser`, `herdr` or `both`. `--open` overrides it for one run. See [Review in Herdr](#review-in-herdr-optional) |
 | `DT_HERDR` | unset (`herdr-app` on `PATH`) | Path to the Herdr app's binary, for `DT_OPEN=herdr` when `herdr-app` isn't on `PATH` |
+| `DT_STORE` | `diffity` | Where the review is kept: `diffity`, or `local` for difftate's own store. See [Local store](#local-store-try-it-early) |
 
 ### Constants (edit the file)
 
@@ -188,15 +206,14 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 
 ### Watcher flags (`difftate-watch.py --help`)
 
-`--ref`, `--tool`, `--session`, `--model`, `--cwd`, `--interval` (poll seconds, default 1), `--cmd`, `--open` (browser, herdr, both).
+`--base` (default: `origin/HEAD`), `--ref` (diffity's view; default: the base), `--tool`, `--session`, `--model`, `--cwd`, `--interval` (poll seconds, default 1), `--cmd`, `--open` (browser, herdr, both).
 
 ### Internal env vars (set by the watcher, don't set yourself)
 
 | Variable | Purpose |
 |---|---|
 | `DT_API`, `DT_TOKEN_FILE` | Review API address and token file, for the progress notes (given to `lib/stream_fmt.py` only, never to the coding agent) |
-| `DT_THREAD_IDS` | Comma-separated threads the current run handles |
-| `DT_QUEUED_NOTES` | The "Queued" notes that become those threads' progress notes |
+| `DT_NOTES` | The current run's progress notes, `{thread id: note id}`, which `lib/stream_fmt.py` edits |
 | `DT_RUN_DIR` | The run's folder, where `dt-reply` leaves the coding agent's answers (given to the coding agent) |
 
 ## How it works
@@ -204,7 +221,7 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 1. Every `--interval` seconds the watcher lists open threads. A thread is **waiting** when it has a comment of yours (or another reviewer's) that no run has been sent yet (see [thread state](#review-api)).
 2. Waiting threads → one run of the coding agent, in the background, with the prompt below. Runs go **one at a time**; comments that queue up during a run all go into the next one.
 3. While it runs, the watcher keeps polling; new threads get `🕒 Queued` within ~1s and go in the next run.
-4. `lib/stream_fmt.py` posts or reuses the progress note, then edits it through the review API.
+4. Before the run starts, the watcher posts a progress note on each of its threads (or reuses the thread's queued note). `lib/stream_fmt.py` edits them through the review API while the run works. When the run ends (done, failed, or stopped by Ctrl+C: "⏹ Stopped"), the watcher writes each note's final line.
 5. The coding agent answers each thread with `dt-reply <thread> "<answer>"`. That writes the answer into the run's folder (a temporary folder per run), and the watcher posts it as a reply. The coding agent never writes to the review itself.
 6. Ctrl+C stops the watcher, the running coding agent and its child processes, and diffity (if the watcher started it).
 
@@ -244,11 +261,12 @@ The watcher (Python 3.9 or later, nothing else) serves the **review API** on `12
 
 | Request | What it does |
 |---|---|
-| `GET /api/review` | Start or reuse the review |
+| `GET /api/review` | Start or reuse the review: `id` (the local store adds `branch` and `base`) |
+| `GET /api/changeset` | The review's changeset, from git: `base`, `commit` (where the branch left the base), `diff` (unified, new untracked files included) |
 | `GET /api/threads?status=open` | List threads |
 | `POST /api/threads` | Open a thread: `anchor` (`file`, `side` `old`/`new`, `startLine`, `endLine`, `code`; `null` for a general thread), `body` |
 | `POST /api/threads/<id>/comments` | Add a comment: `kind` (`comment`, the default; `reply`; `queued` or `progress` for a note), `body` |
-| `PATCH /api/notes/<id>` | Edit a note: `kind`, `body`. Anything that isn't a note gets 403 |
+| `PATCH /api/notes/<id>` | Edit a note: `kind`, `body`. Anything that isn't a note gets 403; a note whose run has ended gets 409 |
 | `PATCH /api/threads/<id>/status` | Set the thread status: `open`, `resolved` or `dismissed` |
 
 Opening a thread and setting its status take an optional `author`, which must be `reviewer`: anyone else gets 403. That enforces the review's rules for difftate's own callers; it isn't a security check (the token is). Threads come back in difftate's own format, the same for every store:
@@ -280,7 +298,7 @@ So a follow-up you write while the agent works on the same thread is answered in
 python3 -m unittest discover -s tests -v
 ```
 
-`tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_stores.py` runs one test suite against every store (memory and diffity). Tests that need diffity 0.9.5 skip without it. CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
+`tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_stores.py` runs one test suite against every store (memory, local and diffity). The watcher tests run on the diffity store and on the local store (with no diffity on `PATH`). Tests that need diffity 0.9.5 skip without it. CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
 
 ## Known limitations
 
@@ -290,7 +308,7 @@ python3 -m unittest discover -s tests -v
 
 | Symptom | Check |
 |---|---|
-| No progress note appears | Watcher terminal for `could not post the progress note`; is diffity on the port shown? |
+| No progress note appears | Watcher terminal for `could not post the progress note on thread …`; is diffity on the port shown? |
 | Coding agent never finishes | Run the coding agent's command by hand with `< /dev/null`; look for auth or stdin hangs |
 | Wrong diff shown | Check `?ref=` in the page URL; rerun `difftate <ref>` |
 | Answer from the wrong model / 🧠 far from `/context` | Check the `Model:` line; force it with `difftate --model <model>` |

@@ -8,11 +8,11 @@ opencode: `opencode run --format json`
 
 Progress goes to two places:
   - the terminal, one line per event
-  - the review, as one progress note per thread that is edited in place
-    (a live checklist) and ends as one "✅ Done" line, through the review API.
-    Enabled when DT_THREAD_IDS (comma-separated), DT_API and DT_TOKEN_FILE are
-    set. A thread's queued note becomes its progress note: DT_QUEUED_NOTES
-    ({thread id: note id}) gives them.
+  - the review: the progress note on each of the run's threads, edited in
+    place (a live checklist) until it ends as one "✅ Done" line, through the
+    review API. The watcher posts the notes before the run starts and writes
+    their final lines when it ends; this only edits them. Enabled when
+    DT_NOTES ({thread id: note id}), DT_API and DT_TOKEN_FILE are set.
 
 Non-JSON lines are passed through unchanged so errors stay visible.
 """
@@ -90,29 +90,24 @@ def _request(url, method, payload, headers=None):
 
 
 class ReviewApiNotes:
-    """Posts and edits progress notes through the review API."""
+    """Edits the progress notes through the review API."""
 
     def __init__(self, url, token_file):
         self.url = url.rstrip("/")
         with open(token_file) as f:
             self.headers = {"Authorization": f"Bearer {f.read().strip()}"}
 
-    def post(self, tid, body):
-        note = _request(f"{self.url}/api/threads/{tid}/comments", "POST",
-                        {"kind": "progress", "body": body}, self.headers)
-        return (note or {}).get("id")
-
-    @staticmethod
-    def queued_notes():
-        """{thread id: queued note id}, from the watcher."""
-        try:
-            found = json.loads(os.environ.get("DT_QUEUED_NOTES") or "{}")
-        except ValueError:
-            return {}
-        return found if isinstance(found, dict) else {}
-
     def edit(self, note_id, body):
         _request(f"{self.url}/api/notes/{note_id}", "PATCH", {"kind": "progress", "body": body}, self.headers)
+
+
+def note_ids():
+    """The run's progress notes, from the watcher."""
+    try:
+        found = json.loads(os.environ.get("DT_NOTES") or "{}")
+    except ValueError:
+        return []
+    return [n for n in found.values() if isinstance(n, str)] if isinstance(found, dict) else []
 
 
 def notes_client():
@@ -129,26 +124,14 @@ class Status:
 
     def __init__(self):
         self.notes = notes_client()
-        tids = [t for t in os.environ.get("DT_THREAD_IDS", "").split(",") if t]
-        self.enabled = bool(self.notes and tids)
+        self.note_ids = note_ids() if self.notes else []
+        self.enabled = bool(self.note_ids)
         self.steps = []  # [label, done]
         self.state = "thinking"  # thinking | working | done | failed
         self.note = ""
         self.lock = threading.Lock()
-        self.note_ids = []
         if self.enabled:
-            queued = self.notes.queued_notes()
-            for tid in tids:
-                if tid in queued:
-                    # Reuse the watcher's "🕒 Queued" comment as the live checklist
-                    self.note_ids.append(queued[tid])
-                    continue
-                note_id = self.notes.post(tid, self.render())
-                if note_id:
-                    self.note_ids.append(note_id)
             self.push()
-            if not self.note_ids:
-                out("⚠️", "could not post the progress note")
             threading.Thread(target=self._ticker, daemon=True).start()
 
     def render(self):

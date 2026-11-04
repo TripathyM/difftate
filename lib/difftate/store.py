@@ -9,8 +9,18 @@ The store port:
   threads(status=None)                  the review's threads, oldest first
   open_thread(anchor, body)             a thread with the reviewer's first comment
   add_comment(thread_id, kind, body)    a comment, reply or note at the end of a thread
-  edit_note(note_id, kind, body)        change a note's kind and body
+  edit_note(note_id, kind, body, final=False)
+                                        change a note's kind and body; final when
+                                        the note won't change again (a store may
+                                        keep only final notes: see local.py)
   set_status(thread_id, status)         open, resolved or dismissed
+  record_run(run)                       a run starts: {"id", "threads", "sent" (the ids
+                                        of the comments it was sent), "repliesBefore"
+                                        ({thread id: ids of its replies then})}
+  record_run_end(run_id, outcome)       the run ended: done, failed, stopped or interrupted
+  runs()                                the runs, oldest first, each with "outcome"
+                                        (None while it runs); None from a store that
+                                        can't keep runs (diffity)
 
 A thread:
   {"id", "anchor": {"file", "side", "startLine", "endLine", "code", "commit"} or None
@@ -19,12 +29,21 @@ A thread:
 The Review adds "state" (thread state) before the API returns it.
 """
 
+import datetime
+
 NOTE_KINDS = ("queued", "progress")
 # Who writes each kind of comment
 AUTHOR_OF = {"comment": "reviewer", "reply": "agent", "queued": "difftate", "progress": "difftate"}
 KINDS = tuple(AUTHOR_OF)
 THREAD_STATUSES = ("open", "resolved", "dismissed")
+# How a run ended. Interrupted: the watcher was killed during it, and the next one ended it
+RUN_OUTCOMES = ("done", "failed", "stopped", "interrupted")  # what record_run_end takes
 SIDES = ("old", "new")
+
+
+def now():
+    """The time a comment is written, as stores record it."""
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 class StoreError(Exception):
