@@ -28,6 +28,8 @@ const SPECIAL = {
 const STATE_LABEL = { waiting: "waiting for agent", queued: "queued", working: "agent working", replied: "agent replied", failed: "failed: no reply", resolved: "resolved", dismissed: "dismissed" };
 // Where a thread stands: the API's thread state while open, else its status (resolved, dismissed).
 const stateOf = (th) => (th.status === "open" ? th.state ?? "waiting" : th.status);
+// How the tab names a view of the review
+const viewLabel = (v) => (!v ? "all changes" : v === "HEAD" ? "uncommitted" : v === "staged" || v === "unstaged" ? v : `commits after ${v}`);
 
 // ---------- keymap ----------
 
@@ -145,6 +147,7 @@ export default class Review extends View {
     this.itemOfRow = [];
     this.files = [];
     this.threads = [];
+    this.reviewView = ""; // the review's view (all changes, commits, staged…); this.view is the file shown
     this.view = null;
     this.jumps = [];
     this.jumpIdx = 0;
@@ -241,14 +244,17 @@ export default class Review extends View {
   applyChangeset(c) {
     this.diffText = c.diff;
     this.base = c.base;
+    this.commit = c.commit;
     this.files = c.files;
+    if (c.view !== this.reviewView) this.threadSig = null; // threads sit elsewhere in another view
+    this.reviewView = c.view;
   }
 
   async loadThreads() {
     if (!this.api) return;
-    const list = await this.api.threads().catch(() => null);
+    const list = await this.api.threads(this.reviewView).catch(() => null);
     if (!list) return;
-    const sig = JSON.stringify(list.map((t) => [t.id, t.status, t.state, t.outdated, t.startLine, t.endLine, t.comments.length, t.comments.at(-1)?.body]));
+    const sig = JSON.stringify(list.map((t) => [t.id, t.status, t.state, t.outdated, t.inView, t.startLine, t.endLine, t.comments.length, t.comments.at(-1)?.body]));
     if (sig === this.threadSig) return false;
     this.threadSig = sig;
     this.threads = list;
@@ -275,7 +281,7 @@ export default class Review extends View {
           if (!e.status || e.status === 401) { this.api = null; this.msg = "difftate stopped. Run difftate again to keep commenting."; cx.notify(); return; }
           throw e;
         }
-        if (c.diff !== this.diffText) {
+        if (c.diff !== this.diffText || c.view !== this.reviewView) {
           this.applyChangeset(c);
           // Never reload over edits in progress; catch up once they're saved or dropped.
           if (this.view) { if (this.busyEditing()) this.needsReopen = true; else await this.reopen(); }
@@ -407,7 +413,7 @@ export default class Review extends View {
   // The row a thread sits under, or -1. An outdated thread's code is no longer on its
   // lines, so it never sits next to them: it is listed below the code, with the code it was written on.
   anchorRow(th) {
-    if (th.outdated) return -1;
+    if (th.outdated || !th.inView) return -1;
     const m = th.side === "old" ? this.rowOfOld : this.rowOfNew;
     return m?.get(th.endLine) ?? -1;
   }
@@ -618,7 +624,7 @@ export default class Review extends View {
       resolve: () => this.setThreadStatus("resolved", cx), reopen: () => this.setThreadStatus("open", cx),
       goto_definition: () => this.gotoDefinition(cx), references: () => this.references(cx),
       jump_back: () => this.jump(-1, cx), jump_forward: () => this.jump(1, cx),
-      find_files: () => this.findFiles(cx), changed_files: () => this.changedFiles(), threads: () => this.threadPicker(),
+      find_files: () => this.findFiles(cx), changed_files: () => this.changedFiles(), threads: () => this.threadPicker(), views: () => this.viewPicker(cx),
       toggle_explorer: () => { this.explorer = !this.explorer; this.rebuildItems(); },
       toggle_view: () => this.toggleView(cx),
       search: () => this.openPrompt({ kind: "search", label: "/" }),
@@ -733,12 +739,52 @@ export default class Review extends View {
 
   goToThread(th, cx) {
     cx.spawn(async (cx) => {
+      // Its code isn't in this view: switch to the view it was written in, which showed it
+      if (!th.inView && !th.outdated && th.writtenIn !== this.reviewView) {
+        await this.switchView(th.writtenIn, cx);
+        th = this.threads.find((x) => x.id === th.id) ?? th;
+      }
       if (this.view?.path !== th.filePath) await this.openFile(th.filePath, this.fileOf(th.filePath) ? "diff" : "file", { line: th.endLine, side: th.side });
       let row = this.anchorRow(th);
       if (row < 0 && !th.outdated && this.view.mode === "diff") { await this.openFile(th.filePath, "file", { line: th.endLine }, false); row = this.anchorRow(th); }
       this.curThread = th.id;
       if (row >= 0) { this.setRow(row, false); this.reveal(); }
       else { const idx = this.items.findIndex((x) => x.key === `t${th.id}`); if (idx >= 0) this.scroll.scroll_to_item(idx); }
+      cx.notify();
+    });
+  }
+
+  // ---------- views ----------
+
+  // Show <view> here and in every other viewer of the review (the watcher keeps it).
+  async switchView(view, cx) {
+    if (!this.api) { this.msg = "Start difftate (or dto) in this repo to switch views."; return; }
+    if (this.busyEditing()) { this.msg = "Save or drop your edits first (:w or :e!)"; return; }
+    try { await this.api.setView(view); }
+    catch (e) { this.msg = `Can't show ${viewLabel(view)}: ${e.message ?? e}`; return; }
+    await this.loadDiff();
+    this.threadSig = null;
+    await this.loadThreads();
+    if (this.view) await this.reopen();
+    else if (this.files.length) await this.openFile(this.files[0].path, "diff", null, false);
+    this.msg = `Showing ${viewLabel(view)}`;
+    cx?.notify();
+  }
+
+  // Pick a view: all changes, uncommitted, staged, unstaged, or the last N commits of the branch.
+  viewPicker(cx) {
+    if (!this.api) { this.msg = "Start difftate (or dto) in this repo to switch views."; return; }
+    cx.spawn(async (cx) => {
+      const log = this.commit ? await this.git(["log", "--format=%h %s", "-n", "30", `${this.commit}..HEAD`]).catch(() => null) : null;
+      const commits = log?.code === 0 ? log.stdout.split("\n").filter(Boolean) : [];
+      const items = [
+        { label: "All changes", detail: `against ${this.base ?? "the base"}`, value: "" },
+        { label: "Uncommitted", detail: "HEAD", value: "HEAD" },
+        { label: "Staged", detail: "", value: "staged" },
+        { label: "Unstaged", detail: "", value: "unstaged" },
+        ...commits.map((c, i) => ({ label: `Last ${i + 1} commit${i ? "s" : ""}`, detail: `HEAD~${i + 1} · down to ${c}`, value: `HEAD~${i + 1}` })),
+      ].map((it) => ({ ...it, detail: it.value === this.reviewView ? `${it.detail}${it.detail ? " · " : ""}shown` : it.detail }));
+      this.openPicker("Review views", items, (v, cx) => cx.spawn(async (cx) => { await this.switchView(v, cx); cx.notify(); }));
       cx.notify();
     });
   }
@@ -828,7 +874,7 @@ export default class Review extends View {
     cx.spawn(async (cx) => {
       try {
         if (p.kind === "comment") {
-          const th = await this.api.openThread(p.target, text);
+          const th = await this.api.openThread(p.target, text, this.reviewView);
           this.curThread = th.id;
           this.mode = "normal";
           this.msg = "Comment sent. The agent picks it up within a few seconds.";
@@ -909,7 +955,7 @@ export default class Review extends View {
     this.openPicker("Review threads", all.map((t) => ({
       label: `${t.filePath}:${t.startLine === t.endLine ? t.startLine : `${t.startLine}-${t.endLine}`}`,
       match: " " + (t.comments[0]?.body ?? ""),
-      detail: `${STATE_LABEL[stateOf(t)] ?? t.status}${t.outdated ? " · outdated" : ""} · ${(t.comments[0]?.body ?? "").split("\n")[0].slice(0, 60)}`,
+      detail: `${STATE_LABEL[stateOf(t)] ?? t.status}${t.outdated ? " · outdated" : !t.inView ? " · not in this view" : ""} · ${(t.comments[0]?.body ?? "").split("\n")[0].slice(0, 60)}`,
       value: t,
     })), (t, cx) => this.goToThread(t, cx));
   }
@@ -1163,7 +1209,7 @@ export default class Review extends View {
 
     const header = h_flex().h(36).flex_none().px(14).gap(10).items_center().bg(t.chrome).border_b(1).border_color(t.border).text_size(12)
       .child(div().font_semibold().text_size(13).child(this.repo ?? "Review"))
-      .child(div().text_color(t.dim).child(this.api && this.base ? `Changes against ${this.base}` : ""))
+      .child(div().text_color(t.dim).child(this.api && this.base ? `${viewLabel(this.reviewView)} · against ${this.base}` : ""))
       .child(div().flex_1())
       .when(open.length > 0, (el) => el.child(div().text_color(t.muted).child(`${open.length} open thread${open.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} with the agent` : ""}`)))
       .child(h_flex().gap(6).items_center()

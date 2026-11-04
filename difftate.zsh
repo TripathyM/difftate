@@ -13,6 +13,8 @@
 #   dtc                            # same as difftate
 #   difftate HEAD~1                # diff last commit
 #   difftate HEAD~3                # diff last 3 commits
+#   difftate HEAD / staged / unstaged  # uncommitted, staged or unstaged changes
+#   (run again while a watcher runs here: it switches that watcher's view and exits)
 #   difftate --base develop        # compare against another branch
 #   dto                            # opencode + auto-attach latest session
 #   difftate --session <uuid>      # use a specific session (skip auto-detect)

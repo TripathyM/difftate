@@ -18,6 +18,7 @@ import threading
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -176,10 +177,11 @@ class Harness:
         with open(os.path.join(self.repo, path)) as f:
             return f.read()
 
-    def open_thread(self, body, line=2, file="app.py", end=None, **payload):
-        """A thread on <file>'s lines <line>..<end> (new side), with the code on them now."""
+    def open_thread(self, body, line=2, file="app.py", end=None, anchor_code=None, **payload):
+        """A thread on <file>'s lines <line>..<end> (new side), with the code on them
+        on disk now, or <anchor_code>."""
         end = end or line
-        code = "\n".join(self.read(file).split("\n")[line - 1:end])
+        code = anchor_code or "\n".join(self.read(file).split("\n")[line - 1:end])
         return self.api("POST", "/api/threads", dict({
             "anchor": {"file": file, "side": "new", "startLine": line, "endLine": end, "code": code},
             "body": body}, **payload))
@@ -477,19 +479,39 @@ class SharedTests:
 
         wait_for("every started process to stop", lambda: not [p for p in started if alive(p)], timeout=10)
 
-    def test_a_second_watcher_on_the_same_repository_is_refused(self):
+    def second_watcher(self, *args):
+        command = self.watcher_command()
+        command[command.index("--tool"):command.index("--tool")] = list(args)
+        return subprocess.run(command, cwd=self.repo, env=self.env, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=60)
+
+    def test_a_second_watcher_start_switches_the_running_watchers_view_and_exits(self):
+        git(self.repo, self.env, "commit", "-q", "-am", "Say hello")
         self.start_watcher()
         first = (self.watcher, self.port, self.token)
 
-        second = subprocess.run(self.watcher_command(), cwd=self.repo, env=self.env, stdin=subprocess.DEVNULL,
-                                capture_output=True, text=True, timeout=30)
+        second = self.second_watcher("--ref", "HEAD~1")
 
-        self.assertEqual(second.returncode, 1, second.stdout)
-        self.assertIn("already running for this repository", second.stdout)
+        self.assertEqual(second.returncode, 0, second.stdout)
+        self.assertIn(f"difftate is already running for this repository (pid {self.watcher.pid})", second.stdout)
+        self.assertIn("switched it to the commits after HEAD~1", second.stdout)
+        self.assertEqual(self.api("GET", "/api/view"), {"view": "HEAD~1"})
+        self.assertEqual(self.api("GET", "/api/changeset")["view"], "HEAD~1")
+        wait_for("the switch in the terminal", lambda: "Showing the commits after HEAD~1" in self.terminal())
+        self.assertIsNone(self.watcher.poll(), "the running watcher keeps going")
         self.assertEqual((self.watcher, self.port, self.token), first)
         with open(os.path.join(self.repo, ".git", "difftate", "token")) as f:
             self.assertEqual(f.read().strip(), self.token, "the first watcher's token is kept")
         self.assertEqual(self.api("GET", "/api/threads"), [])
+
+        # No view: all changes. A view that isn't one changes nothing
+        self.assertEqual(self.second_watcher().returncode, 0)
+        started = {"view": "HEAD" if self.STORE == "diffity" else ""}  # the diffity tests start on HEAD
+        self.assertEqual(self.api("GET", "/api/view"), started)
+        bad = self.second_watcher("--ref", "nope")
+        self.assertEqual(bad.returncode, 1, bad.stdout)
+        self.assertIn("no view 'nope'", bad.stdout)
+        self.assertEqual(self.api("GET", "/api/view"), started)
 
     def test_only_a_reviewer_opens_a_thread_or_changes_its_status(self):
         self.silence_agent()  # keep the coding agent out of the thread
@@ -734,6 +756,120 @@ class LocalWatcherTest(Harness, SharedTests, unittest.TestCase):
         other = self.api("GET", "/api/review")
         self.assertEqual(other["base"], "main")
         self.assertNotEqual(other["id"], review["id"], "another base is another review")
+
+    # ── Views ────────────────────────────────────────────────────────────────
+    def two_commits_then_edits(self):
+        """On feature: commit "one" (app.py), commit "two" (two.py), then staged.py
+        staged, app.py edited and new.py untracked."""
+        git(self.repo, self.env, "commit", "-q", "-am", "one")
+        self.write("two.py", "two = 2\n")
+        git(self.repo, self.env, "add", "two.py")
+        git(self.repo, self.env, "commit", "-q", "-m", "two")
+        self.write("staged.py", "staged = 1\n")
+        git(self.repo, self.env, "add", "staged.py")
+        self.write("app.py", self.read("app.py") + "greet('you')\n")
+        self.write("new.py", "new = 1\n")
+
+    def files_in(self, view=None):
+        query = "" if view is None else "?view=" + urllib.parse.quote(view)
+        changeset = self.api("GET", "/api/changeset" + query)
+        return changeset["view"], sorted(re.findall(r"^\+\+\+ b/(\S+)", changeset["diff"], re.M))
+
+    def test_the_api_returns_the_changeset_for_each_view(self):
+        self.two_commits_then_edits()
+        self.start_watcher()
+
+        self.assertEqual(self.files_in(), ("", ["app.py", "new.py", "staged.py", "two.py"]), "all changes")
+        self.assertEqual(self.files_in(""), ("", ["app.py", "new.py", "staged.py", "two.py"]))
+        self.assertEqual(self.files_in("HEAD~1"), ("HEAD~1", ["app.py", "new.py", "staged.py", "two.py"]))
+        self.assertEqual(self.files_in("HEAD"), ("HEAD", ["app.py", "new.py", "staged.py"]), "uncommitted")
+        self.assertEqual(self.files_in("staged"), ("staged", ["staged.py"]))
+        self.assertEqual(self.files_in("unstaged"), ("unstaged", ["app.py", "new.py"]))
+        self.assertNotIn("+    return f'hello {name}'", self.api("GET", "/api/changeset?view=HEAD")["diff"],
+                         "the HEAD view starts after the last commit")
+        self.assertEqual(self.refused("GET", "/api/changeset?view=nope", None), 400)
+
+    def placed(self, tid, view):
+        thread = next(t for t in self.api("GET", "/api/threads?view=" + urllib.parse.quote(view)) if t["id"] == tid)
+        return thread["anchor"]["startLine"], thread.get("inView", True)
+
+    def test_threads_written_in_the_head_1_view_are_in_the_all_changes_view_too(self):
+        self.two_commits_then_edits()
+        self.release_agent()
+        self.extra_args = ["--ref", "HEAD~1"]
+        self.start_watcher()
+
+        tid = self.open_thread("Why two?", line=1, file="two.py", view="HEAD~1")["id"]
+
+        self.assertEqual(self.api("GET", "/api/view"), {"view": "HEAD~1"})
+        self.assertIn(tid, [t["id"] for t in self.api("GET", "/api/threads")])
+        self.assertEqual(self.placed(tid, ""), (1, True))
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        self.assertFalse(self.thread(tid)["outdated"])
+
+    def test_a_thread_sits_by_its_code_in_every_view(self):
+        self.write("long.py", self.LONG)
+        git(self.repo, self.env, "add", "long.py")
+        self.write("long.py", "import os\nimport re\nimport sys\n" + self.LONG + "tail = 1\n")
+        self.release_agent()
+        self.start_watcher()
+
+        # Line 12 of the staged file is line 15 on disk
+        tid = self.open_thread("Why 12?", line=12, file="long.py", view="staged",
+                               anchor_code="line_12 = 12")["id"]
+        time.sleep(0.5)  # a few polls
+        self.assertFalse(self.thread(tid)["outdated"], "written on the staged code")
+        self.assertEqual(self.placed(tid, "staged"), (12, True))
+        self.assertEqual(self.placed(tid, "unstaged"), (15, True))
+        self.assertEqual(self.placed(tid, ""), (15, True))
+
+        # The last line is only on disk: not in the staged view
+        tail = self.open_thread("Why a tail?", line=24, file="long.py")["id"]
+        self.assertEqual(self.placed(tail, "staged"), (24, False))
+        self.assertEqual(self.placed(tail, "HEAD"), (24, True))
+
+    def test_an_old_side_thread_in_a_commit_view_follows_its_code_in_that_view(self):
+        self.two_commits_then_edits()
+        self.release_agent()
+        self.start_watcher()
+
+        # Before HEAD~1's commits, line 2 is the branch's own f-string: not in the base
+        tid = self.api("POST", "/api/threads", {"body": "Why an f-string?", "view": "HEAD~1", "anchor": {
+            "file": "app.py", "side": "old", "startLine": 2, "endLine": 2, "code": "    return f'hello {name}'"}})["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+        self.assertFalse(self.thread(tid)["outdated"], "its code didn't change")
+        self.assertEqual(self.placed(tid, "HEAD~1"), (2, True))
+        self.assertFalse(self.placed(tid, "")[1], "the base doesn't have that code")
+        self.assertIn(tid, [t["id"] for t in self.api("GET", "/api/threads?view=")])
+
+    def test_the_watchers_argument_is_its_starting_view(self):
+        self.two_commits_then_edits()
+        self.extra_args = ["--ref", "staged"]
+        self.start_watcher()
+
+        self.assertEqual(self.files_in(), ("staged", ["staged.py"]))
+        self.assertEqual(self.api("GET", "/api/view"), {"view": "staged"})
+
+    def test_two_watchers_started_at_the_same_moment_cant_both_run(self):
+        first, second = (subprocess.Popen(self.watcher_command(), cwd=self.repo, env=self.env, stdin=subprocess.DEVNULL,
+                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                         for _ in range(2))
+        watchers = [first, second]
+        for w in watchers:
+            self.addCleanup(w.stdout.close)
+            self.addCleanup(lambda w=w: w.poll() is None and (w.kill(), w.wait()))
+
+        ended = wait_for("one watcher to exit", lambda: [w for w in watchers if w.poll() is not None])
+        time.sleep(1)  # the other keeps running
+        self.assertEqual(len(ended), 1, "exactly one exits")
+        [running] = [w for w in watchers if w.poll() is None]
+        self.assertEqual(ended[0].returncode, 0)
+        self.assertIn(f"already running for this repository (pid {running.pid})", ended[0].stdout.read())
+        with open(os.path.join(self.repo, ".git", "difftate", "api.json")) as f:
+            self.assertEqual(json.load(f)["pid"], running.pid)
+        running.send_signal(signal.SIGINT)
+        running.wait(timeout=15)
 
     def test_stored_lines_go_to_the_review_history_with_repository_and_branch(self):
         self.release_agent()

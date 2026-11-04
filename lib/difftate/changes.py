@@ -7,6 +7,13 @@ the base branch itself, the current commit stands in for the branch.
 
 The changeset is every change from where the branch left the base (their merge
 base, as in a pull request) to the files on disk, new untracked files included.
+A view shows part of it, as the same review (a thread written in any view belongs
+to the review):
+  ""          all changes (the default)
+  <commit>    the commits after it, and the files on disk: HEAD~2 is the last two
+              commits; HEAD is the uncommitted changes
+  staged      what is staged (the index against HEAD)
+  unstaged    what isn't staged yet (the files on disk against the index)
 
 Code (below) says where each thread's code is now: a thread follows its code
 through the changes, or is outdated.
@@ -21,6 +28,37 @@ import tempfile
 
 class ChangesError(Exception):
     pass
+
+
+class ViewError(ChangesError):
+    """A view that isn't one: no such commit."""
+
+
+NAMED_VIEWS = ("staged", "unstaged")
+
+
+def need_view(cwd, view):
+    """<view> as given ("" for all changes), once it is known to be a view."""
+    if view is None or view == "":
+        return ""
+    if not isinstance(view, str):
+        raise ViewError("a view is text: \"\", a commit, staged or unstaged")
+    if view in NAMED_VIEWS:
+        return view
+    if view.startswith("-") or _git(cwd, "rev-parse", "--verify", "--quiet", f"{view}^{{commit}}") is None:
+        raise ViewError(f"no view '{view}': give a commit (HEAD~2, HEAD), staged or unstaged, or nothing for all changes")
+    return view
+
+
+def view_name(view):
+    """How the terminal names a view."""
+    if not view:
+        return "all changes"
+    if view == "HEAD":
+        return "uncommitted changes"
+    if view in NAMED_VIEWS:
+        return f"{view} changes"
+    return f"the commits after {view}"
 
 
 def _git(cwd, *args, env=None):
@@ -81,14 +119,22 @@ def remote_url(cwd):
     return _git(cwd, "remote", "get-url", "origin")
 
 
-def changeset(cwd, base):
-    """The review's changeset: {"base", "commit" (where the branch left the base),
-    "diff" (a unified diff, new untracked files included)}."""
+def changeset(cwd, base, view=""):
+    """The review's changeset in <view>: {"view", "base", "commit" (where the branch
+    left the base), "diff" (a unified diff, new untracked files included)}."""
     if base is None:
         raise ChangesError("no base: pass --base <branch>")
+    view = need_view(cwd, view)
     commit = _git(cwd, "merge-base", base, "HEAD") or head(cwd)
     if not commit:
         raise ChangesError("the repository has no commit yet")
+    if view == "staged":
+        r = subprocess.run(["git", "-C", cwd, "diff", "--no-color", "--no-ext-diff", "--cached", "HEAD", "--"],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise ChangesError(f"git diff failed: {r.stderr.strip()}")
+        return {"view": view, "base": base, "commit": commit, "diff": r.stdout}
+    against = [] if view == "unstaged" else [view or commit]
     # Untracked files show as new files: add them, intent only, to a copy of the index
     git_dir = _git(cwd, "rev-parse", "--absolute-git-dir")
     tmp = tempfile.mkdtemp(prefix="difftate-index-")
@@ -99,13 +145,13 @@ def changeset(cwd, base):
         env = dict(os.environ, GIT_INDEX_FILE=index)
         top = _git(cwd, "rev-parse", "--show-toplevel") or cwd
         subprocess.run(["git", "-C", top, "add", "--intent-to-add", "--all"], capture_output=True, env=env)
-        r = subprocess.run(["git", "-C", top, "diff", "--no-color", "--no-ext-diff", commit],
+        r = subprocess.run(["git", "-C", top, "diff", "--no-color", "--no-ext-diff", *against, "--"],
                            capture_output=True, text=True, env=env)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if r.returncode != 0:
         raise ChangesError(f"git diff failed: {r.stderr.strip()}")
-    return {"base": base, "commit": commit, "diff": r.stdout}
+    return {"view": view, "base": base, "commit": commit, "diff": r.stdout}
 
 
 # ── Where each thread's code is now ──────────────────────────────────────────
@@ -145,12 +191,14 @@ def same_code(a, b):
 class Code:
     """Where each thread's code is now, for the review of <branch> against <base>.
 
-    When a thread is written, its anchor gets a snapshot: the whole file, in git's
-    object database (the file on disk for the new side, uncommitted too; the file
-    where the branch left the base for the old side). Later, Code diffs the snapshot
-    against the file now and maps the thread's lines through that diff: lines the
-    diff doesn't touch follow their code, and a change to any of them makes the
-    thread outdated. Nothing is found by its text, so the same code twice in a file
+    When a thread is written, its anchor gets a snapshot: the whole file on that
+    side of the view it was written in, in git's object database (in all changes,
+    the file on disk for the new side, uncommitted too; the file where the branch
+    left the base for the old side). Later, Code diffs the snapshot against that
+    file now and maps the thread's lines through that diff: lines the diff doesn't
+    touch follow their code, and a change to any of them makes the thread
+    outdated. The anchor keeps its view, so a thread on the old side of HEAD~1
+    follows its code there, even where the base never had that code. Nothing is found by its text, so the same code twice in a file
     can't move a thread to the wrong copy.
     """
 
@@ -197,6 +245,7 @@ class Code:
         return out.strip()
 
     def _blob_at(self, commit, file):
+        """The file's blob in <commit> ("" for the index)."""
         code, out = self._run("rev-parse", "--verify", "--quiet", f"{commit}:{file}")
         return out.strip() if code == 0 else None
 
@@ -205,6 +254,17 @@ class Code:
         if side == "new":
             return self._blob_on_disk(file)
         return self._blob_at(left or self._branch_left_base(), file)
+
+    def _in_view(self, file, side, view, left=None):
+        """The file's blob on <side> of <view> (None when it isn't there): all
+        changes compare where the branch left the base with the files on disk; a
+        commit, that commit with them; staged, HEAD with the index; unstaged, the
+        index with the files on disk."""
+        if not view:
+            return self._now(file, side, left)
+        if side == "new":
+            return self._blob_at("", file) if view == "staged" else self._blob_on_disk(file)
+        return self._blob_at({"staged": "HEAD", "unstaged": ""}.get(view, view), file)
 
     def _lines(self, blob, start, end):
         code, out = self._run("cat-file", "blob", blob)
@@ -232,11 +292,11 @@ class Code:
         except ChangesError:
             return False
 
-    def snapshot(self, anchor):
-        """The snapshot for a new anchor, and the code on its lines in it: (blob,
-        code), with None for what isn't there (no such file, or no such lines).
-        Raises ChangesError when git fails."""
-        blob = self._now(anchor["file"], anchor["side"])
+    def snapshot(self, anchor, view=""):
+        """The snapshot for a new anchor written in <view>, and the code on its lines
+        in it: (blob, code), with None for what isn't there (no such file, or no such
+        lines). Raises ChangesError when git fails."""
+        blob = self._in_view(anchor["file"], anchor["side"], view)
         if blob is None:
             return None, None
         return blob, self._lines(blob, anchor["startLine"], anchor["endLine"])
@@ -255,7 +315,7 @@ class Code:
             return found
         for tid, a in anchors.items():
             try:
-                now = self._now(a["file"], a["side"], left)
+                now = self._in_view(a["file"], a["side"], a.get("view") or "", left)
                 if now == a.get("snapshot"):
                     continue
                 if now is not None and not a.get("snapshot"):
@@ -276,3 +336,27 @@ class Code:
                 found[tid] = ("moved", lines[0], lines[1], now)
         # A checkout while this ran: what it found may come from the other branch
         return found if not found or self._on_branch() else {}
+
+    def place(self, threads, view):
+        """Each thread's lines where its code is in <view>, in place: its snapshot
+        diffed against the file in the view. A thread whose code isn't in the view
+        (or changed in it) gets "inView": False and keeps its lines; an outdated
+        thread keeps its lines, as it never sits next to code."""
+        try:
+            left = self._branch_left_base()
+        except ChangesError:
+            left = None
+        for t in threads:
+            a = t["anchor"]
+            if not a or t["outdated"] or not a.get("snapshot"):
+                continue
+            try:
+                there = self._in_view(a["file"], a["side"], view, left)
+                hunks = [] if there == a["snapshot"] else None if there is None else self._hunks(a["snapshot"], there)
+            except ChangesError:
+                continue
+            lines = None if hunks is None else map_lines(hunks, a["startLine"], a["endLine"])
+            if lines is None:
+                t["inView"] = False
+            else:
+                a["startLine"], a["endLine"] = lines

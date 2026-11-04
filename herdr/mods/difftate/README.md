@@ -52,7 +52,8 @@ or from Herdr's `keys.json` as `"difftate.<action>"`.
 | jump_back / jump_forward | C-o, Tab | Jump list |
 | find_files | Space Space, Space f f | Fuzzy open any file in the repo |
 | changed_files | Space f c | Fuzzy pick a changed file |
-| threads | Space s d | Fuzzy pick a review thread |
+| threads | Space s d | Fuzzy pick a review thread: every thread, outdated ones too. Picking one whose code isn't in this view switches to the view it was written in |
+| views | Space V | Pick a view of the review: all changes, uncommitted, staged, unstaged, or the last N commits. Threads belong to the review, whatever view they were written in |
 | toggle_view | Space v | Diff ↔ full file (full file marks added lines, red underline = deleted below) |
 | toggle_explorer | Space e | Show or hide the changed-files list |
 | search / search_next / search_prev / search_word | / n N * | Search in the file (smartcase) |
