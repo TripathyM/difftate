@@ -198,7 +198,12 @@ class Watcher:
             print(f"  → {url}")
             viewer.open_review(o["open"], url, self.root)
         else:
-            print(f"  → review API {self.api.address().url} (no viewer for the local store yet)")
+            print(f"  → review API {self.api.address().url}")
+            # The Review tab reads the review API, so it works with any store; the browser viewer comes later
+            if o["open"] in ("herdr", "both"):
+                viewer.open_in_herdr(self.root)
+            else:
+                print("  (no browser viewer for the local store yet: DT_OPEN=herdr opens a Review tab)")
         print()
         print(f"Watching for comments every {o['interval']:g}s")
         print(f"  Tool: {o['tool']} (cmd: {self.agent.cmd})")

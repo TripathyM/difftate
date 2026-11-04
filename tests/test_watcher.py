@@ -674,7 +674,25 @@ class LocalWatcherTest(Harness, SharedTests, unittest.TestCase):
 
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertEqual(self.bodies(tid)[-1], f"Fake answer to {tid[:8]}.")
-        self.assertIn("(no viewer for the local store yet)", self.terminal())
+        self.assertIn("(no browser viewer for the local store yet", self.terminal())
+
+    def test_open_herdr_opens_a_review_tab_on_the_local_store(self):
+        # A fake Herdr app: no tabs yet, and it records what it was asked to do
+        calls = os.path.join(self.tmp, "herdr-calls")
+        herdr = os.path.join(self.tmp, "bin", "herdr-app")
+        with open(herdr, "w") as f:
+            f.write(f'#!/bin/sh\necho "$@" >> {calls}\n[ "$1" = ls ] && echo \'{{"spaces": []}}\'\nexit 0\n')
+        os.chmod(herdr, 0o755)
+        self.env["DT_HERDR"] = herdr
+        self.extra_args = ["--open", "herdr"]
+        self.start_watcher()
+        wait_for("the Review tab", lambda: 'Herdr: opened the "Review · ' in self.terminal())
+
+        with open(calls) as f:
+            new_tab = [line for line in f.read().splitlines() if line.startswith("do tab.new ")]
+        self.assertEqual(len(new_tab), 1)
+        args = json.loads(new_tab[0][len("do tab.new "):])
+        self.assertEqual((args["mod"], args["props"]["folder"]), ("difftate", os.path.realpath(self.repo)))
 
     def test_a_thread_survives_a_commit(self):
         self.release_agent()

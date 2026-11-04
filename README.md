@@ -64,7 +64,7 @@ Without `--session`, it attaches the latest agent session for the current folder
 export DT_STORE=local   # default: diffity
 ```
 
-difftate keeps the review itself, with no diffity: commits don't end a review, so threads survive them. The changeset comes from git (`GET /api/changeset`). There is no viewer for it yet (the Review tab still reads diffity, and difftate's own browser viewer comes later), so for now you reach it through the [review API](#review-api). Views (`HEAD~1`, `staged`, …) come later too: the local store shows all changes against the base.
+difftate keeps the review itself, with no diffity: commits don't end a review, so threads survive them. The changeset comes from git (`GET /api/changeset`). The [Review tab in Herdr](#review-in-herdr-optional) shows it (`DT_OPEN=herdr`); difftate's own browser viewer comes later. Other clients reach it through the [review API](#review-api). Views (`HEAD~1`, `staged`, …) come later too: the local store shows all changes against the base.
 
 - Each review is stored in `.git/difftate/reviews/<review>/` (shared by worktrees, never committed): `review.json` (branch, base, start) and `events.jsonl`, plain JSON lines that are only ever appended (threads opened, comments, replies, final notes, status changes, and runs: which comments each run was sent, and how it ended). The current state comes from reading them in order.
 - Progress notes show a run's steps live from the watcher's memory. Only their final line is stored, when the run ends.
@@ -85,7 +85,7 @@ Sessions are found in `$CLAUDE_CONFIG_DIR` (default `~/.claude`), the same rule 
 
 ## Review in Herdr (optional)
 
-If you use the [Herdr](https://herdr.dev) app, the review can open in a Herdr tab instead of the browser: a small code editor with vim keys, comment threads under the lines, go to definition, fuzzy file open, and quick edits you save yourself. Comments are the same diffity threads, so the coding agent answers them as it does in the browser, and both stay in sync.
+If you use the [Herdr](https://herdr.dev) app, the review can open in a Herdr tab instead of the browser: a small code editor with vim keys, comment threads under the lines, go to definition, fuzzy file open, and quick edits you save yourself. The tab reads and writes through difftate's [review API](#review-api), with whichever store the watcher uses, so the coding agent answers its comments as it does in the browser, and both stay in sync. The tab always shows all changes against the review's base, whatever `--ref` the browser shows.
 
 ![The Review tab in Herdr](herdr/preview.png)
 
