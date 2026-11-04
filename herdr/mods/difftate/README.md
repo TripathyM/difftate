@@ -1,7 +1,8 @@
 # difftate review (Herdr mod)
 
 A code-editor-like review tab for the diff a running `difftate` (or `dtc`, `dto`) serves.
-Comments go into the same diffity threads the browser uses, so the agent answers them the same way.
+It reads and writes through the watcher's review API, so the agent answers its comments as it answers any viewer's.
+It shows all changes against the review's base.
 Installing it: see "Review in Herdr" in the difftate README.
 
 ## Use
@@ -60,7 +61,7 @@ or from Herdr's `keys.json` as `"difftate.<action>"`.
 | help | ? | Every binding; Enter runs one |
 | escape | Esc | Leave visual or insert mode, close a picker |
 
-In a comment, type `\n` for a line break (diffity turns it into one).
+In a comment, type `\n` for a line break.
 Shift-click a line to extend a selection.
 
 `Space Space` finds any file in the repo; changed files are marked:
@@ -97,7 +98,7 @@ Home/End, Esc or C-c to leave. Tabs in the file stay tabs.
 Saving checks the file still matches what was loaded. If the agent (or anything else) changed it
 meanwhile, the save is refused: `:w!` overwrites, `:e!` takes the disk version. A dirty file
 blocks switching files until you save or drop it. Saves keep the file's permissions and follow symlinks.
-After a save, diffity sees the change and the diff refreshes by itself.
+After a save, the watcher's changeset changes and the diff refreshes by itself.
 
 Not supported: Cmd-V in insert mode (use `p` in normal mode), multi-key insert
 mappings like `jk`, text objects (`ciw`, `dw`), and registers other than the one line register.

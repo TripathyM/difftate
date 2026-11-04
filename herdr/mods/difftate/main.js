@@ -1,6 +1,6 @@
 // difftate review: a code-editor-like diff view with vim keys, go to definition,
-// fuzzy file open, and review threads stored in the running diffity server, so
-// the difftate watcher (difftate / dtc / dto) answers them exactly as from the browser.
+// fuzzy file open, and review threads read and written through the running watcher's
+// review API (difftate / dtc / dto), so the watcher answers them as from any viewer.
 //
 // Open: mod.open difftate (it opens itself as a tab for the focused pane's repo), or
 //   herdr-app do tab.new '{"name":"Review · repo","mod":"difftate","props":{"folder":"/path/to/repo"}}'
@@ -12,7 +12,7 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
 import { exec, readTextFile, theme, settings, props, run, closeOverlay, focused, panes, spaces, nextCommand, appHome, home } from "herdr";
-import { findInstance, Diffity, threadState } from "./diffity.js";
+import { findApi } from "./api.js";
 import { tokenize, langOf } from "./syntax.js";
 import { Editing } from "./edit.js";
 
@@ -25,7 +25,9 @@ const SPECIAL = {
   up: "<up>", down: "<down>", left: "<left>", right: "<right>",
   pageup: "<pageup>", pagedown: "<pagedown>", home: "<home>", end: "<end>",
 };
-const STATE_LABEL = { waiting: "waiting for agent", queued: "queued", working: "agent working", replied: "agent replied", resolved: "resolved", dismissed: "dismissed" };
+const STATE_LABEL = { waiting: "waiting for agent", queued: "queued", working: "agent working", replied: "agent replied", failed: "failed: no reply", resolved: "resolved", dismissed: "dismissed" };
+// Where a thread stands: the API's thread state while open, else its status (resolved, dismissed).
+const stateOf = (th) => (th.status === "open" ? th.state ?? "waiting" : th.status);
 
 // ---------- keymap ----------
 
@@ -220,30 +222,30 @@ export default class Review extends View {
   }
 
   async attach(cx) {
-    const inst = await findInstance(this.root).catch(() => null);
-    if (!inst) {
+    const api = await findApi(this.root).catch(() => null);
+    if (!api) {
       this.api = null;
       this.msg = "No difftate review running for this repo. Run difftate (or dto) here to comment.";
       return;
     }
-    this.api = new Diffity(inst);
-    this.inst = inst;
+    this.api = api;
     this.msg = "";
     await this.loadDiff();
     await this.loadThreads();
   }
 
   async loadDiff() {
-    const d = await this.api.diff();
-    this.fingerprint = await this.api.fingerprint().catch(() => null);
-    this.files = (d.files ?? []).map((f) => ({ ...f, path: f.status === "deleted" ? f.oldPath : f.newPath }));
+    const c = await this.api.changeset();
+    this.diffText = c.diff;
+    this.base = c.base;
+    this.files = c.files;
   }
 
   async loadThreads() {
     if (!this.api) return;
     const list = await this.api.threads().catch(() => null);
     if (!list) return;
-    const sig = JSON.stringify(list.map((t) => [t.id, t.status, t.comments.length, t.comments.at(-1)?.body]));
+    const sig = JSON.stringify(list.map((t) => [t.id, t.status, t.state, t.outdated, t.comments.length, t.comments.at(-1)?.body]));
     if (sig === this.threadSig) return false;
     this.threadSig = sig;
     this.threads = list;
@@ -263,10 +265,17 @@ export default class Review extends View {
           cx.notify();
           return;
         }
-        const fp = await this.api.fingerprint().catch(() => undefined);
-        if (fp === undefined) { this.api = null; this.msg = "diffity stopped. Run difftate again to keep commenting."; cx.notify(); return; }
-        if (fp !== this.fingerprint) {
-          await this.loadDiff();
+        let c;
+        try { c = await this.api.changeset(); }
+        catch (e) {
+          // No watcher there (stopped, or a new one with another port and token): look again next time
+          if (!e.status || e.status === 401) { this.api = null; this.msg = "difftate stopped. Run difftate again to keep commenting."; cx.notify(); return; }
+          throw e;
+        }
+        if (c.diff !== this.diffText) {
+          this.diffText = c.diff;
+          this.base = c.base;
+          this.files = c.files;
           // Never reload over edits in progress; catch up once they're saved or dropped.
           if (this.view) { if (this.busyEditing()) this.needsReopen = true; else await this.reopen(); }
           cx.notify();
@@ -401,7 +410,7 @@ export default class Review extends View {
 
   threadsHere() {
     const p = this.view?.path;
-    return this.threads.filter((t) => t.filePath === p && t.filePath !== "__general__");
+    return this.threads.filter((t) => t.filePath && t.filePath === p);
   }
 
   // Code area metrics.
@@ -414,18 +423,18 @@ export default class Review extends View {
 
   layoutThread(th) {
     const cols = this.wrapCols();
-    const state = threadState(th);
+    const state = stateOf(th);
     const range = th.startLine === th.endLine ? `${th.startLine}` : `${th.startLine}-${th.endLine}`;
-    const lines = [{ k: "head", text: `${state === "resolved" || state === "dismissed" ? "○" : "●"} ${STATE_LABEL[state] ?? state}  ·  ${th.side === "old" ? "old " : ""}line ${range}` }];
+    const lines = [{ k: "head", text: `${state === "resolved" || state === "dismissed" ? "○" : "●"} ${STATE_LABEL[state] ?? state}  ·  ${th.side === "old" ? "old " : ""}line ${range}${th.outdated ? "  ·  outdated" : ""}` }];
     if (state === "resolved" || state === "dismissed") {
       const first = (th.comments[0]?.body ?? "").split("\n")[0];
       lines.push({ k: "dim", text: first.slice(0, cols) });
       lines.push({ k: "hint", text: "<leader>cR reopen" });
     } else {
       for (const c of th.comments) {
-        let body = c.body ?? "", who = c.author?.name ?? "?", k = "body";
-        if (body.startsWith("[dt-reply]")) { body = body.slice(10).trim(); if (who === "You") who = "agent"; k = "agent"; }
-        else if (/^\[dt-(status|queued)\]/.test(body)) { body = body.replace(/^\[dt-\w+\]\s*/, "").split("\n").slice(0, 6).join("\n"); who = "status"; k = "status"; }
+        let body = c.body ?? "", who = "you", k = "body";
+        if (c.author === "agent") { who = "agent"; k = "agent"; }
+        else if (c.author === "difftate") { body = body.split("\n").slice(0, 6).join("\n"); who = "status"; k = "status"; }
         lines.push({ k: "author", text: who });
         const w = wrap(body, cols);
         for (const l of w.slice(0, 40)) lines.push({ k, text: l });
@@ -691,7 +700,7 @@ export default class Review extends View {
   // Open threads in review order: changed files first, then the rest, by line.
   orderedThreads() {
     const order = new Map(this.files.map((f, i) => [f.path, i]));
-    return this.threads.filter((t) => t.status === "open" && t.filePath !== "__general__")
+    return this.threads.filter((t) => t.status === "open" && t.filePath)
       .sort((a, b) => (order.get(a.filePath) ?? 1e6) - (order.get(b.filePath) ?? 1e6) || a.filePath.localeCompare(b.filePath) || a.endLine - b.endLine);
   }
 
@@ -739,7 +748,7 @@ export default class Review extends View {
     this.openPrompt({
       kind: "comment",
       label: `Comment on ${this.view.path}:${range}${side === "old" ? " (old)" : ""}`,
-      target: { filePath: this.view.path, side, startLine, endLine, anchorContent: mine.map((r) => r.text).join("\n") },
+      target: { filePath: this.view.path, side, startLine, endLine, code: mine.map((r) => r.raw).join("\n") },
     });
   }
 
@@ -792,20 +801,22 @@ export default class Review extends View {
     }
     const p = this.prompt;
     if (!p) return;
-    const text = this.input.value();
+    const typed = this.input.value();
     this.closeInput();
+    // The input is one line: \n typed in a comment is a line break
+    const text = p.kind === "comment" || p.kind === "reply" ? typed.replace(/\\n/g, "\n") : typed;
     if (p.kind === "search") { this.search = text; this.searchStep(1, cx); cx.notify(); return; }
     if (p.kind === "cmd") { this.runCommand(text, cx); cx.notify(); return; }
     if (!text.trim()) { cx.notify(); return; }
     cx.spawn(async (cx) => {
       try {
         if (p.kind === "comment") {
-          const th = await this.api.createThread({ ...p.target, body: text });
+          const th = await this.api.openThread(p.target, text);
           this.curThread = th.id;
           this.mode = "normal";
           this.msg = "Comment sent. The agent picks it up within a few seconds.";
         } else if (p.kind === "reply") {
-          await this.api.reply(p.thread.id, text);
+          await this.api.comment(p.thread.id, text);
           this.curThread = p.thread.id;
           this.msg = "Reply sent";
         }
@@ -877,11 +888,11 @@ export default class Review extends View {
   }
 
   threadPicker() {
-    const all = [...this.orderedThreads(), ...this.threads.filter((t) => t.status !== "open" && t.filePath !== "__general__")];
+    const all = [...this.orderedThreads(), ...this.threads.filter((t) => t.status !== "open" && t.filePath)];
     this.openPicker("Review threads", all.map((t) => ({
       label: `${t.filePath}:${t.startLine === t.endLine ? t.startLine : `${t.startLine}-${t.endLine}`}`,
       match: " " + (t.comments[0]?.body ?? ""),
-      detail: `${STATE_LABEL[threadState(t)] ?? t.status} · ${(t.comments[0]?.body ?? "").split("\n")[0].slice(0, 60)}`,
+      detail: `${STATE_LABEL[stateOf(t)] ?? t.status}${t.outdated ? " · outdated" : ""} · ${(t.comments[0]?.body ?? "").split("\n")[0].slice(0, 60)}`,
       value: t,
     })), (t, cx) => this.goToThread(t, cx));
   }
@@ -990,7 +1001,7 @@ export default class Review extends View {
   }
 
   refresh(cx) {
-    this.fingerprint = null;
+    this.diffText = null;
     this.threadSig = null;
     this.fileCache = null;
     cx.spawn(async (cx) => {
@@ -1041,9 +1052,9 @@ export default class Review extends View {
   }
 
   threadEl(it, t) {
-    const th = it.th, state = threadState(th);
+    const th = it.th, state = stateOf(th);
     const on = th.id === this.curThread && this.anchorRow(th) === this.cur.row;
-    const stripe = { waiting: t.blocked, queued: t.blocked, working: t.working, replied: t.done }[state] ?? t.dim;
+    const stripe = { waiting: t.blocked, queued: t.blocked, working: t.working, replied: t.done, failed: t.ansi1 }[state] ?? t.dim;
     const tc = (k) => ({ head: stripe, author: t.dim, agent: t.foreground, status: t.muted, hint: t.dim, dim: t.dim }[k] ?? t.foreground);
     return h_flex().h(it.h).w_full().flex_none().pl(this.gutterW()).pr(20).py(5)
       .child(h_flex().h_full().flex_1().min_w(0).rounded(6).overflow_hidden().border_1().border_color(on ? t.accent : t.border).bg(t.surface)
@@ -1126,7 +1137,7 @@ export default class Review extends View {
     const fs = this.opts.font_size;
     const mono = settings().font_family ?? "JetBrains Mono";
     const open = this.threads.filter((x) => x.status === "open");
-    const waiting = open.filter((x) => ["waiting", "queued", "working"].includes(threadState(x))).length;
+    const waiting = open.filter((x) => ["waiting", "queued", "working"].includes(stateOf(x))).length;
     const maxLen = this.rows.reduce((m, r) => Math.max(m, r.text?.length ?? 0), 0);
     const contentW = this.gutterW() + maxLen * this.cw() + 40;
     const r = this.rows[this.cur.row];
@@ -1135,12 +1146,12 @@ export default class Review extends View {
 
     const header = h_flex().h(36).flex_none().px(14).gap(10).items_center().bg(t.chrome).border_b(1).border_color(t.border).text_size(12)
       .child(div().font_semibold().text_size(13).child(this.repo ?? "Review"))
-      .child(div().text_color(t.dim).child(this.inst ? this.inst.description ?? this.inst.ref : ""))
+      .child(div().text_color(t.dim).child(this.api && this.base ? `Changes against ${this.base}` : ""))
       .child(div().flex_1())
       .when(open.length > 0, (el) => el.child(div().text_color(t.muted).child(`${open.length} open thread${open.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} with the agent` : ""}`)))
       .child(h_flex().gap(6).items_center()
         .child(div().size(7).rounded(4).bg(this.api ? t.done : t.dim))
-        .child(div().text_color(t.dim).child(this.api ? `diffity :${this.api.port}` : "not connected")))
+        .child(div().text_color(t.dim).child(this.api ? `review API :${this.api.port}` : "not connected")))
       .child(div().id("dt-help").px(8).h(22).flex().items_center().rounded(5).border_1().border_color(t.border).text_color(t.muted).cursor_pointer()
         .hover((s) => s.bg(t.hover)).on_click((_e, cx) => { this.helpPicker(); cx.notify(); }).child("? keys"));
 
