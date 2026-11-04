@@ -13,6 +13,10 @@ Progress goes to two places:
     review API. The watcher posts the notes before the run starts and writes
     their final lines when it ends; this only edits them. Enabled when
     DT_NOTES ({thread id: note id}), DT_API and DT_TOKEN_FILE are set.
+  - the run's ending, for the watcher: when DT_RUN_END names a file, the
+    formatter writes {"state": "done"|"failed", "body": <the notes' last body>}
+    there once the run finishes. No file: the formatter didn't finish (it was
+    stopped), and the watcher writes the notes' final line itself.
 
 Non-JSON lines are passed through unchanged so errors stay visible.
 """
@@ -119,6 +123,20 @@ def notes_client():
     return None
 
 
+def report_end(state, body):
+    """Tell the watcher how the run ended (DT_RUN_END)."""
+    path = os.environ.get("DT_RUN_END")
+    if not path:
+        return
+    try:
+        tmp = f"{path}.tmp"
+        with open(tmp, "w") as f:
+            json.dump({"state": state, "body": body}, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
 class Status:
     """One live checklist note per thread, edited in place."""
 
@@ -185,6 +203,8 @@ class Status:
                 s[1] = True
             self.state = "done" if ok else "failed"
             self.note = note
+            body = self.render()
+        report_end(self.state, body)
         self.push()
 
 

@@ -20,11 +20,17 @@ Controlled through FAKE_AGENT_DIR (a folder the test owns):
            watcher between the two
   silent   while this file exists, the coding agent replies to no thread; when it
            lists run numbers ("2" or "1,3"), only in those runs
+  error    while this file exists, the run ends with an error result whose
+           message is the file's text
+  kill_formatter
+           run numbers ("3" or "1,3"): in those runs the coding agent kills the
+           run's formatter (lib/stream_fmt.py) at once, then exits with no reply
 """
 import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -34,6 +40,27 @@ GATE_TIMEOUT_S = 30
 
 def emit(event):
     print(json.dumps(event), flush=True)
+
+
+def this_run(folder):
+    """This run's number (1 for the first), from the prompts so far."""
+    with open(os.path.join(folder, "prompts")) as f:
+        return sum(1 for _ in f)
+
+
+def runs_listed(path):
+    with open(path) as f:
+        return [int(n) for n in f.read().split(",") if n.strip()]
+
+
+def kill_formatter():
+    """Kill this run's formatter: the stream_fmt.py process the watcher started
+    beside this one (the same parent)."""
+    rows = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,command="], capture_output=True, text=True).stdout
+    for row in rows.split("\n"):
+        parts = row.split(None, 2)
+        if len(parts) == 3 and int(parts[1]) == os.getppid() and "stream_fmt.py" in parts[2]:
+            os.kill(int(parts[0]), signal.SIGKILL)
 
 
 def main():
@@ -53,6 +80,11 @@ def main():
         with open(os.path.join(folder, "prompts"), "a") as f:
             f.write(json.dumps(prompt) + "\n")
 
+    killer = os.path.join(folder, "kill_formatter") if folder else ""
+    if killer and os.path.exists(killer) and this_run(folder) in runs_listed(killer):
+        kill_formatter()
+        sys.exit(1)
+
     mine = prompt.split("## Other open threads")[0]
     ids = re.findall(r"^### Thread ([0-9a-f]{8})", mine, re.M)
 
@@ -67,11 +99,8 @@ def main():
 
     silent = os.path.join(folder, "silent") if folder else ""
     if silent and os.path.exists(silent):
-        with open(silent) as f:
-            runs = [int(n) for n in f.read().split(",") if n.strip()]
-        with open(os.path.join(folder, "prompts")) as f:
-            this_run = sum(1 for _ in f)
-        if not runs or this_run in runs:
+        runs = runs_listed(silent)
+        if not runs or this_run(folder) in runs:
             ids = []
     # The reply command, as the prompt's rules name it: `with: <dt-reply> <thread> "<answer>"`
     # (the path is shell-quoted, so it may hold spaces)
@@ -90,6 +119,11 @@ def main():
         while not os.path.exists(os.path.join(folder, "finish")) and time.time() < deadline:
             time.sleep(0.05)
     emit({"type": "assistant", "message": {"content": [{"type": "text", "text": f"Replied to {len(ids)} thread(s)."}]}})
+    error = os.path.join(folder, "error") if folder else ""
+    if error and os.path.exists(error):
+        with open(error) as f:
+            emit({"type": "result", "subtype": "error", "is_error": True, "result": f.read(), "modelUsage": {}})
+        return
     emit({"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.0123, "modelUsage": {}})
 
 
