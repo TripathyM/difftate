@@ -31,6 +31,7 @@
     "gc": "comment", "<leader>cc": "comment",
     "r": "reply", "<CR>": "reply",
     "R": "resolve", "<leader>cR": "reopen",
+    "<leader>m": "toggle_viewed",
 
     "gd": "goto_definition", "gr": "references",
     "<C-o>": "jump_back", "<Tab>": "jump_forward",

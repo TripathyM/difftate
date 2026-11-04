@@ -60,6 +60,16 @@ class StoreContract:
         self.store.record_run_end("run-1", "done")
         self.assertEqual(self.store.runs(), [dict(run, outcome="done")])
 
+    def test_a_viewed_file_keeps_the_diff_it_was_viewed_with_until_unmarked(self):
+        self.assertEqual(self.store.viewed(), {})
+
+        self.store.mark_viewed("app.py", "a" * 40)
+        self.store.mark_viewed("lib.py", "b" * 40)
+        self.store.mark_viewed("app.py", "c" * 40)
+        self.store.mark_viewed("lib.py", None)
+
+        self.assertEqual(self.store.viewed(), {"app.py": "c" * 40})
+
     def test_a_thread_opens_with_the_reviewers_comment(self):
         opened = self.store.open_thread(ANCHOR, "Why an f-string here?")
 
@@ -214,6 +224,13 @@ class LocalStoreTest(StoreContract, unittest.TestCase):
         self.assertEqual((thread["anchor"]["startLine"], thread["anchor"]["snapshot"], thread["outdated"]),
                          (5, "b" * 40, True))
         self.assertEqual(thread["anchor"]["commit"], git(self.repo, "rev-parse", "HEAD").strip())
+
+    def test_viewed_files_are_kept(self):
+        self.store.mark_viewed("app.py", "a" * 40)
+        self.store.mark_viewed("lib.py", "b" * 40)
+        self.store.mark_viewed("lib.py", None)
+
+        self.assertEqual(self.open_store().viewed(), {"app.py": "a" * 40})
 
     def test_runs_are_kept(self):
         tid = self.store.open_thread(ANCHOR, "Why an f-string here?")["id"]

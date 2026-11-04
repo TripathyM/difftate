@@ -47,6 +47,7 @@ or from Herdr's `keys.json` as `"difftate.<action>"`.
 | comment | gc, Space c c (visual: gc c Enter) | Comment on the line or selection |
 | reply | r, Enter | Reply to the thread on this line |
 | resolve / reopen | R, Space c R | Resolve or reopen that thread |
+| toggle_viewed | Space m | Mark this file viewed, or not. A viewed file has a ✓ in the changed-files list; the mark stays across reloads and commits, and clears when the file's diff changes |
 | goto_definition | gd | Jump to the definition (ripgrep patterns; a picker if several) |
 | references | gr | Every use of the word under the cursor |
 | jump_back / jump_forward | C-o, Tab | Jump list |

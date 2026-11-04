@@ -19,6 +19,10 @@ readable only by the user); a request without it gets 401.
   POST  /api/threads/<id>/comments      add a comment: {"kind"?, "body"}
   PATCH /api/notes/<id>                 edit a note: {"kind", "body"}
   PATCH /api/threads/<id>/status        set thread status: {"status", "author"?}
+  GET   /api/viewed                     the files the reviewer marked viewed: {"files"}
+  PUT   /api/viewed                     mark a file viewed, or not: {"file", "viewed"?: true|false
+                                        (default true)}: {"files"}. 404 for a file
+                                        that isn't in the changeset
 
 A thread (difftate's thread format):
   {"id",
@@ -48,7 +52,12 @@ A comment's kind says who wrote it: a comment is the reviewer's (the default), a
 reply the coding agent's, and a queued or progress note difftate's. "author" says who
 opens a thread or sets its status, and must be "reviewer" (the default): anyone
 else gets 403. Only notes can be edited (403 otherwise). Errors are
-{"error": <message>} with status 400, 403, 404 or 502.
+{"error": <message>} with status 400, 403, 404, 501 (no viewed files: diffity with no base) or 502.
+
+A viewed file belongs to the review, like a thread: it stays viewed in every
+view, after a reload and after a commit, until its diff in all changes changes
+(any edit to the file, even one that keeps its line counts or is inside a new
+untracked file). Then it is no longer listed.
 
 `<git dir>/difftate/api.json` says where the API runs: {"port", "pid", "root"}.
 
@@ -304,6 +313,8 @@ def _handler(review, token, changeset, shown, login):
         ("PATCH", r"/api/notes/([^/]+)", lambda q, p, nid: review.edit_note(nid, need(p, "kind"), need(p, "body"))),
         ("PATCH", r"/api/threads/([^/]+)/status",
          lambda q, p, tid: review.set_status(tid, need(p, "status"), fields(p).get("author", "reviewer"))),
+        ("GET", r"/api/viewed", lambda q, p: {"files": review.viewed()}),
+        ("PUT", r"/api/viewed", lambda q, p: {"files": review.mark_viewed(need(p, "file"), fields(p).get("viewed", True))}),
     ]
     routes = [(m, re.compile(f"^{path}$"), fn) for m, path, fn in routes]
 

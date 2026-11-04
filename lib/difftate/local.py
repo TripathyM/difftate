@@ -18,6 +18,9 @@ reviews/<review id>/` (shared by worktrees, never committed):
                         a run starts: the comments it was sent, and the replies
                         its threads had then
     {"type": "run-ended", "run", "outcome", "time"}
+    {"type": "viewed",  "file", "diff", "time"}
+                        the reviewer marked the file viewed, with that diff (a
+                        hash of it); "diff" null: unmarked
 The current state comes from reading the lines in order. "seq" is a comment's
 place in its thread, so a note stored when its run ends keeps the place where
 it was posted.
@@ -85,6 +88,7 @@ class LocalStore:
         self.events_file = os.path.join(folder, EVENTS_FILE)
         self._threads = {}  # id: thread, in the order they were opened
         self._runs = {}  # id: run, in the order they started
+        self._viewed = {}  # file: the hash of its diff when the reviewer marked it viewed
         self._seq = 0
         self._expected = b""  # the events file as this store wrote it
         self._stat = None
@@ -134,6 +138,12 @@ class LocalStore:
             return
         if kind == "run-ended":
             self._runs[e["run"]]["outcome"] = e["outcome"]
+            return
+        if kind == "viewed":
+            if e["diff"] is None:
+                self._viewed.pop(e["file"], None)
+            else:
+                self._viewed[e["file"]] = e["diff"]
             return
         if kind == "opened":
             self._threads[e["thread"]] = self._new_thread(e["thread"], e.get("anchor"))
@@ -294,6 +304,20 @@ class LocalStore:
         with self._lock:
             self._check()
             return copy.deepcopy(list(self._runs.values()))
+
+    def viewed(self):
+        with self._lock:
+            self._check()
+            return dict(self._viewed)
+
+    def mark_viewed(self, file, diff):
+        with self._lock:
+            self._check()
+            self._append([{"type": "viewed", "file": file, "diff": diff, "time": now()}])
+            if diff is None:
+                self._viewed.pop(file, None)
+            else:
+                self._viewed[file] = diff
 
     def move_thread(self, thread_id, start, end, snapshot):
         with self._lock:
