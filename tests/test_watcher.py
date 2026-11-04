@@ -433,7 +433,7 @@ class WatcherTest(Harness, unittest.TestCase):
         tid = self.open_thread("Why an f-string here?")["id"]
 
         final = wait_for("the failed progress note", lambda: self.note(tid, "progress", "No reply"))
-        self.assertRegex(final, r"^❌ \*\*Failed\*\* after \d+s\n\nThe model is overloaded\.\n\nNo reply\.$")
+        self.assertRegex(final, r"^❌ \*\*Failed\*\* after \d+s\n- ✅ `Read app\.py`\n\nThe model is overloaded\.\n\nNo reply\.$")
         self.assertEqual(self.state(tid), "failed")
 
     def test_a_failed_thread_stays_failed_after_a_restart(self):
