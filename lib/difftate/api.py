@@ -51,6 +51,10 @@ else gets 403. Only notes can be edited (403 otherwise). Errors are
 {"error": <message>} with status 400, 403, 404 or 502.
 
 `<git dir>/difftate/api.json` says where the API runs: {"port", "pid", "root"}.
+
+The same server serves difftate's own browser viewer (lib/difftate/web), a client of
+this API like any other: GET /?token=<token> is the page, and its scripts are
+/app.js?token=<token> and /diff.js?token=<token>. Without the token they get 401 too.
 """
 import hmac
 import json
@@ -70,6 +74,21 @@ from .viewer import OPEN_IN
 from .store import StoreError
 
 MAX_BODY = 1 << 20
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# The browser viewer's files: (path on disk, Content-Type). Its diff parser is the Review tab's.
+PAGE_FILES = {
+    "/": (os.path.join(_HERE, "web", "index.html"), "text/html; charset=utf-8"),
+    "/app.js": (os.path.join(_HERE, "web", "app.js"), "text/javascript; charset=utf-8"),
+    "/diff.js": (os.path.join(_HERE, "..", "..", "herdr", "mods", "difftate", "diff.js"), "text/javascript; charset=utf-8"),
+}
+PAGE_HEADERS = {
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                               "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; "
+                               "frame-ancestors 'none'",
+}
 
 
 class ApiAddress(namedtuple("ApiAddress", "url token_file")):
@@ -170,6 +189,10 @@ class ReviewApi:
     def address(self):
         return ApiAddress(f"http://127.0.0.1:{self.server.server_address[1]}", self.token_file)
 
+    def page_url(self):
+        """The browser viewer's page, with the token."""
+        return f"{self.address().url}/?token={self.token}"
+
     def start(self):
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
         os.chmod(self.folder, 0o700)
@@ -257,11 +280,39 @@ def _handler(review, token, changeset, shown):
             self.end_headers()
             self.wfile.write(data)
 
+        def _page(self, url):
+            """The browser viewer's files: the token comes in the query, as a page
+            and its scripts can't send a header."""
+            given = (urllib.parse.parse_qs(url.query).get("token") or [""])[0].encode()
+            if not hmac.compare_digest(given, token.encode()):
+                return self._send_text(401, "text/plain; charset=utf-8",
+                                       "difftate: missing or wrong token. Open the link the watcher printed.\n")
+            if url.path not in PAGE_FILES:
+                return self._send_text(404, "text/plain; charset=utf-8", "not found\n")
+            if self.command != "GET":
+                return self._send_text(405, "text/plain; charset=utf-8", "method not allowed\n")
+            path, kind = PAGE_FILES[url.path]
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            self._send_text(200, kind, text.replace("{{token}}", urllib.parse.quote(token, safe="")))
+
+        def _send_text(self, status, kind, text):
+            data = text.encode()
+            self.send_response(status)
+            self.send_header("Content-Type", kind)
+            self.send_header("Content-Length", str(len(data)))
+            for name, value in PAGE_HEADERS.items():
+                self.send_header(name, value)
+            self.end_headers()
+            self.wfile.write(data)
+
         def _handle(self):
+            url = urllib.parse.urlsplit(self.path)
+            if not url.path.startswith("/api/"):
+                return self._page(url)
             given = (self.headers.get("Authorization") or "").encode()
             if not hmac.compare_digest(given, expected):
                 return self._send(401, {"error": "missing or wrong token"})
-            url = urllib.parse.urlsplit(self.path)
             matches = [(m, rx.match(url.path), fn) for m, rx, fn in routes]
             matches = [(m, match, fn) for m, match, fn in matches if match]
             if not matches:

@@ -244,7 +244,7 @@ class Watcher:
         if self.diffity:
             print(f"  → {self.diffity.viewer_url(o['ref'] or base)}")
         else:
-            print(f"  → review API {self.api.address().url}")
+            print(f"  → {self.api.page_url()}")
         self.open_viewer(o["open"])
         print()
         print(f"Watching for comments every {o['interval']:g}s")
@@ -266,11 +266,8 @@ class Watcher:
         if self.diffity:
             viewer.open_review(where, self.diffity.viewer_url(self.opts["ref"] or self.base), self.root)
             return
-        # The Review tab reads the review API, so it works with any store; the browser viewer comes later
-        if where in ("herdr", "both"):
-            viewer.open_in_herdr(self.root)
-        else:
-            print("  (no browser viewer for the local store yet: DT_OPEN=herdr opens a Review tab)")
+        # Both read the review API: the Review tab, and difftate's own page in the browser
+        viewer.open_review(where, self.api.page_url(), self.root)
 
     def view_shown(self, view, open_in):
         """A viewer, or another `difftate` call, switched the view."""

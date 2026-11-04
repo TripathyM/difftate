@@ -702,7 +702,51 @@ class LocalWatcherTest(Harness, SharedTests, unittest.TestCase):
 
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertEqual(self.bodies(tid)[-1], f"Fake answer to {tid[:8]}.")
-        self.assertIn("(no browser viewer for the local store yet", self.terminal())
+
+    def opened_urls(self):
+        try:
+            with open(os.path.join(self.tmp, "opened")) as f:
+                return f.read().splitlines()
+        except FileNotFoundError:
+            return []
+
+    def page(self, path):
+        """(status, Content-Type, body) of a GET of the browser viewer's <path>."""
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=10) as r:
+                return r.status, r.headers.get("Content-Type"), r.read().decode()
+        except urllib.error.HTTPError as e:
+            with e:
+                return e.code, e.headers.get("Content-Type"), e.read().decode()
+
+    def test_open_browser_opens_difftates_own_page_with_the_token(self):
+        # A fake `open` that records what it was asked to open
+        with open(os.path.join(self.tmp, "bin", "open"), "w") as f:
+            f.write(f'#!/bin/sh\necho "$@" >> {os.path.join(self.tmp, "opened")}\n')
+        self.env["DT_OPEN"] = "browser"
+        self.start_watcher()
+
+        page = f"http://127.0.0.1:{self.port}/?token={self.token}"
+        self.assertEqual(wait_for("the browser to open", self.opened_urls), [page])
+        self.assertIn(page, self.terminal(), "the terminal shows the page too")
+        status, kind, html = self.page(f"/?token={self.token}")
+        self.assertEqual((status, kind), (200, "text/html; charset=utf-8"))
+        scripts = re.findall(r'<script[^>]* src="([^"]+)"', html)
+        self.assertTrue(scripts, html)
+        for src in scripts:
+            status, kind, _ = self.page("/" + src)
+            self.assertEqual((status, kind), (200, "text/javascript; charset=utf-8"), src)
+
+        # A second `difftate --open browser` opens it again
+        self.assertEqual(self.second_watcher("--open", "browser").returncode, 0)
+        wait_for("the browser to open again", lambda: len(self.opened_urls()) == 2)
+
+    def test_the_browser_viewer_refuses_requests_without_the_token(self):
+        self.start_watcher()
+        for path in ("/", "/?token=wrong", "/app.js", "/app.js?token=wrong", "/diff.js"):
+            status, _, body = self.page(path)
+            self.assertEqual(status, 401, path)
+            self.assertNotIn("<script", body, path)
 
     def test_open_herdr_opens_a_review_tab_on_the_local_store(self):
         # A fake Herdr app: no tabs yet, and it records what it was asked to do
