@@ -1,8 +1,9 @@
 """The Changes model: a snapshot of a file, and whether two pieces of code are
 the same.
 
-The code reader (ports.py) hands back plain data such as a Snapshot. Whether a
-thread's code changed is decided here, not in the reader.
+The code reader (ports.py) hands back plain data such as a Snapshot, and
+makes no decision. same_code is how the core tells whether a thread's code
+changed: the Review uses it when a thread is opened.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ class Snapshot:
     """A file on one side of a view, kept as it was when a thread was written
     on it, so the thread can move with its code later.
 
-    id      where the code reader keeps the file (git: its blob); None when
+    id      where the code reader keeps the file (the git adapter: its blob); None when
             there is no such file
     commit  the commit checked out when the snapshot was taken
     code    the code on the thread's lines in the file; None when the file

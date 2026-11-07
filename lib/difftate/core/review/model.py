@@ -4,7 +4,7 @@ them, and the Review that checks the rules (ADR 0004).
 The Review is the aggregate root. A method such as open_thread checks the
 rules and returns events: facts in the past tense. apply() is the only place
 the Review's state changes, so a Review rebuilt from its events is the same
-Review. The events mirror the lines of today's events.jsonl ("opened",
+Review. The events mirror the lines the local store keeps today ("opened",
 "comment", "outdated").
 """
 from __future__ import annotations
@@ -24,14 +24,14 @@ def _new_id() -> str:
 
 
 def _now() -> str:
-    """The time something is written, as today's events.jsonl has it."""
+    """The time something is written, as the local store keeps it today."""
     now = datetime.datetime.now(datetime.timezone.utc)
     return now.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 # ── Errors ───────────────────────────────────────────────────────────────────
 # The core says what went wrong in its own words. An inbound adapter turns
-# them into its technology's words: the review API into 403, 404, 409 and 502.
+# them into its technology's words (the review API: into HTTP status codes).
 class ReviewError(Exception):
     """Something the core refused or could not do."""
 
@@ -55,8 +55,8 @@ class CouldNotRead(ReviewError):
 # ── Threads and comments ─────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class Comment:
-    """A message in a thread. <author> is who wrote it (a reviewer), <kind> what
-    it is (a reviewer's comment)."""
+    """A reviewer's message in a thread. <author> is who wrote it ("reviewer"),
+    <kind> what it is ("comment")."""
     id: str
     author: str
     kind: str
@@ -69,11 +69,11 @@ class Anchor:
     """Where a thread is attached: a file, a side ("old" or "new"), a line
     range, and the code on those lines when the thread was opened.
 
-    view      the view the thread was written in ("" for all changes): the
-              thread moves with its code there
-    snapshot  the file as it was then (Snapshot.id); None until the Review
-              opens the thread
-    commit    the commit checked out then; None until the Review opens the thread
+    view         the view the thread was written in ("" for all changes): the
+                 thread moves with its code there
+    snapshot_id  the file as it was then (Snapshot.id); None until the Review
+                 opens the thread
+    commit       the commit checked out then; None until the Review opens the thread
     """
     file: str
     side: str
@@ -81,7 +81,7 @@ class Anchor:
     end_line: int
     code: Optional[str] = None
     view: str = ""
-    snapshot: Optional[str] = None
+    snapshot_id: Optional[str] = None
     commit: Optional[str] = None
 
 
@@ -143,7 +143,8 @@ class Review:
     def open_thread(self, author: str, body: str, anchor: Optional[Anchor] = None,
                     snapshot: Optional[Snapshot] = None) -> List[Event]:
         """A thread on <anchor>, or a general thread (no anchor), with <author>'s
-        first comment. <snapshot> is the anchor's file now, from the code reader."""
+        first comment. <snapshot> is the anchor's file now, from the code reader:
+        needed with an anchor."""
         if author != REVIEWER:
             raise NotAllowed("only a reviewer opens a thread")
         thread_id, time = _new_id(), _now()
@@ -151,7 +152,7 @@ class Review:
         if anchor is not None:
             # With no code from the viewer, the thread is written on the code there now
             code = snapshot.code if anchor.code is None else anchor.code
-            anchor = replace(anchor, code=code, snapshot=snapshot.id, commit=snapshot.commit)
+            anchor = replace(anchor, code=code, snapshot_id=snapshot.id, commit=snapshot.commit)
             # A thread is written on the code the viewer showed. If the file no
             # longer has that code there, it changed since: outdated at once
             outdated = snapshot.code is None or not same_code(anchor.code, snapshot.code)

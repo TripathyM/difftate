@@ -49,7 +49,7 @@ class OpeningAThread(unittest.TestCase):
 
         thread = review.thread(events[0].thread_id)
         self.assertEqual(thread.anchor, Anchor("app.py", "new", 2, 2, code="    return f'hello {name}'",
-                                               view="HEAD~1", snapshot="blob-1", commit="commit-1"))
+                                               view="HEAD~1", snapshot_id="blob-1", commit="commit-1"))
         self.assertFalse(thread.outdated)
 
     def test_a_thread_whose_code_changed_since_the_viewer_showed_it_is_outdated_at_once(self):
@@ -83,7 +83,6 @@ class OpeningAThread(unittest.TestCase):
                 self.assertTrue(review.thread(events[0].thread_id).outdated)
 
 
-
 class RebuildingAReview(unittest.TestCase):
     def test_a_review_rebuilt_from_its_events_holds_the_same_threads(self):
         review = Review()
@@ -95,7 +94,6 @@ class RebuildingAReview(unittest.TestCase):
 
         for opened in (events[0], events[2]):
             self.assertEqual(rebuilt.thread(opened.thread_id), review.thread(opened.thread_id))
-
 
     def test_a_thread_the_review_does_not_have_is_not_found(self):
         with self.assertRaises(NotFound):

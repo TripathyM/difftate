@@ -16,6 +16,9 @@ from difftate.core.review.model import Anchor, CouldNotRead, NotAllowed, Review 
 from difftate.core.review.use_cases.open_thread import open_thread  # noqa: E402
 
 APP = "def greet(name):\n    return f'hello {name}'\n"
+# Line 2 of app.py, as the viewer showed it: the same as the file, or changed since
+SHOWN = Anchor("app.py", "new", 2, 2, code="    return f'hello {name}'")
+CHANGED_SINCE = Anchor("app.py", "new", 2, 2, code="    return 'hello ' + name")
 
 
 class FakeCode:
@@ -58,33 +61,33 @@ class OpeningAThread(unittest.TestCase):
         self.code = FakeCode({"app.py": APP})
         self.history = FakeHistory()
 
-    def open(self, *args, **kwargs):
-        return open_thread(self.store, self.code, self.history, *args, **kwargs)
+    def open_a_thread(self, *args):
+        return open_thread(self.store, self.code, self.history, *args)
 
     def test_a_review_rebuilt_from_the_store_holds_the_thread_that_was_opened(self):
-        thread = self.open("Why an f-string?", Anchor("app.py", "new", 2, 2, code="    return f'hello {name}'"))
+        thread = self.open_a_thread("reviewer", "Why an f-string?", SHOWN)
 
         rebuilt = Review.from_events(self.store.load())
 
         self.assertEqual(rebuilt.thread(thread.id), thread)
-        self.assertEqual(thread.anchor.snapshot, "app.py@commit-1")
+        self.assertEqual(thread.anchor.snapshot_id, "app.py@commit-1")
         self.assertFalse(thread.outdated)
 
     def test_the_history_records_exactly_the_events_the_store_kept(self):
-        self.open("Is this ready?")
-        self.open("Why an f-string?", Anchor("app.py", "new", 2, 2))
+        self.open_a_thread("reviewer", "Is this ready?")
+        self.open_a_thread("reviewer", "Why an f-string?", Anchor("app.py", "new", 2, 2))
 
         self.assertEqual(len(self.store.load()), 4)
         self.assertEqual(self.history.recorded, self.store.load())
 
     def test_a_thread_whose_code_changed_since_the_viewer_showed_it_is_outdated_at_once(self):
-        thread = self.open("Why an f-string?", Anchor("app.py", "new", 2, 2, code="    return 'hello ' + name"))
+        thread = self.open_a_thread("reviewer", "Why an f-string?", CHANGED_SINCE)
 
         self.assertTrue(thread.outdated)
         self.assertTrue(Review.from_events(self.store.load()).thread(thread.id).outdated)
 
     def test_a_general_thread_opens_with_no_anchor(self):
-        thread = self.open("Is this ready?")
+        thread = self.open_a_thread("reviewer", "Is this ready?")
 
         self.assertIsNone(thread.anchor)
         self.assertFalse(thread.outdated)
@@ -92,14 +95,14 @@ class OpeningAThread(unittest.TestCase):
 
     def test_anyone_but_a_reviewer_is_not_allowed_and_nothing_is_kept(self):
         with self.assertRaises(NotAllowed):
-            self.open("I opened this myself", author="agent")
+            self.open_a_thread("agent", "I opened this myself")
 
         self.assertEqual(self.store.load(), [])
         self.assertEqual(self.history.recorded, [])
 
     def test_code_that_cannot_be_read_keeps_nothing(self):
         with self.assertRaises(CouldNotRead):
-            open_thread(self.store, UnreadableCode(), self.history, "Why?", Anchor("app.py", "new", 2, 2))
+            open_thread(self.store, UnreadableCode(), self.history, "reviewer", "Why?", Anchor("app.py", "new", 2, 2))
 
         self.assertEqual(self.store.load(), [])
         self.assertEqual(self.history.recorded, [])
