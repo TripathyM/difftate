@@ -4,7 +4,7 @@ status: accepted
 
 # The core knows no technology: ports and adapters
 
-difftate's rules were mixed with the technology they run on. The Review called git through `Code`, its rules raised HTTP status codes, threads were the review API's JSON dicts, and Dispatch started processes and printed to the terminal. So difftate is split into a core and adapters, as hexagonal architecture (ports and adapters) describes. The core holds the Review, a thread following its code, Dispatch, the prompt and the review history. It reaches everything else only through ports that it defines in GLOSSARY words. Adapters plug a technology into a port, and `main.py` is the one place that picks them. We do this to learn the pattern on real code, to test the core with fakes instead of a real repository and real processes, and so that a new store, coding agent or viewer is one new adapter with no change to the core.
+difftate's rules were mixed with the technology they run on. The Review called git through `Code`, its rules raised HTTP status codes, threads were the review API's JSON dicts, and Dispatch started processes and printed to the terminal. So difftate is split into a core and adapters, as hexagonal architecture (ports and adapters) describes. The core holds the Review, a thread moving with its code (or becoming outdated), Dispatch, the prompt and the review history. It reaches everything else only through ports that it defines in GLOSSARY words. Adapters plug a technology into a port, and `main.py` is the one place that picks them. We do this to learn the pattern on real code, to test the core with fakes instead of a real repository and real processes, and so that a new store, coding agent or viewer is one new adapter with no change to the core.
 
 ## The shape
 
@@ -21,7 +21,7 @@ lib/difftate/
 ```
 
 - Nothing in `core/` imports `adapters/`, `subprocess` or `http`, or prints. A test checks this.
-- Threads, comments, anchors and runs are types in the core. The JSON thread format belongs to the `review_api` adapter. Core errors (such as not allowed, not found, conflict) replace HTTP status codes, and `review_api` maps them to 403, 404 and 409.
+- Threads, comments, anchors and runs are types in the core. The JSON thread format belongs to the `review_api` adapter. Core errors (not allowed, not found, conflict, could not read) replace HTTP status codes, and `review_api` maps them to 403, 404, 409 and 502.
 - A use case is one plain function in its own file, and it takes only the ports it needs. `main.py` binds the ports. There is no interface or command class per use case: the function is the driving port.
 - Ports are `typing.Protocol` classes.
 
