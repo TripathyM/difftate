@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import List
 
 from ...changes.ports import ForReadingTheCode
-from ..model import Review
+from ..model import Review, lasting
 from ..ports import ForKeepingTheReview, ForRecordingReviewHistory
 
 
@@ -21,6 +21,6 @@ def mark_viewed(store: ForKeepingTheReview, code: ForReadingTheCode, history: Fo
     diff_hashes = code.diff_hashes() if on_branch else {}
     events = review.mark_viewed(file, viewed, diff_hashes, on_branch)
     events += review.clear_changed_marks(diff_hashes)
-    store.append(events)
-    history.record(events)
+    store.append(lasting(events))
+    history.record(lasting(events))
     return sorted(review.viewed())

@@ -153,7 +153,7 @@ class CommentAdded:
 class NoteWritten:
     """difftate wrote a note, or changed one (the "note" line). Only a final
     note is kept for good: one that isn't final yet lasts only as long as the
-    process (see lasting)."""
+    process, held by NotesInProgress (see lasting)."""
     thread_id: str
     comment: Comment
     final: bool
@@ -220,9 +220,31 @@ Event = Union[ThreadOpened, CommentAdded, NoteWritten, ThreadStatusChanged, Thre
 def lasting(events: List[Event]) -> List[Event]:
     """The events kept for good, in the store and the review history: all but a
     note that isn't final yet. A progress note changes with every step of its
-    run, so only its final body is kept (ADR 0004); until then it lasts only as
-    long as the process."""
+    run, so only its final body is kept (ADR 0004); until then NotesInProgress
+    holds it. The core decides this, so a store keeps every event it is given."""
     return [e for e in events if not (isinstance(e, NoteWritten) and not e.final)]
+
+
+class NotesInProgress:
+    """The notes that aren't final yet, in this process's memory: each one's
+    last write. They are lost when the process ends, as today (local.py:28-31).
+    A use case rebuilds the Review from the store's events and these, so a
+    note shows, and keeps its place, while its run works."""
+
+    def __init__(self) -> None:
+        self._written: Dict[str, NoteWritten] = {}  # note id: its last write, in the order first written
+
+    def events(self) -> List[Event]:
+        return list(self._written.values())
+
+    def hold(self, events: List[Event]) -> None:
+        """Hold each note in <events> that isn't final yet; let go of one that is."""
+        for event in events:
+            if isinstance(event, NoteWritten):
+                if event.final:
+                    self._written.pop(event.comment.id, None)
+                else:
+                    self._written[event.comment.id] = event
 
 
 def _need_branch(on_branch: bool) -> None:

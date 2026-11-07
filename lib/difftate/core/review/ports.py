@@ -12,17 +12,17 @@ from .model import Event
 
 class ForKeepingTheReview(Protocol):
     """Keeps a review's events. A store applies no rules and changes nothing:
-    the Review decides, and the store keeps what it decided."""
+    the Review decides, and the store keeps what it decided. That includes
+    which events last: the core gives a store no note that isn't final yet
+    (model.lasting, model.NotesInProgress), so a store keeps every event it
+    is given."""
 
     def load(self) -> List[Event]:
         """Every event of the review, oldest first."""
         ...
 
     def append(self, events: List[Event]) -> None:
-        """Keep <events> after the ones already kept. A note that isn't final
-        yet (NoteWritten, final False) need last only as long as this process:
-        load() returns it until then, and a store may keep only what
-        model.lasting() keeps for good."""
+        """Keep <events> after the ones already kept."""
         ...
 
 
@@ -31,6 +31,6 @@ class ForRecordingReviewHistory(Protocol):
     on this machine, never deleted."""
 
     def record(self, events: List[Event]) -> None:
-        """Add <events> to the review history. The use cases record only the
-        events that last (model.lasting): no note that isn't final yet."""
+        """Add <events> to the review history: the same events the store
+        keeps, never a note that isn't final yet."""
         ...

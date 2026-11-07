@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(ROOT, "lib"))
 
 from difftate.core.changes.model import Snapshot  # noqa: E402
 from difftate.core.review.model import (  # noqa: E402
-    Anchor, CommentAdded, Conflict, FileViewed, NotAllowed, NotFound, NoteWritten, Review, Run, RunEnded, RunStarted,
+    Anchor, CommentAdded, Conflict, FileViewed, NotesInProgress, NotAllowed, NotFound, NoteWritten, Review, Run, RunEnded, RunStarted,
     ThreadMoved, ThreadOpened, ThreadOutdated, lasting,
 )
 
@@ -420,6 +420,41 @@ class WhileAnotherBranchIsCheckedOut(unittest.TestCase):
     def test_a_non_reviewer_is_still_not_allowed_rather_than_in_conflict(self):
         with self.assertRaises(NotAllowed):
             Review().open_thread("agent", "Why?", on_branch=False)
+
+
+class NotesThatAreNotFinalYet(unittest.TestCase):
+    """Only a note's final body is kept: until then it lives in this
+    process's memory, outside the store."""
+
+    def test_the_last_write_of_each_note_is_held_until_the_note_is_final(self):
+        review, tid = a_review_with_a_thread()
+        notes = NotesInProgress()
+        first = review.add_comment("difftate", tid, "queued", "Queued")
+        second = review.add_comment("difftate", tid, "progress", "Thinking…")
+        note = first[0].comment
+
+        notes.hold(first + second + review.add_comment("agent", tid, "reply", "Done."))
+        edited = review.edit_note("difftate", note.id, "progress", "Read app.py")
+        notes.hold(edited)
+        self.assertEqual(notes.events(), edited + second)
+
+        notes.hold(review.edit_note("difftate", note.id, "progress", "✅ Done", final=True))
+        self.assertEqual(notes.events(), second)
+
+    def test_a_review_rebuilt_from_the_lasting_events_and_the_notes_held_is_the_same_review(self):
+        review = Review()
+        events = review.open_thread("reviewer", "Is this ready?")
+        tid = events[0].thread_id
+        events += review.add_comment("difftate", tid, "progress", "Thinking…")
+        events += review.add_comment("agent", tid, "reply", "It is ready.")
+        notes = NotesInProgress()
+        notes.hold(events)
+
+        rebuilt = Review.from_events(lasting(events) + notes.events())
+
+        self.assertEqual(rebuilt.thread(tid), review.thread(tid))
+        # The next comment comes after the note, not in its place
+        self.assertEqual(rebuilt.add_comment("agent", tid, "reply", "Again.")[0].comment.seq, 4)
 
 
 class RebuildingAReview(unittest.TestCase):

@@ -14,7 +14,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core_fakes import FakeCode, FakeHistory, UnreadableCode  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
-from difftate.core.review.model import Conflict, CouldNotRead, NotAllowed, NotFound, Review  # noqa: E402
+from difftate.core.review.model import (  # noqa: E402
+    Conflict, CouldNotRead, NotAllowed, NotFound, NotesInProgress, NoteWritten, Review,
+)
 from difftate.core.review.use_cases.add_comment import add_comment  # noqa: E402
 from difftate.core.review.use_cases.list_threads import list_threads  # noqa: E402
 from difftate.core.review.use_cases.list_viewed import list_viewed  # noqa: E402
@@ -28,32 +30,36 @@ class UseCaseTest(unittest.TestCase):
         self.store = MemoryStore()
         self.code = FakeCode({}, diff_hashes={"app.py": "hash-1", "lib.py": "hash-2"})
         self.history = FakeHistory()
+        self.notes = NotesInProgress()
 
     def a_thread(self, body="Is this ready?"):
-        return open_thread(self.store, self.code, self.history, "reviewer", body).id
+        return open_thread(self.store, self.notes, self.code, self.history, "reviewer", body).id
 
     def rebuilt(self):
-        return Review.from_events(self.store.load())
+        return Review.from_events(self.store.load() + self.notes.events())
 
 
 class AddingAComment(UseCaseTest):
     def test_a_reply_is_kept_and_recorded_in_the_review_history(self):
         tid = self.a_thread()
 
-        reply = add_comment(self.store, self.history, "agent", tid, "reply", "It is ready.")
+        reply = add_comment(self.store, self.notes, self.history, "agent", tid, "reply", "It is ready.")
 
         self.assertEqual(self.rebuilt().thread(tid).comments[-1], reply)
         self.assertEqual((reply.author, reply.kind, reply.body), ("agent", "reply", "It is ready."))
         self.assertEqual(self.history.recorded, self.store.load())
 
-    def test_a_note_is_kept_for_this_process_but_not_recorded_until_it_is_final(self):
+    def test_a_note_that_is_not_final_yet_is_held_in_the_core_and_never_given_to_the_store(self):
         tid = self.a_thread()
-        recorded = list(self.history.recorded)
+        kept, recorded = self.store.load(), list(self.history.recorded)
 
-        note = add_comment(self.store, self.history, "difftate", tid, "progress", "Thinking…")
+        note = add_comment(self.store, self.notes, self.history, "difftate", tid, "progress", "Thinking…")
+        reply = add_comment(self.store, self.notes, self.history, "agent", tid, "reply", "It is ready.")
 
-        self.assertEqual(self.rebuilt().thread(tid).comments[-1], note)
-        self.assertEqual(self.history.recorded, recorded)
+        self.assertEqual(self.store.load(), kept + [e for e in self.history.recorded if e not in recorded])
+        self.assertFalse(any(isinstance(e, NoteWritten) for e in self.store.load() + self.history.recorded))
+        [(thread, _)] = list_threads(self.store, self.notes)
+        self.assertEqual(thread.comments[1:], (note, reply))
 
     def test_a_reply_written_by_anyone_but_the_coding_agent_is_not_allowed_and_nothing_is_kept(self):
         tid = self.a_thread()
@@ -62,20 +68,20 @@ class AddingAComment(UseCaseTest):
         for author in ("reviewer", "difftate"):
             with self.subTest(author=author):
                 with self.assertRaises(NotAllowed):
-                    add_comment(self.store, self.history, author, tid, "reply", "A reply in disguise")
+                    add_comment(self.store, self.notes, self.history, author, tid, "reply", "A reply in disguise")
 
         self.assertEqual((self.store.load(), self.history.recorded), (kept, recorded))
 
     def test_a_comment_on_a_thread_the_review_does_not_have_is_not_found(self):
         with self.assertRaises(NotFound):
-            add_comment(self.store, self.history, "agent", "no-such-thread", "reply", "Hello?")
+            add_comment(self.store, self.notes, self.history, "agent", "no-such-thread", "reply", "Hello?")
 
 
 class SettingAThreadStatus(UseCaseTest):
     def test_a_reviewer_resolves_a_thread_and_it_stays_resolved(self):
         tid = self.a_thread()
 
-        thread = set_status(self.store, self.history, "reviewer", tid, "resolved")
+        thread = set_status(self.store, self.notes, self.history, "reviewer", tid, "resolved")
 
         self.assertEqual(thread.status, "resolved")
         self.assertEqual(self.rebuilt().thread(tid).status, "resolved")
@@ -86,7 +92,7 @@ class SettingAThreadStatus(UseCaseTest):
         kept = self.store.load()
 
         with self.assertRaises(NotAllowed):
-            set_status(self.store, self.history, "agent", tid, "resolved")
+            set_status(self.store, self.notes, self.history, "agent", tid, "resolved")
 
         self.assertEqual(self.store.load(), kept)
 
@@ -96,15 +102,24 @@ class ListingThreads(UseCaseTest):
         replied, waiting = self.a_thread(), self.a_thread("And the docs?")
         review = self.rebuilt()
         self.store.append(review.start_run([replied]))
-        add_comment(self.store, self.history, "agent", replied, "reply", "It is ready.")
+        add_comment(self.store, self.notes, self.history, "agent", replied, "reply", "It is ready.")
         self.store.append(self.rebuilt().end_run("done"))
         resolved = self.a_thread("And the tests?")
-        set_status(self.store, self.history, "reviewer", resolved, "resolved")
+        set_status(self.store, self.notes, self.history, "reviewer", resolved, "resolved")
 
-        self.assertEqual([(t.id, state) for t, state in list_threads(self.store)],
+        self.assertEqual([(t.id, state) for t, state in list_threads(self.store, self.notes)],
                          [(replied, "replied"), (waiting, "waiting"), (resolved, None)])
-        self.assertEqual([t.id for t, _ in list_threads(self.store, "open")], [replied, waiting])
-        self.assertEqual([t.id for t, _ in list_threads(self.store, "resolved")], [resolved])
+        self.assertEqual([t.id for t, _ in list_threads(self.store, self.notes, "open")], [replied, waiting])
+        self.assertEqual([t.id for t, _ in list_threads(self.store, self.notes, "resolved")], [resolved])
+
+    def test_a_thread_comes_with_the_notes_that_are_not_final_yet(self):
+        tid = self.a_thread()
+        note = add_comment(self.store, self.notes, self.history, "difftate", tid, "queued", "Queued")
+
+        thread = set_status(self.store, self.notes, self.history, "reviewer", tid, "dismissed")
+
+        self.assertEqual(thread.comments[-1], note)
+        self.assertEqual(list_threads(self.store, self.notes)[0][0], thread)
 
 
 class MarkingAFileViewed(UseCaseTest):
