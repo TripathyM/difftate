@@ -1,16 +1,18 @@
 """Today's events.jsonl lines, read as the core's events and written from them.
 
-Each line type is one event type (local.py lists the lines):
+Each line type is one event type (the lines the old local.py wrote, which
+existing reviews hold):
   opened → ThreadOpened      comment → CommentAdded     note → NoteWritten (final)
   status → ThreadStatusChanged   moved → ThreadMoved    outdated → ThreadOutdated
   run → RunStarted           run-ended → RunEnded       viewed → FileViewed
 A "note" line is a note's final body: notes are stored only once final. A
 note given to the store before it is final (the core gives none: lasting)
-keeps "final": false in its line, so it reads back as it was given; local.py
-writes no such line.
+keeps "final": false in its line, so it reads back as it was given; no such
+line was ever written before the core.
 
-A line is written with its keys in the order local.py writes them, so the
-same events give the same bytes as today's LocalStore.
+A line is written with its keys in the order local.py wrote them, so the
+same events give the same bytes as the old LocalStore
+(tests/fixtures/todays-review).
 """
 from __future__ import annotations
 
@@ -63,7 +65,7 @@ def event_from_line(line: Dict[str, Any]) -> Event:
 
 def read_events(text: str) -> List[Event]:
     """The events in an events.jsonl file's text, oldest first. A line that
-    holds no event (cut short, say) is skipped, as local.py skips it."""
+    holds no event (cut short, say) is skipped, as local.py skipped it."""
     events = []
     for raw in text.splitlines():
         try:
@@ -114,7 +116,7 @@ def line_from_event(event: Event) -> Dict[str, Any]:
 
 
 def lines_text(events: List[Event], added: Optional[Dict[str, Any]] = None) -> str:
-    """The lines that hold <events>, as local.py writes them, each with the
+    """The lines that hold <events>, as local.py wrote them, each with the
     keys in <added> after its own (the review history adds the review)."""
     return "".join(json.dumps(dict(line_from_event(e), **(added or {})), ensure_ascii=False,
                               separators=(",", ":")) + "\n" for e in events)

@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(ROOT, "tests"))
 
 from core_fakes import FakeCode, UnreadableCode  # noqa: E402
 from difftate.core.changes.use_cases.changeset import changeset  # noqa: E402
+from difftate.core.changes.use_cases.checked_out import checked_out  # noqa: E402
 from difftate.core.review.model import CouldNotRead, NotFound  # noqa: E402
 
 BASE = {"app.py": "def greet(name):\n    return 'hi ' + name\n"}
@@ -39,6 +40,16 @@ class TheChangeset(unittest.TestCase):
     def test_a_changeset_that_cannot_be_read_says_so(self):
         with self.assertRaises(CouldNotRead):
             changeset(UnreadableCode())
+
+
+class WhatIsCheckedOut(unittest.TestCase):
+    def test_the_reviews_branch(self):
+        self.assertEqual(checked_out(FakeCode(NOW)), (True, "feature"))
+
+    def test_another_branch_whose_files_are_on_disk(self):
+        found = checked_out(FakeCode(NOW, on_branch=False))
+
+        self.assertEqual((found.on_review_branch, found.branch), (False, "other"))
 
 
 if __name__ == "__main__":

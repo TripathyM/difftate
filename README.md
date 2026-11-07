@@ -126,7 +126,7 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 | `difftate-watch.py`, `lib/difftate/` | The watcher: opens the [review](#the-review), serves the [review API](#review-api) and the browser viewer, dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
 | `bin/dt-reply` | How the coding agent answers a thread: `dt-reply <thread> "<answer>"` |
 | `lib/stream_fmt.py` | Reads the coding agent's JSON event stream; prints live progress lines and keeps the progress note updated |
-| `lib/difftate/web/` | difftate's own browser viewer, a client of the review API |
+| `lib/difftate/adapters/inbound/review_api/` | The [review API](#review-api) (`server.py`, the thread format in `json_format.py`) and, in `web/`, difftate's own browser viewer, a client of it |
 | `tests/` | Watcher tests: a temporary repository, the real watcher, a fake coding agent. See [Tests](#tests) |
 | `herdr/mods/difftate/` | The Herdr Review tab (optional): code view, keys, threads, editing. See [Review in Herdr](#review-in-herdr-optional) |
 | `herdr/keys.json`, `herdr/RECIPE.md`, `herdr/preview.png` | Herdr's sharing files: the optional key binding, the build brief, the screenshot |
@@ -304,7 +304,7 @@ So a follow-up you write while the agent works on the same thread is answered in
 python3 -m unittest discover -s tests -v
 ```
 
-`tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_stores.py` runs one test suite against every store (memory and local). CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
+`tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_review_api.py` runs a scripted review through every review API route and compares each answer with `tests/fixtures/review_api_script.json`. The core's tests (`tests/test_core_*.py`) need no repository and no process. `tests/test_stores.py` runs one test suite against every store (memory and local). CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
 
 ## Known limitations
 

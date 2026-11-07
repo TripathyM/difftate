@@ -10,7 +10,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
-from difftate.core.changes.model import Snapshot  # noqa: E402
+from difftate.core.changes.model import OUTDATED, Moved, Snapshot  # noqa: E402
 from difftate.core.review.model import (  # noqa: E402
     Anchor, CommentAdded, Conflict, FileViewed, NotesInProgress, NotAllowed, NotFound, NoteWritten, Review, Run, RunEnded, RunStarted,
     ThreadMoved, ThreadOpened, ThreadOutdated, lasting,
@@ -322,6 +322,17 @@ class Runs(unittest.TestCase):
         self.assertEqual(review.runs()[0].sent, (comments[0].id,))
         self.assertEqual(review.runs()[0].outcome, "done")
 
+    def test_a_comment_written_after_dispatch_read_its_thread_is_not_sent_and_waits_for_the_next_run(self):
+        review, tid = a_review_with_a_thread()
+        read = review.thread(tid)
+        later = review.add_comment("reviewer", tid, "comment", "And the tests?")[0].comment
+
+        [started] = review.start_run([tid], seen={c.id for c in read.comments})
+
+        self.assertEqual(started.sent, (read.comments[0].id,))
+        review.end_run("done")
+        self.assertEqual((review.unsent(tid), review.state(tid)), ([later.id], "waiting"))
+
     def test_ending_a_run_ends_the_run_in_progress_and_nothing_when_there_is_none(self):
         review, tid = a_review_with_a_thread()
         [started] = review.start_run([tid])
@@ -455,6 +466,50 @@ class NotesThatAreNotFinalYet(unittest.TestCase):
         self.assertEqual(rebuilt.thread(tid), review.thread(tid))
         # The next comment comes after the note, not in its place
         self.assertEqual(rebuilt.add_comment("agent", tid, "reply", "Again.")[0].comment.seq, 4)
+
+
+class MovingWithItsCode(unittest.TestCase):
+    """The code reader found where each thread's code is now (core/changes):
+    the Review moves the thread there, or makes it outdated."""
+
+    def setUp(self):
+        self.review = Review()
+        events = self.review.open_thread("reviewer", "Why an f-string?", SHOWN,
+                                         Snapshot("blob-1", "commit-1", "    return f'hello {name}'"))
+        self.tid = events[0].thread_id
+
+    def test_a_thread_whose_line_numbers_changed_moves_with_its_code(self):
+        [moved] = self.review.move_with_code({self.tid: Moved(5, 6, "blob-2")})
+
+        self.assertEqual((type(moved), moved.start_line, moved.end_line, moved.snapshot_id),
+                         (ThreadMoved, 5, 6, "blob-2"))
+        anchor = self.review.thread(self.tid).anchor
+        self.assertEqual((anchor.start_line, anchor.end_line, anchor.snapshot_id, anchor.code),
+                         (5, 6, "blob-2", "    return f'hello {name}'"))
+
+    def test_a_thread_whose_code_changed_is_outdated_and_keeps_its_lines(self):
+        [outdated] = self.review.move_with_code({self.tid: OUTDATED})
+
+        self.assertIsInstance(outdated, ThreadOutdated)
+        thread = self.review.thread(self.tid)
+        self.assertTrue(thread.outdated)
+        self.assertEqual((thread.anchor.start_line, thread.anchor.snapshot_id), (2, "blob-1"))
+
+    def test_an_outdated_thread_stays_outdated_and_never_moves(self):
+        self.review.move_with_code({self.tid: OUTDATED})
+
+        self.assertEqual(self.review.move_with_code({self.tid: Moved(5, 5, "blob-2")}), [])
+        self.assertEqual(self.review.move_with_code({self.tid: OUTDATED}), [])
+        self.assertEqual(self.review.thread(self.tid).anchor.start_line, 2)
+
+    def test_a_general_thread_has_no_code_to_move_with(self):
+        general = self.review.open_thread("reviewer", "Is this ready?")[0].thread_id
+
+        self.assertEqual(self.review.move_with_code({general: OUTDATED}), [])
+
+    def test_a_thread_the_review_does_not_have_is_not_found(self):
+        with self.assertRaises(NotFound):
+            self.review.move_with_code({"no-such-thread": OUTDATED})
 
 
 class RebuildingAReview(unittest.TestCase):

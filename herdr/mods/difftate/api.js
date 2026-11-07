@@ -1,6 +1,6 @@
 // A client for difftate's review API, served by the running watcher (`difftate`, `dtc`, `dto`).
 // The watcher writes where it runs to <git common dir>/difftate/api.json ({port, pid, root})
-// and its token to <git common dir>/difftate/token. See lib/difftate/api.py for the API.
+// and its token to <git common dir>/difftate/token. See lib/difftate/adapters/inbound/review_api/server.py for the API.
 
 import { exec, readTextFile } from "herdr";
 import { parseDiff } from "./diff.js";

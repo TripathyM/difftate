@@ -19,18 +19,21 @@ class FakeCode:
     """The code reader, over files in memory, on the review of "feature"
     against "main". <files> are the files on disk ({file: text}): the new side
     of every view. <base> are the files where the branch left the base: the
-    old side (default: <files> themselves, the same on every side). Every view
-    shows all changes. A file's id is made from its name and text, so a file
-    that is its snapshot has the snapshot's id.
+    old side (default: <files> themselves, the same on every side). <views>
+    give the new side of a view where it isn't the files on disk ({view: {file:
+    text}}, as the staged view is the index); every other view shows all
+    changes. A file's id is made from its name and text, so a file that is its
+    snapshot has the snapshot's id.
 
     <diff_hashes> are each file's diff hash in the changeset (default: made
     from each file that differs from the base). <on_branch> is whether the
     review's branch is checked out ("other" is, when it isn't).
     """
 
-    def __init__(self, files, commit="commit-1", diff_hashes=None, on_branch=True, base=None):
+    def __init__(self, files, commit="commit-1", diff_hashes=None, on_branch=True, base=None, views=None):
         self.files = files
         self.base = files if base is None else base
+        self.views = views or {}
         self.commit = commit
         self.hashes = None if diff_hashes is None else dict(diff_hashes)
         self.checked_out = on_branch
@@ -44,19 +47,21 @@ class FakeCode:
         self._kept[file_id] = text
         return file_id
 
-    def _text(self, file, side):
-        return (self.base if side == "old" else self.files).get(file)
+    def _text(self, file, side, view=""):
+        if side == "old":
+            return self.base.get(file)
+        return self.views.get(view, self.files).get(file)
 
     def snapshot(self, file, side, view, start_line, end_line):
         self.reads += 1
-        file_id = self._id(file, self._text(file, side))
+        file_id = self._id(file, self._text(file, side, view))
         if file_id is None:
             return Snapshot(None, self.commit, None)
         return Snapshot(file_id, self.commit, self.code_on_lines(file_id, start_line, end_line))
 
     def versions(self, files):
         self.reads += 1
-        return {f: self._id(f.file, self._text(f.file, f.side)) for f in files}
+        return {f: self._id(f.file, self._text(f.file, f.side, f.view)) for f in files}
 
     def hunks(self, from_id, to_id):
         if from_id not in self._kept:

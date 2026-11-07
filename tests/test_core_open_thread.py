@@ -30,7 +30,7 @@ class OpeningAThread(unittest.TestCase):
         self.history = FakeHistory()
 
     def open_a_thread(self, *args):
-        return open_thread(self.store, NotesInProgress(), self.code, self.history, *args)
+        return open_thread(self.store, NotesInProgress(), self.code, self.history, *args).thread
 
     def test_a_review_rebuilt_from_the_store_holds_the_thread_that_was_opened(self):
         thread = self.open_a_thread("reviewer", "Why an f-string?", SHOWN)
@@ -62,6 +62,15 @@ class OpeningAThread(unittest.TestCase):
         self.assertIsNone(thread.anchor)
         self.assertFalse(thread.outdated)
         self.assertEqual([c.body for c in thread.comments], ["Is this ready?"])
+
+    def test_a_thread_opens_waiting_or_queued_while_a_run_works_on_others(self):
+        opened = open_thread(self.store, NotesInProgress(), self.code, self.history, "reviewer", "Is this ready?")
+        self.assertEqual(opened.state, "waiting")
+
+        self.store.append(Review.from_events(self.store.load()).start_run([opened.thread.id]))
+        during = open_thread(self.store, NotesInProgress(), self.code, self.history, "reviewer", "And the docs?")
+
+        self.assertEqual(during.state, "queued")
 
     def test_anyone_but_a_reviewer_is_not_allowed_and_nothing_is_kept(self):
         with self.assertRaises(NotAllowed):

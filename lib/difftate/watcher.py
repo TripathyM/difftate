@@ -3,24 +3,45 @@ difftate's local store, serves the review API, and dispatches waiting threads to
 the coding agent until Ctrl+C. It follows the checked-out branch: between runs,
 it moves to that branch's review (started if new), and back again.
 
+It is where the adapters are picked, until main.py (#68): each review is the
+core's use cases with the local store, the review history files and git bound
+to their ports (bind_review).
+
 The difftate / dtc / dto shell functions start it (difftate.zsh).
 """
 import fcntl
+import functools
 import math
 import os
 import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
+from types import SimpleNamespace
 
 from . import changes, viewer
+from .adapters.inbound.review_api import ReviewApi, ShownView, ask_running_watcher, running_watcher
+from .adapters.outbound import git
+from .adapters.outbound.history_files import HistoryFiles
+from .adapters.outbound.local_store import LocalStore
 from .agent import AGENTS
-from .api import ReviewApi, ShownView, ask_running_watcher, running_watcher
+from .core.changes.use_cases.changeset import changeset
+from .core.changes.use_cases.checked_out import checked_out
+from .core.review.use_cases.end_run import end_run
+from .core.review.use_cases.move_with_code import move_with_code
+from .core.review.use_cases.recover_runs import recover_runs
+from .core.review.use_cases.start_run import start_run
+from .core.review.model import CouldNotRead, NotesInProgress, NotFound
+from .core.review.use_cases.add_comment import add_comment
+from .core.review.use_cases.edit_note import edit_note
+from .core.review.use_cases.list_threads import list_threads
+from .core.review.use_cases.list_viewed import list_viewed
+from .core.review.use_cases.mark_viewed import mark_viewed
+from .core.review.use_cases.open_thread import open_thread
+from .core.review.use_cases.set_status import set_status
 from .dispatch import Dispatch, now
-from .local import LocalStore
-from .review import Review
-from .store import StoreError
 
 # How long a second watcher waits for one that is starting
 STARTING_S = 60
@@ -136,6 +157,48 @@ def review_folder(cwd):
     return os.path.realpath(os.path.join(git_dir, "difftate")), os.path.realpath(top.stdout.strip() or cwd)
 
 
+def bind_review(store, code, history, about):
+    """One review: the core's use cases with its ports bound (functools.partial),
+    for the review API and Dispatch. <about> is the review's {"id", "branch",
+    "base"}.
+
+    The review API serves each request on its own thread while Dispatch runs,
+    and a use case reads the store, decides and appends: so the use cases that
+    keep something run one at a time on a review, or two could decide on the
+    same events. Reading the changeset or the checkout keeps nothing, so it
+    doesn't wait."""
+    notes = NotesInProgress()  # the notes that aren't final yet, this review's
+    lock = threading.Lock()
+
+    def one_at_a_time(use_case, *ports):
+        bound = functools.partial(use_case, *ports)
+
+        @functools.wraps(use_case)
+        def call(*args, **kwargs):
+            with lock:
+                return bound(*args, **kwargs)
+        return call
+
+    return SimpleNamespace(
+        about=about,
+        # For reviewing (the review API)
+        list_threads=one_at_a_time(list_threads, store, notes, code),
+        open_thread=one_at_a_time(open_thread, store, notes, code, history),
+        add_comment=one_at_a_time(add_comment, store, notes, history),
+        edit_note=one_at_a_time(edit_note, store, notes, history),
+        set_status=one_at_a_time(set_status, store, notes, history),
+        mark_viewed=one_at_a_time(mark_viewed, store, code, history),
+        list_viewed=one_at_a_time(list_viewed, store, code, history),
+        changeset=functools.partial(changeset, code),
+        checked_out=functools.partial(checked_out, code),
+        # For running the loop (Dispatch)
+        move_with_code=one_at_a_time(move_with_code, store, code, history),
+        start_run=one_at_a_time(start_run, store, notes, history),
+        end_run=one_at_a_time(end_run, store, notes, history),
+        recover_runs=one_at_a_time(recover_runs, store, notes, history),
+    )
+
+
 class Hangup(BaseException):
     """The terminal closed: stop everything, quietly (there's no one to print to)."""
 
@@ -215,8 +278,8 @@ class Watcher:
         except changes.ChangesError as e:
             raise Exit(1, str(e))
         try:
-            self.view = changes.need_view(o["cwd"], o["ref"])
-        except changes.ChangesError as e:
+            self.view = git.need_view(o["cwd"], o["ref"])
+        except NotFound as e:
             raise Exit(1, f"Error: {e}")
         self.base = base
         try:
@@ -226,10 +289,10 @@ class Watcher:
         print(self.banner(self.branch, self.view))
         try:
             review, interrupted = self.open_review(self.branch)
-        except (StoreError, OSError) as e:
+        except (CouldNotRead, OSError) as e:
             raise Exit(1, f"Error: could not read the review ({e})")
-        shown = ShownView(self.view, lambda view: changes.need_view(o["cwd"], view), self.view_shown)
-        self.api = ReviewApi(review, self.folder, self.root, lambda view: changes.changeset(o["cwd"], base, view), shown)
+        shown = ShownView(self.view, lambda view: git.need_view(o["cwd"], view), self.view_shown)
+        self.api = ReviewApi(review, self.folder, self.root, shown)
         self.api.start()
 
         url = self.api.page_url()
@@ -267,10 +330,13 @@ class Watcher:
         was killed left failed)."""
         if branch in self.reviews:
             return self.reviews[branch], []
-        o = self.opts
-        store = LocalStore.open(self.folder, o["cwd"], branch, self.base, on_tamper=self.tampered)
-        code = changes.Code(o["cwd"], self.base, branch)
-        review = Review(store, code, lambda: changes.diff_hashes(changes.changeset(o["cwd"], self.base)["diff"]))
+        cwd = self.opts["cwd"]
+        store = LocalStore.open(self.folder, branch, self.base, on_tamper=self.tampered)
+        about = store.review()
+        # Each line of the review history says which review it came from
+        repo = {"path": os.path.realpath(cwd), "remote": changes.remote_url(cwd)}
+        history = HistoryFiles({"repo": repo, "branch": branch, "base": self.base, "review": about["id"]})
+        review = bind_review(store, git.GitCodeReader(cwd, self.base, branch), history, about)
         interrupted = review.recover_runs()
         self.reviews[branch] = review
         return review, interrupted
@@ -286,7 +352,7 @@ class Watcher:
             return
         try:
             review, interrupted = self.open_review(branch)
-        except (StoreError, OSError) as e:
+        except (CouldNotRead, OSError) as e:
             if branch != self.unreadable_branch:
                 print(f"[{now()}] Warning: could not read the review of {branch} ({e}): "
                       f"still showing the review of {self.branch}")
@@ -297,7 +363,7 @@ class Watcher:
         try:
             shown.check(shown.current())
             print(f"[{now()}] {self.banner(branch, shown.current())}")
-        except changes.ViewError:
+        except NotFound:
             print(f"[{now()}] {self.banner(branch, shown.current())}: not on this branch")
             shown.switch("")
         self.api.switch_review(review)
