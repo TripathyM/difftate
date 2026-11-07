@@ -1,9 +1,10 @@
-"""The core knows no technology (ADR 0003).
+"""Seam: the core's boundary (ADR 0003, the core knows no technology).
 
 Every module under lib/difftate/core/ is read with ast, so a new file is
 covered without listing it. A module breaks the boundary if it imports an
 adapter (by name or by a relative path), imports subprocess, http, socket or
-urllib, or calls print.
+urllib, or uses print (called, aliased or as builtins.print). Imports made at
+run time by name (__import__, importlib) are out of the checker's reach.
 """
 import ast
 import os
@@ -13,31 +14,28 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LIB = os.path.join(ROOT, "lib")
 CORE = os.path.join(LIB, "difftate", "core")
 
-TECHNOLOGY = ("subprocess", "http", "socket", "urllib")
-ADAPTERS = "difftate.adapters"
+FORBIDDEN_PACKAGES = ("difftate.adapters", "subprocess", "http", "socket", "urllib")
 
 
-def _within(name, package):
-    return name == package or name.startswith(package + ".")
-
-
-def _forbidden(name):
-    if _within(name, ADAPTERS):
-        return "imports " + name
-    for module in TECHNOLOGY:
-        if _within(name, module):
-            return "imports " + name
-    return None
+def _is_forbidden(name):
+    return any(name == package or name.startswith(package + ".") for package in FORBIDDEN_PACKAGES)
 
 
 def _absolute(node, module_name, is_package):
-    """The module an `from ... import` names, with a relative path resolved."""
+    """The module a `from ... import` names, with a relative path resolved."""
     if node.level == 0:
         return node.module or ""
     parts = module_name.split(".")
     package = parts if is_package else parts[:-1]
     base = package[:len(package) - (node.level - 1)]
     return ".".join(base + ([node.module] if node.module else []))
+
+
+def _uses_print(node):
+    if isinstance(node, ast.Name):
+        return node.id == "print" and isinstance(node.ctx, ast.Load)
+    return (isinstance(node, ast.Attribute) and node.attr == "print"
+            and isinstance(node.value, ast.Name) and node.value.id == "builtins")
 
 
 def boundary_breaks(source, module_name, is_package=False):
@@ -54,14 +52,12 @@ def boundary_breaks(source, module_name, is_package=False):
         elif isinstance(node, ast.ImportFrom):
             base = _absolute(node, module_name, is_package)
             # `from difftate import adapters` names the adapters package too
-            names = [base] + [base + "." + alias.name for alias in node.names]
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print":
-            breaks.append("line %d: calls print" % node.lineno)
-        for name in names:
-            why = _forbidden(name)
-            if why:
-                breaks.append("line %d: %s" % (node.lineno, why))
-                break
+            names = [base] + [f"{base}.{alias.name}" for alias in node.names]
+        elif _uses_print(node):
+            breaks.append(f"line {node.lineno}: uses print")
+        forbidden = [name for name in names if _is_forbidden(name)]
+        if forbidden:
+            breaks.append(f"line {node.lineno}: imports {forbidden[0]}")
     return breaks
 
 
@@ -108,7 +104,7 @@ class TheBoundaryChecker(unittest.TestCase):
         self.assertEqual(self.breaks("import subprocess\n"), ["line 1: imports subprocess"])
 
     def test_a_module_that_calls_print_breaks_the_boundary(self):
-        self.assertEqual(self.breaks("x = 1\nprint('hello')\n"), ["line 2: calls print"])
+        self.assertEqual(self.breaks("x = 1\nprint('hello')\n"), ["line 2: uses print"])
 
     def test_every_technology_is_caught_in_either_import_form(self):
         for source in ("import http.client", "from http.server import HTTPServer", "import socket",
@@ -133,6 +129,10 @@ class TheBoundaryChecker(unittest.TestCase):
                   "from . import ports\nfrom ..changes import model\nimport difftate.core.dispatch\n"
                   "import httpx_like_name\n")
         self.assertEqual(self.breaks(source), [])
+
+    def test_print_reached_through_builtins_or_another_name_breaks_the_boundary(self):
+        self.assertEqual(self.breaks("import builtins\nbuiltins.print('x')\n"), ["line 2: uses print"])
+        self.assertEqual(self.breaks("say = print\nsay('x')\n"), ["line 1: uses print"])
 
     def test_a_method_named_print_is_not_the_builtin(self):
         self.assertEqual(self.breaks("report.print('x')\n"), [])

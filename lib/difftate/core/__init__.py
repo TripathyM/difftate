@@ -1,7 +1,7 @@
 """The core: difftate's rules, with no technology (ADR 0003).
 
-It holds the Review, a thread following its code, Dispatch, the prompt and the
-review history, in the words of GLOSSARY.md. It reaches git, HTTP, processes,
+It holds the Review, a thread that moves with its code, Dispatch, the prompt
+and the review history, in the words of GLOSSARY.md. It reaches git, HTTP, processes,
 files and the terminal only through the ports it defines. Nothing here imports
 difftate.adapters, subprocess, http, socket or urllib, or prints;
 tests/test_core_boundary.py checks this.

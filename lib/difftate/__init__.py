@@ -14,8 +14,4 @@ Modules follow the contexts in GLOSSARY.md and ADR 0001:
   agent     Claude Code and OpenCode: sessions, models, the command line
   viewer    opening the review in the browser or a Herdr Review tab
   procs     starting and stopping process trees
-
-The new shape (ADR 0003, spec #60) grows beside these modules, slice by slice:
-  core      the rules with no technology: review, changes, dispatch
-  adapters  inbound (review API, command line) and outbound (stores, git, ...)
 """
