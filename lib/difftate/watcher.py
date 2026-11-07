@@ -5,7 +5,9 @@ it moves to that branch's review (started if new), and back again.
 
 It is where the adapters are picked, until main.py (#68): each review is the
 core's use cases with the local store, the review history files and git bound
-to their ports (bind_review).
+to their ports (bind_review), and Dispatch runs on the core's use cases with
+the coding agent's adapter and the terminal. It is the timer: it polls
+Dispatch every interval.
 
 The difftate / dtc / dto shell functions start it (difftate.zsh).
 """
@@ -22,13 +24,18 @@ import time
 from types import SimpleNamespace
 
 from . import changes, viewer
-from .adapters.inbound.review_api import ReviewApi, ShownView, ask_running_watcher, running_watcher
+from .adapters.inbound.review_api import ReviewApi, ShownView, ask_running_watcher, running_watcher, token_file
 from .adapters.outbound import git
+from .adapters.outbound.coding_agents import AGENTS
 from .adapters.outbound.history_files import HistoryFiles
 from .adapters.outbound.local_store import LocalStore
-from .agent import AGENTS
+from .adapters.outbound.terminal import Terminal, now
 from .core.changes.use_cases.changeset import changeset
 from .core.changes.use_cases.checked_out import checked_out
+from .core.dispatch.model import Dispatch
+from .core.dispatch.use_cases.end_run import stop_run
+from .core.dispatch.use_cases.poll import poll
+from .core.dispatch.use_cases.recover_runs import recover_runs as recover_interrupted_runs
 from .core.review.use_cases.end_run import end_run
 from .core.review.use_cases.move_with_code import move_with_code
 from .core.review.use_cases.recover_runs import recover_runs
@@ -41,7 +48,6 @@ from .core.review.use_cases.list_viewed import list_viewed
 from .core.review.use_cases.mark_viewed import mark_viewed
 from .core.review.use_cases.open_thread import open_thread
 from .core.review.use_cases.set_status import set_status
-from .dispatch import Dispatch, now
 
 # How long a second watcher waits for one that is starting
 STARTING_S = 60
@@ -216,6 +222,7 @@ class Watcher:
         self.opts = opts
         self.api = None
         self.dispatch = None
+        self.report = Terminal()
         self.reviews = {}  # branch: its review, once opened
         self.branch = None  # the branch whose review the watcher shows
         self.unreadable_branch = None  # whose review couldn't be read (warned once)
@@ -226,7 +233,8 @@ class Watcher:
         self.claim()
         agent_cls = AGENTS[o["tool"]]
         cmd = resolve_cmd(o["cmd"] or agent_cls.default_cmd)
-        self.agent = agent_cls(cmd, o["session"], o["model"])
+        self.agent = agent_cls(cmd, o["session"], o["model"], cwd=o["cwd"], keep_out=[self.folder],
+                               secrets=[token_file(self.folder)])
         if o["session"] and not self.agent.session_exists():
             raise Exit(1, "\n".join([
                 f"Error: session '{o['session']}' not found for {o['tool']}.",
@@ -288,7 +296,7 @@ class Watcher:
             raise Exit(1, str(e))
         print(self.banner(self.branch, self.view))
         try:
-            review, interrupted = self.open_review(self.branch)
+            review = self.open_review(self.branch)
         except (CouldNotRead, OSError) as e:
             raise Exit(1, f"Error: could not read the review ({e})")
         shown = ShownView(self.view, lambda view: git.need_view(o["cwd"], view), self.view_shown)
@@ -308,9 +316,17 @@ class Watcher:
         print()
         print("Press Ctrl+C to stop")
         print()
-        self.dispatch = Dispatch(review, self.agent, o["cwd"], self.folder, o["interval"], self.api.address(),
-                                 between_runs=self.follow_branch)
-        self.dispatch.close_interrupted(interrupted)
+        self.dispatch = Dispatch(review)
+        try:
+            recover_interrupted_runs(review, self.report)
+        except CouldNotRead as e:
+            raise Exit(1, f"Error: could not read the review ({e})")
+
+    def forever(self):
+        """Dispatch, polled every interval until Ctrl+C."""
+        while True:
+            poll(self.dispatch, self.agent, self.report, between_runs=self.follow_branch)
+            time.sleep(self.opts["interval"])
 
     def open_viewer(self, where, url=None):
         """Open the review in the viewer (<where>: browser, herdr or both), at <url>
@@ -326,10 +342,10 @@ class Watcher:
 
     def open_review(self, branch):
         """The review of <branch> against the base: the one this watcher opened
-        before, or the store's. Returns (review, the threads a run whose watcher
-        was killed left failed)."""
+        before, or the store's. A review the watcher opens now may have a run
+        its watcher was killed during: recover_runs ends it."""
         if branch in self.reviews:
-            return self.reviews[branch], []
+            return self.reviews[branch]
         cwd = self.opts["cwd"]
         store = LocalStore.open(self.folder, branch, self.base, on_tamper=self.tampered)
         about = store.review()
@@ -337,9 +353,8 @@ class Watcher:
         repo = {"path": os.path.realpath(cwd), "remote": changes.remote_url(cwd)}
         history = HistoryFiles({"repo": repo, "branch": branch, "base": self.base, "review": about["id"]})
         review = bind_review(store, git.GitCodeReader(cwd, self.base, branch), history, about)
-        interrupted = review.recover_runs()
         self.reviews[branch] = review
-        return review, interrupted
+        return review
 
     def follow_branch(self):
         """Between runs: when another branch is checked out, the watcher and its
@@ -350,8 +365,11 @@ class Watcher:
             return  # no commit to stand in for the branch: stay
         if branch == self.branch:
             return
+        new = branch not in self.reviews
         try:
-            review, interrupted = self.open_review(branch)
+            review = self.open_review(branch)
+            if new:
+                recover_interrupted_runs(review, self.report)
         except (CouldNotRead, OSError) as e:
             if branch != self.unreadable_branch:
                 print(f"[{now()}] Warning: could not read the review of {branch} ({e}): "
@@ -367,7 +385,7 @@ class Watcher:
             print(f"[{now()}] {self.banner(branch, shown.current())}: not on this branch")
             shown.switch("")
         self.api.switch_review(review)
-        self.dispatch.switch_review(review, interrupted)
+        self.dispatch.review = review
 
     def banner(self, branch, view):
         return f"The review of {branch} against {self.base}, showing {changes.view_name(view)}"
@@ -386,7 +404,7 @@ class Watcher:
             print()
             print("Stopping watcher...")
         if self.dispatch:
-            self.dispatch.stop_run(say)
+            stop_run(self.dispatch, self.report, say)
         if self.api:
             self.api.stop()
         if say:
@@ -406,7 +424,7 @@ def main(argv):
         watcher = Watcher(opts)
         watcher.setup()
         watcher.start()
-        watcher.dispatch.forever()
+        watcher.forever()
     except Exit as e:
         if e.message:
             print(e.message)

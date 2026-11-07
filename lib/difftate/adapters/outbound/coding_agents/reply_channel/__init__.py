@@ -1,8 +1,9 @@
-"""The run's folder: where the coding agent leaves its replies for Dispatch.
+"""The reply channel: the run's folder, where the coding agent leaves its
+replies, and dt-reply, which writes them. Claude Code and OpenCode share it.
 
 The coding agent answers a thread with `dt-reply <thread> "<answer>"` (bin/dt-reply).
-That writes the answer into the run's folder ($DT_RUN_DIR), and Dispatch posts
-it as a reply. So the coding agent needs no token, no write access to the store, and
+That writes the answer into the run's folder ($DT_RUN_DIR); the coding agent's run
+gives it to Dispatch as news, and Dispatch posts it as a reply. So the coding agent needs no token, no write access to the store, and
 no marker: difftate knows the answer is a reply because of where it came from.
 
 The folder (a temporary one per run, outside the repository):
@@ -12,6 +13,7 @@ The folder (a temporary one per run, outside the repository):
 """
 import json
 import os
+import shlex
 import shutil
 import tempfile
 import time
@@ -19,7 +21,12 @@ import time
 THREADS = "threads"
 REPLIES = "replies"
 # The command the coding agent answers with
-DT_REPLY = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "bin", "dt-reply")
+ROOT = os.path.abspath(__file__)
+for _ in range(7):  # lib/difftate/adapters/outbound/coding_agents/reply_channel/__init__.py
+    ROOT = os.path.dirname(ROOT)
+DT_REPLY = os.path.join(ROOT, "bin", "dt-reply")
+# As the prompt names it: ready for the coding agent's shell
+REPLY_COMMAND = shlex.quote(DT_REPLY)
 
 
 class ReplyError(Exception):

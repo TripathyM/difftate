@@ -2,7 +2,8 @@
 an inbound adapter: each route calls one of the core's use cases, and the
 core's errors become HTTP statuses.
 
-Viewers, scripts and the progress notes reach the review through it. Every
+Viewers and scripts reach the review through it; Dispatch, inside the watcher,
+reaches it through the core (ADR 0003). Every
 request needs the token from the repository's difftate folder
 (`<git dir>/difftate/token`, readable only by the user); a request without it
 gets 401.
@@ -123,11 +124,14 @@ PAGE_HEADERS = {
 }
 
 
+def token_file(folder):
+    """Where the review API keeps its token, in the review's <folder>."""
+    return os.path.join(folder, "token")
+
+
 class ApiAddress(namedtuple("ApiAddress", "url token_file")):
     """Where a client finds the review API, and the file with its token."""
 
-    def env(self):
-        return {"DT_API": self.url, "DT_TOKEN_FILE": self.token_file}
 
 
 def running_watcher(folder):
@@ -255,7 +259,7 @@ class ReviewApi:
         self.token = secrets.token_urlsafe(32)
         self.login = PageLogin()
         self.server = None
-        self.token_file = os.path.join(folder, "token")
+        self.token_file = token_file(folder)
         self.api_file = os.path.join(folder, "api.json")
 
     def switch_review(self, review):

@@ -5,12 +5,15 @@ An outdated thread says so, and shows the code it was written on: that code
 is no longer on its lines.
 
 Notes are left out: they cost tokens on every run and say nothing about the code.
-The coding agent answers with dt-reply (bin/dt-reply), and nothing in the prompt names
-the store. Threads are the core's (core/review/model.py, Thread).
+The coding agent answers with its reply command (the reply channel's dt-reply,
+ForAskingTheCodingAgent.reply_command), and nothing in the prompt names the
+store. Threads are the core's (core/review/model.py, Thread).
 """
-import shlex
+from __future__ import annotations
 
-from .runfolder import DT_REPLY
+from typing import Collection, List, Optional, Sequence
+
+from ..review.model import Comment, Thread
 
 ANCHOR_MAX_LINES = 20
 SUMMARY_MAX = 200  # chars per comment in the "other open threads" section
@@ -34,13 +37,14 @@ Rules:
 Summarize briefly what you handled."""
 
 
-def build(open_threads, ids, new_ids):
+def build(open_threads: Sequence[Thread], ids: Collection[str], new_ids: Collection[str], reply_command: str) -> str:
     """The prompt for a run on the threads <ids>, among the <open_threads>.
-    <new_ids> holds the ids of the comments the run is sent: no run had them."""
-    return PROMPT.format(threads=threads_part(open_threads, ids, new_ids), dt_reply=shlex.quote(DT_REPLY))
+    <new_ids> holds the ids of the comments the run is sent: no run had them.
+    <reply_command> is how the coding agent answers, ready for its shell."""
+    return PROMPT.format(threads=threads_part(open_threads, ids, new_ids), dt_reply=reply_command)
 
 
-def location(t):
+def location(t: Thread) -> str:
     a = t.anchor
     if a is None:
         return "general thread (not tied to a line)"
@@ -49,18 +53,18 @@ def location(t):
     return loc + (" (old side, before the change)" if a.side == "old" else "")
 
 
-def _conversation(t):
+def _conversation(t: Thread) -> List[Comment]:
     """The thread's comments and replies, without notes."""
     return [c for c in t.comments if c.kind in ("comment", "reply")]
 
 
-def _speaker(c, new_ids=()):
+def _speaker(c: Comment, new_ids: Collection[str] = ()) -> str:
     if c.kind == "reply":
         return "you"
     return "reviewer (new)" if c.id in new_ids else "reviewer"
 
 
-def short(s, n):
+def short(s: str, n: int) -> str:
     s = " ".join(s.split())
     return s if len(s) <= n else s[: n - 1] + "…"
 
@@ -68,20 +72,20 @@ def short(s, n):
 OUTDATED_MARK = " — outdated: its code changed after the thread was written"
 
 
-def render_full(t, new_ids):
+def render_full(t: Thread, new_ids: Collection[str]) -> str:
     outdated = t.outdated
     lines = [f"### Thread {t.id[:8]} — {location(t)}{OUTDATED_MARK if outdated else ''}"]
     code = ((t.anchor and t.anchor.code) or "").rstrip("\n")
     if code:
-        code = code.split("\n")
-        if len(code) > ANCHOR_MAX_LINES:
-            code = code[:ANCHOR_MAX_LINES] + [f"… ({len(code) - ANCHOR_MAX_LINES} more lines)"]
-        lines += ["Code when the thread was written:" if outdated else "Code:", "```", *code, "```"]
+        code_lines = code.split("\n")
+        if len(code_lines) > ANCHOR_MAX_LINES:
+            code_lines = code_lines[:ANCHOR_MAX_LINES] + [f"… ({len(code_lines) - ANCHOR_MAX_LINES} more lines)"]
+        lines += ["Code when the thread was written:" if outdated else "Code:", "```", *code_lines, "```"]
     lines += [f"{_speaker(c, new_ids)}: {c.body.strip()}" for c in _conversation(t)]
     return "\n".join(lines)
 
 
-def render_summary(t):
+def render_summary(t: Thread) -> Optional[str]:
     comments = _conversation(t)
     if not comments:
         return None
@@ -94,7 +98,7 @@ def render_summary(t):
     return "\n".join([f"- {t.id[:8]} — {location(t)}{' (outdated)' if t.outdated else ''}", *parts])
 
 
-def threads_part(threads, ids, new_ids):
+def threads_part(threads: Sequence[Thread], ids: Collection[str], new_ids: Collection[str]) -> str:
     ids, new_ids = set(ids), set(new_ids)
     mine = [t for t in threads if t.id in ids]
     others = [s for s in (render_summary(t) for t in threads if t.id not in ids) if s]

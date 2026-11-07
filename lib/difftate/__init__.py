@@ -1,17 +1,10 @@
-"""difftate's watcher (see difftate-watch.py).
+"""difftate's watcher (see difftate-watch.py), as a core and adapters (ADR 0003).
 
-Modules follow the contexts in GLOSSARY.md and ADR 0001:
-  watcher   the command: options, start-up, Ctrl+C
-  api       the review API that viewers and the progress notes use
-  review    the Review: the thread rules and thread state, over a store
-  store     the store port and difftate's thread format
-  memory    the memory store (tests)
-  local     the local store: difftate's own, in the git folder, and the review history
-  changes   the base, the review's branch and the changeset, from git
-  dispatch  the loop: waiting threads, queued notes, one run at a time
-  runfolder the run's folder, where dt-reply leaves the coding agent's replies
-  prompt    the prompt for one run
-  agent     Claude Code and OpenCode: sessions, models, the command line
-  viewer    opening the review in the browser or a Herdr Review tab
-  procs     starting and stopping process trees
+  core/       the Review, the changes, Dispatch and the prompt: no technology
+  adapters/   inbound: the review API (and the browser viewer); outbound: the
+              stores, the review history, git, the coding agents, the terminal
+  watcher     the command: options, start-up, Ctrl+C; it picks the adapters
+              and polls Dispatch (until main.py, #68)
+  changes     the base and the review's branch, from git
+  viewer      opening the review in the browser or a Herdr Review tab
 """

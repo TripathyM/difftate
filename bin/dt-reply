@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
 
-from difftate.runfolder import ReplyError, RunFolder  # noqa: E402
+from difftate.adapters.outbound.coding_agents.reply_channel import ReplyError, RunFolder  # noqa: E402
 
 
 def main(argv):
