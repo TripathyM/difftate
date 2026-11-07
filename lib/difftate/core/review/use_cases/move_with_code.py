@@ -7,7 +7,7 @@ from typing import Dict, List, Union
 
 from ...changes.model import FileInView, Moved, Outdated, moved_or_outdated, moved_or_outdated_by_code
 from ...changes.ports import ForReadingTheCode
-from ..model import Anchor, CouldNotRead, Review, lasting
+from ..model import Anchor, CouldNotRead, Review, ThreadOutdated, lasting
 from ..ports import ForKeepingTheReview, ForRecordingReviewHistory
 
 
@@ -52,4 +52,4 @@ def move_with_code(store: ForKeepingTheReview, code: ForReadingTheCode,
     events = review.move_with_code(found)
     store.append(lasting(events))
     history.record(lasting(events))
-    return [tid for tid, decided in found.items() if isinstance(decided, Outdated)]
+    return [e.thread_id for e in events if isinstance(e, ThreadOutdated)]

@@ -18,7 +18,7 @@ def start_run(store: ForKeepingTheReview, notes: NotesInProgress, history: ForRe
     review doesn't have, and CouldNotRead when the run can't be kept; no run
     starts then."""
     review = Review.from_events(store.load() + notes.events())
-    events = review.start_run([t.id for t in threads], seen={c.id for t in threads for c in t.comments})
+    events = review.start_run([t.id for t in threads], in_prompt={c.id for t in threads for c in t.comments})
     store.append(lasting(events))
     history.record(lasting(events))
     return review.runs()[-1]

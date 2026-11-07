@@ -70,7 +70,8 @@ class Dispatch:
             except OSError:
                 pass
         self.tampered = set()  # threads whose stored lines were changed outside difftate during the run
-        self.unrecorded = None  # why the last run couldn't be recorded (warned once)
+        self.warned = None  # the last warning about the store, so a failing store isn't warned about every poll
+        self.unended = None  # () -> True once the end of the last run is kept: a run whose end the store couldn't keep
 
     def _open_threads(self):
         """The open threads, each with its thread state (ListedThread)."""
@@ -85,7 +86,12 @@ class Dispatch:
             self.once()
             time.sleep(self.interval)
 
-    def follow_code(self):
+    def _warn_once(self, text):
+        if text != self.warned:
+            print(f"[{now()}] Warning: {text}")
+        self.warned = text
+
+    def move_with_code(self):
         try:
             for tid in self.review.move_with_code():
                 print(f"[{now()}] Thread {tid[:8]} is outdated: its code changed")
@@ -99,8 +105,10 @@ class Dispatch:
         self.close_interrupted(interrupted)
 
     def once(self):
+        if self.unended and not self.unended():
+            return  # the last run is still in progress until its end is kept
         self.between_runs()
-        self.follow_code()
+        self.move_with_code()
         listed = self._open_threads()
         waiting = [t.thread for t in listed if t.state == "waiting"]
         if not waiting:
@@ -110,11 +118,9 @@ class Dispatch:
         try:
             run = self.review.start_run(waiting)
         except CouldNotRead as e:
-            if str(e) != self.unrecorded:
-                print(f"[{now()}] Warning: could not record the run ({e}): it starts once it can be recorded")
-            self.unrecorded = str(e)
+            self._warn_once(f"could not record the run ({e}): it starts once it can be recorded")
             return
-        self.unrecorded = None
+        self.warned = None
         print(f"[{now()}] New/changed threads detected — dispatching to {self.agent.name}")
 
         open_threads = [t.thread for t in listed]
@@ -148,7 +154,7 @@ class Dispatch:
             return
         # Threads that arrive meanwhile get a queued note right away. Runs stay one at a time.
         while self.run.running():
-            self.follow_code()
+            self.move_with_code()
             self.post_replies()
             for tid in self.post_queued_notes():
                 print(f"[{now()}] Queued thread {tid[:8]} (agent busy)")
@@ -205,21 +211,32 @@ class Dispatch:
         notes, self.notes = self.notes, {}
         ending = self._formatter_ending()
         secs = int(time.time() - self.started)
+        self.unended = lambda: self._close_run("stopped" if stopped else outcome, why, say, stopped, notes, secs,
+                                               ending)
+        self.unended()
+
+    def _close_run(self, outcome, why, say, stopped, notes, secs, ending):
+        """The run's end is kept; then the threads it didn't reply to are failed,
+        and every progress note gets its final line. True once done. When the
+        store can't keep the end, the run is still in progress in the review:
+        once() tries again before anything else, so no other run starts first."""
         try:
-            failed = self.review.end_run("stopped" if stopped else outcome)
-            threads = {t.thread.id for t in self.review.list_threads()}
-        except CouldNotRead:
-            self.tampered = set()
-            return
+            failed = self.review.end_run(outcome)
+            thread_ids = {t.thread.id for t in self.review.list_threads()}
+        except CouldNotRead as e:
+            self._warn_once(f"could not record the end of the run ({e}): no run starts until it is recorded")
+            return False
+        self.unended, self.warned = None, None
         for t in failed:
             if say:
                 print(f"[{now()}] No reply to thread {t.id[:8]} — it waits for your next comment")
             self.note_no_reply(t, secs, why, notes.get(t.id), ending)
         failed_ids = {t.id for t in failed}
         for tid, note_id in notes.items():
-            if tid not in failed_ids and tid in threads:
+            if tid not in failed_ids and tid in thread_ids:
                 self.finish_note(tid, note_id, secs, stopped, ending)
         self.tampered = set()
+        return True
 
     def _formatter_ending(self):
         """How the formatter says the run ended ({"state", "body"}), or None when

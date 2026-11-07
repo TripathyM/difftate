@@ -14,9 +14,9 @@ def recover_runs(store: ForKeepingTheReview, notes: NotesInProgress,
     such a run left failed: no reply to them. Raises CouldNotRead when the
     end can't be kept."""
     review = Review.from_events(store.load() + notes.events())
-    ran = {tid for run in review.runs() if run.outcome is None for tid in run.threads}
+    ran = review.in_progress()
     events = review.recover_runs()
     if events:
         store.append(lasting(events))
         history.record(lasting(events))
-    return [t for t in review.threads("open") if t.id in ran and review.state(t.id) == "failed"]
+    return review.failed_among(ran)

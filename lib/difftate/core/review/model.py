@@ -304,6 +304,14 @@ class Review:
         """The runs, oldest first."""
         return list(self._runs.values())
 
+    def in_progress(self) -> Set[str]:
+        """The ids of the threads a run in progress has."""
+        return {tid for run in self._runs.values() if run.outcome is None for tid in run.threads}
+
+    def failed_among(self, thread_ids: Collection[str]) -> List[Thread]:
+        """The open threads among <thread_ids> whose run ended with no reply to them."""
+        return [t for t in self.threads("open") if t.id in thread_ids and self.state(t.id) == "failed"]
+
     def unsent(self, thread_id: str) -> List[str]:
         """The ids of the thread's reviewer comments that no run has been sent yet."""
         sent = {cid for run in self._runs.values() for cid in run.sent}
@@ -322,7 +330,7 @@ class Review:
         thread = self.thread(thread_id)
         if thread.status != "open":
             return None
-        running = {tid for run in self._runs.values() if run.outcome is None for tid in run.threads}
+        running = self.in_progress()
         if thread.id in running:
             return "working"
         if self.unsent(thread.id):
@@ -451,15 +459,15 @@ class Review:
         return events
 
     # ── Runs (Dispatch) ──────────────────────────────────────────────────────
-    def start_run(self, thread_ids: List[str], seen: Optional[Collection[str]] = None) -> List[Event]:
+    def start_run(self, thread_ids: List[str], in_prompt: Optional[Collection[str]] = None) -> List[Event]:
         """A run starts on the threads: every reviewer comment in them that no
-        run was sent is sent to it. <seen>: the ids of the comments Dispatch
-        read the threads with, for the run's prompt (None: all of them). A
-        comment written since isn't in the prompt, so it isn't sent: it waits
+        run was sent is sent to it. <in_prompt>: the ids of the comments the
+        run's prompt shows, as Dispatch read the threads (None: all of them).
+        A comment written since isn't in the prompt, so it isn't sent: it waits
         for the next run."""
         threads = [self.thread(tid) for tid in thread_ids]
         event = RunStarted(_new_id(), tuple(t.id for t in threads),
-                           tuple(cid for t in threads for cid in self.unsent(t.id) if seen is None or cid in seen),
+                           tuple(cid for t in threads for cid in self.unsent(t.id) if in_prompt is None or cid in in_prompt),
                            {t.id: tuple(sorted(_replies(t))) for t in threads}, _now())
         self.apply(event)
         return [event]

@@ -22,7 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core_fakes import FakeCode, FakeHistory  # noqa: E402
 from difftate.adapters.inbound.review_api.json_format import thread_json  # noqa: E402
 from difftate.adapters.outbound.local_store import LocalStore  # noqa: E402
-from difftate.core.review.model import NotesInProgress, Review  # noqa: E402
+from difftate.adapters.outbound.local_store.lines import read_events  # noqa: E402
+from difftate.core.review.model import ListedThread, NotesInProgress, Review  # noqa: E402
 from difftate.core.review.use_cases.list_threads import list_threads  # noqa: E402
 from difftate.core.review.use_cases.recover_runs import recover_runs  # noqa: E402
 
@@ -85,6 +86,18 @@ class TodaysEventsThroughTheNewCore(unittest.TestCase):
         self.assertEqual([t.id for t in failed], recovered["failed"])
         self.assertEqual({t.thread.id: t.state for t in list_threads(self.store, NotesInProgress(), self.code)},
                          recovered["states"])
+
+
+class AnAnchorFromBeforeViewsAndSnapshots(unittest.TestCase):
+    def test_it_loads_written_in_all_changes_with_no_snapshot(self):
+        line = ('{"type":"opened","thread":"t1","anchor":{"file":"app.py","side":"new","startLine":2,'
+                '"endLine":2,"code":"x = 1","commit":"c1"},"time":"2026-01-01T00:00:00.000Z"}\n')
+
+        [opened] = read_events(line)
+        anchor = thread_json(ListedThread(Review.from_events([opened]).thread("t1"), "waiting"))["anchor"]
+
+        # The old API left the two keys out; both viewers read a missing view as ""
+        self.assertEqual((anchor["view"], anchor["snapshot"], anchor["commit"]), ("", None, "c1"))
 
 
 if __name__ == "__main__":

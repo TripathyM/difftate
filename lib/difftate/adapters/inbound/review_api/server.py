@@ -313,11 +313,11 @@ def _handler(current, token, shown, login):
         except NotFound as e:
             raise BadRequest(str(e)) from e
 
-    def waiting(review):
+    def waiting_for_run(review):
         """While another branch is checked out, the watcher moves to its review
         once the run in progress ends."""
-        found = review.checked_out()
-        return {"waitingForRun": not found.on_review_branch, "checkedOut": found.branch}
+        checkout = review.checked_out()
+        return {"waitingForRun": not checkout.on_review_branch, "checkedOut": checkout.branch}
 
     def open_in(payload):
         where = fields(payload).get("open")
@@ -327,7 +327,8 @@ def _handler(current, token, shown, login):
 
     def get_review(q, p):
         review = current()
-        return dict(review.about, **waiting(review))
+        about = {"id": review.about["id"], "branch": review.about["branch"], "base": review.about["base"]}
+        return dict(about, **waiting_for_run(review))
 
     def switch_view(q, p):
         where = open_in(p)
@@ -337,10 +338,10 @@ def _handler(current, token, shown, login):
         review = current()
         view = a_view(q["view"][0]) if q.get("view") else shown.current()
         try:
-            found = review.changeset(view)
+            changeset = review.changeset(view)
         except NotFound as e:  # the view shown is no view now
             raise BadRequest(str(e)) from e
-        return dict(changeset_json(found), **waiting(review))
+        return dict(changeset_json(changeset), **waiting_for_run(review))
 
     def get_threads(q, p):
         view = a_view(q["view"][0]) if "view" in q else None

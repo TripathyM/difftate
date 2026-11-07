@@ -101,11 +101,11 @@ def thread_json(listed: ListedThread) -> Dict[str, Any]:
     """A thread with its thread state; "inView": false when the view doesn't
     show its code."""
     t = listed.thread
-    found = {"id": t.id, "anchor": anchor_json(t.anchor) if t.anchor else None, "outdated": t.outdated,
-             "status": t.status, "comments": [comment_json(c) for c in t.comments], "state": listed.state}
+    thread = {"id": t.id, "anchor": anchor_json(t.anchor) if t.anchor else None, "outdated": t.outdated,
+              "status": t.status, "comments": [comment_json(c) for c in t.comments], "state": listed.state}
     if not listed.in_view:
-        found["inView"] = False
-    return found
+        thread["inView"] = False
+    return thread
 
 
 def changeset_json(changeset: Changeset) -> Dict[str, Any]:

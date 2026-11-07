@@ -327,7 +327,7 @@ class Runs(unittest.TestCase):
         read = review.thread(tid)
         later = review.add_comment("reviewer", tid, "comment", "And the tests?")[0].comment
 
-        [started] = review.start_run([tid], seen={c.id for c in read.comments})
+        [started] = review.start_run([tid], in_prompt={c.id for c in read.comments})
 
         self.assertEqual(started.sent, (read.comments[0].id,))
         review.end_run("done")
