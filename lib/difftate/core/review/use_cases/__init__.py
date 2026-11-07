@@ -7,5 +7,5 @@ review: move_with_code, start_run, end_run and recover_runs.
 Each function takes the driven ports it needs first, then what the caller
 asks for. The function is the driving port: an inbound adapter (the review
 API) or Dispatch calls it, with the ports bound once by the composition root
-(functools.partial; watcher.bind_review until main.py, #68).
+(functools.partial, in main.bind_review).
 """

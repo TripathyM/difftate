@@ -23,7 +23,7 @@ from difftate.core.dispatch.use_cases.stop_run import stop_run  # noqa: E402
 from difftate.core.dispatch.use_cases.poll import poll  # noqa: E402
 from difftate.core.dispatch.use_cases.recover_runs import recover_runs  # noqa: E402
 from difftate.core.review.model import CouldNotRead, Review, RunEnded  # noqa: E402
-from difftate.watcher import bind_review  # noqa: E402
+from difftate.main import bind_review  # noqa: E402
 
 
 class StoreThatCannotKeepARunsEnd(MemoryStore):

@@ -1,10 +1,21 @@
-"""Opening the review in a viewer: the browser, a Herdr Review tab, or both."""
+"""Opening the review in a viewer: the browser, or a Herdr Review tab.
+
+Each viewer is opened with (url, root): the link to difftate's own page, and
+the repository's top folder. It says whether it could be reached. main.py
+picks the viewers; --open names one of them, or both.
+"""
 import json
 import os
 import shutil
 import subprocess
 
-OPEN_IN = ("browser", "herdr", "both")
+BROWSER = "browser"
+BOTH = "both"
+
+
+def where_to_open(viewers):
+    """What --open accepts: each viewer's name, then both."""
+    return (*viewers, BOTH)
 
 
 def _run(argv):
@@ -14,11 +25,12 @@ def _run(argv):
         return None
 
 
-def open_browser(url):
+def open_browser(url, root):
     try:
         subprocess.run(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
         pass
+    return True
 
 
 def _herdr_cli():
@@ -26,7 +38,7 @@ def _herdr_cli():
     return os.environ.get("DT_HERDR") or shutil.which("herdr-app") or ""
 
 
-def open_in_herdr(root):
+def open_in_herdr(url, root):
     """Switch to the Review tab of the repository at <root> in Herdr, or open
     one (Herdr's `difftate` mod). False when Herdr can't be reached."""
     cli = _herdr_cli()
@@ -57,13 +69,13 @@ def open_in_herdr(root):
     return True
 
 
-def open_review(where, url, root):
-    if where == "browser":
-        open_browser(url)
-    elif where == "herdr":
-        if not open_in_herdr(root):
-            print("  Falling back to the browser")
-            open_browser(url)
-    elif where == "both":
-        open_in_herdr(root)
-        open_browser(url)
+def open_review(viewers, where, url, root):
+    """Open the review in the viewer named <where> (one of <viewers>, or both:
+    each of them, the browser last). A viewer that can't be reached falls back
+    to the browser."""
+    if where == BOTH:
+        for name in sorted(viewers, key=lambda name: name == BROWSER):
+            viewers[name](url, root)
+    elif not viewers[where](url, root) and where != BROWSER and BROWSER in viewers:
+        print("  Falling back to the browser")
+        viewers[BROWSER](url, root)
