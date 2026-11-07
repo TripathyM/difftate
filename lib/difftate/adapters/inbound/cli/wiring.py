@@ -14,12 +14,15 @@ class Loop:
 
     poll(between_runs) is one poll of the loop; recover_runs(review) ends the
     runs a killed watcher left on <review>; stop(say) stops the run in
-    progress. dispatch is the Dispatch they run on (its review changes when
-    the watcher follows the checked-out branch)."""
-    dispatch: Any
+    progress. switch_review(review) dispatches <review>'s threads from now on
+    (the watcher follows the checked-out branch); warn_tampered(thread_ids)
+    tells the run in progress that the stored review was changed outside
+    difftate."""
     poll: Callable[[Callable[[], None]], None]
     recover_runs: Callable[[Any], None]
     stop: Callable[[bool], None]
+    switch_review: Callable[[Any], None]
+    warn_tampered: Callable[[Sequence[str]], None]
 
 
 @dataclass(frozen=True)
@@ -41,7 +44,7 @@ class Wiring:
         cases bound; raises the core's CouldNotRead, or OSError.
     review_api(review, folder, root, view, check, on_switch): the review API
         (not started), showing <view>.
-    loop(review, agent): the Loop on a new Dispatch of <review>."""
+    loop(review, coding_agent): the Loop on a new Dispatch of <review>."""
     coding_agents: Sequence[str]
     viewers: Mapping[str, Callable[[str, str], bool]]
     difftate_folder: Callable[[str], Optional[Tuple[str, str]]]

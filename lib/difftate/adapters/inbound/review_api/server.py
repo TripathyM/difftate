@@ -199,7 +199,7 @@ class ShownView:
     open_in) runs when a request switches the view. <open_in> names where a
     request may ask to open the review as well (the viewers main.py picked)."""
 
-    def __init__(self, view, check, on_switch=None, open_in=()):
+    def __init__(self, view, check, on_switch=None, *, open_in):
         self.view = view
         self.check = check
         self.on_switch = on_switch or (lambda view, open_in: None)

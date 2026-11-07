@@ -43,14 +43,14 @@ class Watcher:
         self.folder, self.root = found
         self.lock = one_watcher.claim(self.folder, o["ref"], o["open"], w.running_watcher, w.ask_running_watcher)
         try:
-            self.agent = w.coding_agent(o["tool"], o["cmd"], o["session"], o["model"], o["cwd"], self.folder)
+            self.coding_agent = w.coding_agent(o["tool"], o["cmd"], o["session"], o["model"], o["cwd"], self.folder)
         except CouldNotStart as e:
             raise Exit(1, f"Error: {e}")
-        if o["session"] and not self.agent.session_exists():
+        if o["session"] and not self.coding_agent.session_exists():
             raise Exit(1, "\n".join([
                 f"Error: session '{o['session']}' not found for {o['tool']}.",
                 f"  Make sure the {o['tool']} session is running in this project directory ({o['cwd']}).",
-                "  Available sessions:", *self.agent.list_sessions()]))
+                "  Available sessions:", *self.coding_agent.list_sessions()]))
 
     def start(self):
         o, w = self.opts, self.wiring
@@ -76,7 +76,7 @@ class Watcher:
         self.open_viewer(o["open"], url)
         print()
         print(f"Watching for comments every {o['interval']:g}s")
-        print(f"  Tool: {o['tool']} (cmd: {self.agent.cmd})")
+        print(f"  Tool: {o['tool']} (cmd: {self.coding_agent.cmd})")
         if o["session"]:
             print(f"  Session: {o['session']} (resume mode)")
         else:
@@ -84,7 +84,7 @@ class Watcher:
         print()
         print("Press Ctrl+C to stop")
         print()
-        self.loop = w.loop(review, self.agent)
+        self.loop = w.loop(review, self.coding_agent)
         try:
             self.loop.recover_runs(review)
         except CouldNotRead as e:
@@ -145,7 +145,7 @@ class Watcher:
             print(f"[{now()}] {self.banner(branch, shown.current())}: not on this branch")
             shown.switch("")
         self.api.switch_review(review)
-        self.loop.dispatch.review = review
+        self.loop.switch_review(review)
 
     def banner(self, branch, view):
         return f"The review of {branch} against {self.base}, showing {view_name(view)}"
@@ -154,7 +154,7 @@ class Watcher:
         names = ", ".join(t[:8] for t in thread_ids) or "no thread named"
         print(f"[{now()}] Warning: the stored review was changed outside difftate ({names}): restored it")
         if self.loop:
-            self.loop.dispatch.warn_tampered(thread_ids)
+            self.loop.warn_tampered(thread_ids)
 
     def stop(self, say=True):
         """Stop the run, every process it started, and the API."""

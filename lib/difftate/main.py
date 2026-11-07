@@ -43,7 +43,7 @@ from .core.review.use_cases.start_run import start_run
 STORE = LocalStore              # for keeping the review
 REVIEW_HISTORY = HistoryFiles   # for recording review history
 CODE_READER = GitCodeReader     # for reading the code
-REPOSITORY = git                # the repository: its difftate folder, base, branch and views
+REPOSITORY = git                # the repository: its difftate folder, base, branch and views (goes with CODE_READER)
 REPORTER = Terminal             # for reporting
 CODING_AGENTS = {a.name: a for a in (ClaudeCode, OpenCode)}  # for asking the coding agent: --tool picks one
 VIEWERS = {"browser": cli.open_browser, "herdr": cli.open_in_herdr}  # where the review opens: --open picks
@@ -105,9 +105,9 @@ def open_review(folder, cwd, branch, base, on_tamper):
 def coding_agent(tool, cmd, session, model, cwd, folder):
     """The coding agent <tool>: its runs work in <cwd>, may not write the
     review's <folder>, and may not read the review API's token."""
-    agent = CODING_AGENTS[tool]
-    return agent(find_command(cmd or agent.default_cmd), session, model, cwd=cwd, keep_out=[folder],
-                 secrets=[token_file(folder)])
+    chosen = CODING_AGENTS[tool]
+    return chosen(find_command(cmd or chosen.default_cmd), session, model, cwd=cwd, keep_out=[folder],
+                  secrets=[token_file(folder)])
 
 
 def review_api(review, folder, root, view, check, on_switch):
@@ -115,14 +115,19 @@ def review_api(review, folder, root, view, check, on_switch):
     return ReviewApi(review, folder, root, shown)
 
 
-def loop(review, agent):
+def loop(review, coding_agent):
     report = REPORTER()
     dispatch = Dispatch(review)
+
+    def switch_review(review):
+        dispatch.review = review
+
     return cli.Loop(
-        dispatch=dispatch,
-        poll=functools.partial(poll, dispatch, agent, report),
+        poll=functools.partial(poll, dispatch, coding_agent, report),
         recover_runs=functools.partial(recover_interrupted_runs, report=report),
         stop=functools.partial(stop_run, dispatch, report),
+        switch_review=switch_review,
+        warn_tampered=dispatch.warn_tampered,
     )
 
 
