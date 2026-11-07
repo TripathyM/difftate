@@ -1,12 +1,12 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # The review is event-sourced in the core
 
 A change to a review is recorded as domain events: facts in the past tense, such as "thread opened" or "comment added". The Review, the aggregate root, checks the rules and returns the events, and applying an event is the only way its state changes. The store port keeps the events (`load` and `append`), and the review history records the same events. Before, the store port had a method for each kind of change, and the change logic existed twice: the local store turned each call into an event line and replayed the lines, while the memory store changed its dicts directly. Now the logic exists once, in the core, the rules sit with the state they guard, and a new store needs two methods.
 
-Proposed, not yet accepted: we check it against the first slice (opening a thread, end to end) before the other use cases move.
+Accepted with the first slice (#62, opening a thread end to end).
 
 ## Considered options
 
