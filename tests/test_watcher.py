@@ -984,9 +984,16 @@ class WatcherTest(Harness, unittest.TestCase):
                 return [json.loads(line) for line in f]
         stored = wait_for("the run's final note stored", lambda: (lines := stored_lines())[-1]["type"] == "note" and lines)
         history_dir = os.path.join(self.home, ".difftate", "history")
-        [month] = os.listdir(history_dir)
-        with open(os.path.join(history_dir, month)) as f:
-            history = [json.loads(line) for line in f]
+
+        def history_lines():
+            # The review history is recorded just after the store keeps the lines
+            months = os.listdir(history_dir) if os.path.isdir(history_dir) else []
+            if not months:
+                return []
+            with open(os.path.join(history_dir, months[0])) as f:
+                return [json.loads(line) for line in f]
+        history = wait_for("the review history to catch up", lambda: len(lines := history_lines()) >= len(stored) and lines)
+        self.assertEqual(len(os.listdir(history_dir)), 1)
         self.assertEqual([e["type"] for e in stored], ["opened", "comment", "run", "comment", "run-ended", "note"])
         self.assertEqual([{k: v for k, v in h.items() if k in e} for h, e in zip(history, stored)], stored)
         self.assertEqual({(h["repo"]["path"], h["branch"]) for h in history}, {(os.path.realpath(self.repo), "feature")})
