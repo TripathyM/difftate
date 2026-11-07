@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core_fakes import FakeCode, FakeHistory, UnreadableCode  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
+from difftate.core.changes.model import FileInView  # noqa: E402
 from difftate.core.review.model import Anchor, Conflict, CouldNotRead, NotAllowed, NotesInProgress, Review  # noqa: E402
 from difftate.core.review.use_cases.open_thread import open_thread  # noqa: E402
 
@@ -37,7 +38,9 @@ class OpeningAThread(unittest.TestCase):
         rebuilt = Review.from_events(self.store.load())
 
         self.assertEqual(rebuilt.thread(thread.id), thread)
-        self.assertEqual(thread.anchor.snapshot_id, "app.py@commit-1")
+        self.assertEqual(thread.anchor.snapshot_id, self.code.versions([FileInView("app.py", "new")])[
+            FileInView("app.py", "new")], "the file as it was then")
+        self.assertEqual(thread.anchor.commit, "commit-1")
         self.assertFalse(thread.outdated)
 
     def test_the_history_records_exactly_the_events_the_store_kept(self):
