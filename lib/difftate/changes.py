@@ -25,6 +25,8 @@ import shutil
 import subprocess
 import tempfile
 
+from .adapters.outbound import local_store
+
 
 class ChangesError(Exception):
     pass
@@ -109,10 +111,9 @@ def review_branch(cwd, base):
 
 
 def review_id(branch, base):
-    """A review's id: readable, and different for every branch and base."""
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", branch)[:40].strip("-.") or "review"
-    digest = hashlib.sha1(f"{branch}\0{base}".encode()).hexdigest()[:8]
-    return f"{slug}-{digest}"
+    """A review's id: readable, and different for every branch and base. The
+    local store names the review's folder with it."""
+    return local_store.review_id(branch, base)
 
 
 def remote_url(cwd):

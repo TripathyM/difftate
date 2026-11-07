@@ -1,10 +1,16 @@
-"""Reading today's events.jsonl lines as the core's events.
+"""Today's events.jsonl lines, read as the core's events and written from them.
 
 Each line type is one event type (local.py lists the lines):
   opened → ThreadOpened      comment → CommentAdded     note → NoteWritten (final)
   status → ThreadStatusChanged   moved → ThreadMoved    outdated → ThreadOutdated
   run → RunStarted           run-ended → RunEnded       viewed → FileViewed
-A "note" line is a note's final body: notes are stored only once final.
+A "note" line is a note's final body: notes are stored only once final. A
+note given to the store before it is final (the core gives none: lasting)
+keeps "final": false in its line, so it reads back as it was given; local.py
+writes no such line.
+
+A line is written with its keys in the order local.py writes them, so the
+same events give the same bytes as today's LocalStore.
 """
 from __future__ import annotations
 
@@ -38,7 +44,7 @@ def event_from_line(line: Dict[str, Any]) -> Event:
     if kind == "comment":
         return CommentAdded(line["thread"], _comment(line))
     if kind == "note":
-        return NoteWritten(line["thread"], _comment(line), final=True)
+        return NoteWritten(line["thread"], _comment(line), final=line.get("final", True) is not False)
     if kind == "status":
         return ThreadStatusChanged(line["thread"], line["status"], line["time"])
     if kind == "moved":
@@ -65,3 +71,50 @@ def read_events(text: str) -> List[Event]:
         except (ValueError, KeyError, TypeError, AttributeError):
             continue
     return events
+
+
+def _anchor_line(anchor: Optional[Anchor]) -> Optional[Dict[str, Any]]:
+    if anchor is None:
+        return None
+    return {"file": anchor.file, "side": anchor.side, "startLine": anchor.start_line, "endLine": anchor.end_line,
+            "code": anchor.code, "snapshot": anchor.snapshot_id, "view": anchor.view, "commit": anchor.commit}
+
+
+def _comment_line(kind: str, thread_id: str, comment: Comment) -> Dict[str, Any]:
+    return {"id": comment.id, "author": comment.author, "kind": comment.kind, "body": comment.body,
+            "time": comment.time, "seq": comment.seq, "type": kind, "thread": thread_id}
+
+
+def line_from_event(event: Event) -> Dict[str, Any]:
+    """The line that holds <event>."""
+    if isinstance(event, ThreadOpened):
+        return {"type": "opened", "thread": event.thread_id, "anchor": _anchor_line(event.anchor),
+                "time": event.time}
+    if isinstance(event, CommentAdded):
+        return _comment_line("comment", event.thread_id, event.comment)
+    if isinstance(event, NoteWritten):
+        line = _comment_line("note", event.thread_id, event.comment)
+        return line if event.final else dict(line, final=False)
+    if isinstance(event, ThreadStatusChanged):
+        return {"type": "status", "thread": event.thread_id, "status": event.status, "time": event.time}
+    if isinstance(event, ThreadMoved):
+        return {"type": "moved", "thread": event.thread_id, "startLine": event.start_line,
+                "endLine": event.end_line, "snapshot": event.snapshot_id, "time": event.time}
+    if isinstance(event, ThreadOutdated):
+        return {"type": "outdated", "thread": event.thread_id, "time": event.time}
+    if isinstance(event, RunStarted):
+        return {"type": "run", "run": event.run_id, "threads": list(event.threads), "sent": list(event.sent),
+                "repliesBefore": {tid: list(ids) for tid, ids in event.replies_before.items()},
+                "time": event.time}
+    if isinstance(event, RunEnded):
+        return {"type": "run-ended", "run": event.run_id, "outcome": event.outcome, "time": event.time}
+    if isinstance(event, FileViewed):
+        return {"type": "viewed", "file": event.file, "diffHash": event.diff_hash, "time": event.time}
+    raise TypeError(f"no line for {event!r}")
+
+
+def lines_text(events: List[Event], added: Optional[Dict[str, Any]] = None) -> str:
+    """The lines that hold <events>, as local.py writes them, each with the
+    keys in <added> after its own (the review history adds the review)."""
+    return "".join(json.dumps(dict(line_from_event(e), **(added or {})), ensure_ascii=False,
+                              separators=(",", ":")) + "\n" for e in events)
