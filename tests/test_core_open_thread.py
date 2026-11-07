@@ -9,50 +9,17 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from core_fakes import FakeCode, FakeHistory, UnreadableCode  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
-from difftate.core.changes.model import Snapshot  # noqa: E402
-from difftate.core.review.model import Anchor, CouldNotRead, NotAllowed, Review  # noqa: E402
+from difftate.core.review.model import Anchor, Conflict, CouldNotRead, NotAllowed, NotesInProgress, Review  # noqa: E402
 from difftate.core.review.use_cases.open_thread import open_thread  # noqa: E402
 
 APP = "def greet(name):\n    return f'hello {name}'\n"
 # Line 2 of app.py, as the viewer showed it: the same as the file, or changed since
 SHOWN = Anchor("app.py", "new", 2, 2, code="    return f'hello {name}'")
 CHANGED_SINCE = Anchor("app.py", "new", 2, 2, code="    return 'hello ' + name")
-
-
-class FakeCode:
-    """The code reader, over files in memory: {file: text}, the same on every
-    side and in every view."""
-
-    def __init__(self, files, commit="commit-1"):
-        self.files = files
-        self.commit = commit
-
-    def snapshot(self, file, side, view, start_line, end_line):
-        text = self.files.get(file)
-        if text is None:
-            return Snapshot(None, self.commit, None)
-        lines = text.splitlines()
-        code = "\n".join(lines[start_line - 1:end_line]) if end_line <= len(lines) else None
-        return Snapshot(f"{file}@{self.commit}", self.commit, code)
-
-
-class UnreadableCode:
-    """A code reader that can't read the code (git failed, say)."""
-
-    def snapshot(self, file, side, view, start_line, end_line):
-        raise CouldNotRead(f"could not read {file}")
-
-
-class FakeHistory:
-    """The review history: keeps every event it is asked to record."""
-
-    def __init__(self):
-        self.recorded = []
-
-    def record(self, events):
-        self.recorded.extend(events)
 
 
 class OpeningAThread(unittest.TestCase):
@@ -62,7 +29,7 @@ class OpeningAThread(unittest.TestCase):
         self.history = FakeHistory()
 
     def open_a_thread(self, *args):
-        return open_thread(self.store, self.code, self.history, *args)
+        return open_thread(self.store, NotesInProgress(), self.code, self.history, *args)
 
     def test_a_review_rebuilt_from_the_store_holds_the_thread_that_was_opened(self):
         thread = self.open_a_thread("reviewer", "Why an f-string?", SHOWN)
@@ -102,10 +69,19 @@ class OpeningAThread(unittest.TestCase):
 
     def test_code_that_cannot_be_read_keeps_nothing(self):
         with self.assertRaises(CouldNotRead):
-            open_thread(self.store, UnreadableCode(), self.history, "reviewer", "Why?", Anchor("app.py", "new", 2, 2))
+            open_thread(self.store, NotesInProgress(), UnreadableCode(), self.history, "reviewer", "Why?", Anchor("app.py", "new", 2, 2))
 
         self.assertEqual(self.store.load(), [])
         self.assertEqual(self.history.recorded, [])
+
+    def test_while_another_branch_is_checked_out_it_conflicts_without_reading_the_code(self):
+        self.code.checked_out = False
+
+        with self.assertRaises(Conflict):
+            self.open_a_thread("reviewer", "Why an f-string?", SHOWN)
+
+        self.assertEqual(self.code.reads, 0)
+        self.assertEqual(self.store.load(), [])
 
 
 if __name__ == "__main__":
