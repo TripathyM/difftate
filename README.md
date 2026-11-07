@@ -125,7 +125,9 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 | `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the session, then start `difftate-watch.py` |
 | `difftate-watch.py`, `lib/difftate/` | The watcher: opens the [review](#the-review), serves the [review API](#review-api) and the browser viewer, dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
 | `bin/dt-reply` | How the coding agent answers a thread: `dt-reply <thread> "<answer>"` |
-| `lib/stream_fmt.py` | Reads the coding agent's JSON event stream; prints live progress lines and keeps the progress note updated |
+| `lib/difftate/core/dispatch/` | Dispatch: the loop, one run at a time, the queued and progress notes, the prompt (`prompt.py`) |
+| `lib/difftate/adapters/outbound/coding_agents/` | Claude Code and OpenCode: command line, agent session, model, sandbox settings, and the reader of each one's JSON event stream. `reply_channel/` is the run's folder that `dt-reply` writes to |
+| `lib/difftate/adapters/outbound/terminal/` | The watcher terminal's lines for Dispatch |
 | `lib/difftate/adapters/inbound/review_api/` | The [review API](#review-api) (`server.py`, the thread format in `json_format.py`) and, in `web/`, difftate's own browser viewer, which reads and writes the review through it |
 | `tests/` | Watcher tests: a temporary repository, the real watcher, a fake coding agent. See [Tests](#tests) |
 | `herdr/mods/difftate/` | The Herdr Review tab (optional): code view, keys, threads, editing. See [Review in Herdr](#review-in-herdr-optional) |
@@ -199,12 +201,12 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 
 | Name | File | Default | Effect |
 |---|---|---|---|
-| `COMPACT_WARN_PCT` | `lib/stream_fmt.py` | `70` | % of context window that triggers `⚠️ consider /compact` |
-| `MAX_STEPS_SHOWN` | `lib/stream_fmt.py` | `8` | Checklist steps shown; older ones collapse to "…N earlier steps" |
-| `STATUS_REFRESH_S` | `lib/stream_fmt.py` | `3` | Seconds between status comment refreshes while the coding agent is quiet |
-| `TEXT_MAX` | `lib/stream_fmt.py` | `300` | Max characters of coding agent text per terminal line |
-| `ANCHOR_MAX_LINES` | `lib/difftate/prompt.py` | `20` | Lines of the commented code included per thread |
-| `SUMMARY_MAX` | `lib/difftate/prompt.py` | `200` | Characters per comment in "Other open threads" |
+| `COMPACT_WARN_PCT` | `lib/difftate/core/dispatch/model.py` | `70` | % of context window that triggers `⚠️ consider /compact` |
+| `MAX_STEPS_SHOWN` | `lib/difftate/core/dispatch/model.py` | `8` | Checklist steps shown; older ones collapse to "…N earlier steps" |
+| `REFRESH_S` | `lib/difftate/core/dispatch/model.py` | `3` | Seconds between progress note refreshes while the coding agent is quiet |
+| `TEXT_MAX` | `lib/difftate/adapters/outbound/terminal/__init__.py` | `300` | Max characters of coding agent text per terminal line |
+| `ANCHOR_MAX_LINES` | `lib/difftate/core/dispatch/prompt.py` | `20` | Lines of the commented code included per thread |
+| `SUMMARY_MAX` | `lib/difftate/core/dispatch/prompt.py` | `200` | Characters per comment in "Other open threads" |
 
 ### Watcher flags (`difftate-watch.py --help`)
 
@@ -214,8 +216,6 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 
 | Variable | Purpose |
 |---|---|
-| `DT_API`, `DT_TOKEN_FILE` | Review API address and token file, for the progress notes (given to `lib/stream_fmt.py` only, never to the coding agent) |
-| `DT_NOTES` | The current run's progress notes, `{thread id: note id}`, which `lib/stream_fmt.py` edits |
 | `DT_RUN_DIR` | The run's folder, where `dt-reply` leaves the coding agent's answers (given to the coding agent) |
 
 ## How it works
@@ -223,13 +223,13 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 1. Every `--interval` seconds the watcher lists open threads. A thread is **waiting** when it has a comment of yours (or another reviewer's) that no run has been sent yet (see [thread state](#review-api)).
 2. Waiting threads → one run of the coding agent, in the background, with the prompt below. Runs go **one at a time**; comments that queue up during a run all go into the next one.
 3. While it runs, the watcher keeps polling; new threads get `🕒 Queued` within ~1s and go in the next run.
-4. Before the run starts, the watcher posts a progress note on each of its threads (or reuses the thread's queued note). `lib/stream_fmt.py` edits them through the review API while the run works. When the run ends (done, failed, or stopped by Ctrl+C: "⏹ Stopped"), the watcher writes each note's final line.
+4. Before the run starts, the watcher posts a progress note on each of its threads (or reuses the thread's queued note). The watcher reads the coding agent's event stream and edits them with its steps while the run works. When the run ends (done, failed, or stopped by Ctrl+C: "⏹ Stopped"), the watcher writes each note's final line.
 5. The coding agent answers each thread with `dt-reply <thread> "<answer>"`. That writes the answer into the run's folder (a temporary folder per run), and the watcher posts it as a reply. The coding agent never writes to the review itself.
 6. Ctrl+C stops the watcher, the running coding agent and its child processes.
 
 ### What the coding agent gets
 
-`lib/difftate/prompt.py` builds the prompt as plain text, without notes or JSON metadata, so the coding agent doesn't need to read the review itself:
+`lib/difftate/core/dispatch/prompt.py` builds the prompt as plain text, without notes or JSON metadata, so the coding agent doesn't need to read the review itself:
 
 ```
 ## Reply to these threads (1)
