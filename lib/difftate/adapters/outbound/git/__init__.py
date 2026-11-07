@@ -7,8 +7,8 @@ code.py is the code reader: snapshots and the files now in git's object
 database, and the hunks between them, with the caches that keep a watcher's
 polls cheap.
 """
-from .code import GitCode
+from .code import GitCodeReader
 from .diff_hashes import diff_hashes
 from .repository import changeset, git, head, need_view, review_branch
 
-__all__ = ["GitCode", "changeset", "diff_hashes", "git", "head", "need_view", "review_branch"]
+__all__ = ["GitCodeReader", "changeset", "diff_hashes", "git", "head", "need_view", "review_branch"]

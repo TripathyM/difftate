@@ -119,7 +119,7 @@ class Code:
         self.cwd = cwd
         self.base = base
         self.branch = branch
-        self.reader = git_adapter.GitCode(cwd, base, branch)
+        self.reader = git_adapter.GitCodeReader(cwd, base, branch)
 
     def checked_out(self):
         """What a review of the checkout now would be of (review_branch), or None

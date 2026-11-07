@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(ROOT, "lib"))
 sys.path.insert(0, os.path.join(ROOT, "tests"))
 
 from core_fakes import FakeCode  # noqa: E402
-from difftate.adapters.outbound.git import GitCode  # noqa: E402
+from difftate.adapters.outbound.git import GitCodeReader  # noqa: E402
 from difftate.core.changes.model import FileInView, Hunk  # noqa: E402
 from difftate.core.review.model import NotFound  # noqa: E402
 
@@ -189,7 +189,7 @@ class TheGitAdapter(CodeReaderContract, unittest.TestCase):
         patched = mock.patch.dict(os.environ, self.env, clear=True)
         patched.start()
         self.addCleanup(patched.stop)
-        self.code = GitCode(self.repo, "main", "feature")
+        self.code = GitCodeReader(self.repo, "main", "feature")
 
     def git(self, *args):
         subprocess.run(["git", "-C", self.repo, *args], check=True, capture_output=True, env=self.env)
@@ -207,6 +207,48 @@ class TheGitAdapter(CodeReaderContract, unittest.TestCase):
 
     def check_out_another_branch(self):
         self.git("checkout", "-q", "-b", "other")
+
+
+class TheGitAdapterInEachView(TheGitAdapter):
+    """Only git has views: the fake shows all changes in every view. Each view
+    compares two versions of a file: a commit, HEAD and the index (staged),
+    the index and the files on disk (unstaged)."""
+
+    def test_the_old_side_of_a_commit_view_is_that_commit_and_the_new_side_is_on_disk(self):
+        self.commit()
+        self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'three'"))
+
+        self.assertEqual(self.code.snapshot("long.py", "old", "HEAD", 3, 3).code, "line_3 = 3")
+        self.assertEqual(self.code.snapshot("long.py", "new", "HEAD", 3, 3).code, "line_3 = 'three'")
+        self.assertIsNone(self.code.snapshot("long.py", "old", "HEAD~1", 3, 3).id, "not in the base")
+
+    def test_staged_is_head_against_the_index_and_unstaged_the_index_against_the_files_on_disk(self):
+        self.commit()
+        self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'three'"))
+        self.git("add", "long.py")
+        self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'THREE!'"))
+
+        def code(side, view):
+            return self.code.snapshot("long.py", side, view, 3, 3).code
+        self.assertEqual((code("old", "staged"), code("new", "staged")), ("line_3 = 3", "line_3 = 'three'"))
+        self.assertEqual((code("old", "unstaged"), code("new", "unstaged")), ("line_3 = 'three'", "line_3 = 'THREE!'"))
+        self.assertIn("+line_3 = 'three'", self.code.changeset("staged").diff)
+        self.assertNotIn("THREE", self.code.changeset("staged").diff)
+        self.assertIn("+line_3 = 'THREE!'", self.code.changeset("unstaged").diff)
+
+    def test_a_thread_on_the_old_side_of_a_commit_view_has_its_file_in_that_view(self):
+        self.commit()
+        snapshot = self.code.snapshot("long.py", "old", "HEAD", 12, 12)
+        self.write("long.py", "import os\n" + LONG)
+
+        old_side = FileInView("long.py", "old", "HEAD")
+        self.assertEqual(self.code.versions([old_side])[old_side], snapshot.id, "an edit on disk isn't in HEAD")
+
+    def test_where_the_branch_left_the_base_unknown_leaves_out_the_old_side_of_all_changes(self):
+        code = GitCodeReader(self.repo, "no-such-base", "feature")
+        old, new, in_head = FileInView("app.py", "old"), FileInView("app.py", "new"), FileInView("app.py", "old", "HEAD")
+
+        self.assertEqual(set(code.versions([old, new, in_head])), {new, in_head})
 
 
 if __name__ == "__main__":

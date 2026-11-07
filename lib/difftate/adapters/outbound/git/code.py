@@ -23,7 +23,7 @@ from .diff_hashes import diff_hashes
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
 
 
-class GitCode:
+class GitCodeReader:
     """Reads the code of the review of <branch> against <base>, in the
     repository at <cwd>. It plugs into ForReadingTheCode."""
 
