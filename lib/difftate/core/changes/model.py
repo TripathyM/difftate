@@ -69,6 +69,19 @@ class Changeset:
     diff: str
 
 
+class CheckedOut(NamedTuple):
+    """What is checked out now.
+
+    on_review_branch  whether it is the review's branch; when it isn't, the
+                      files on disk are another branch's
+    branch            what a review of the checkout would be of: the
+                      checked-out branch, or the commit standing in for it;
+                      None when it can't be said
+    """
+    on_review_branch: bool
+    branch: Optional[str]
+
+
 @dataclass(frozen=True)
 class Snapshot:
     """A file on one side of a view, kept as it was when a thread was written

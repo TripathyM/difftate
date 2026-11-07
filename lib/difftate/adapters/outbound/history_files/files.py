@@ -31,7 +31,7 @@ class HistoryFiles:
 
     def record(self, events: List[Event]) -> None:
         """Add <events> to this month's file. A history that can't be written
-        is a warning: the review goes on, as today (local.py)."""
+        is a warning: the review goes on, as it always did."""
         if not events:
             return
         month = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m")

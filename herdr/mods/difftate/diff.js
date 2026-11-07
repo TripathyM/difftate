@@ -3,7 +3,7 @@
 // hunks: [{header, oldStart, newStart, lines: [{type, content, oldLineNumber, newLineNumber}]}]}].
 // status is added, deleted, renamed, copied or modified; a line's type is add, delete or context.
 // No herdr imports, so it runs under plain node too, and in difftate's browser viewer
-// (the watcher serves this file to it: lib/difftate/api.py).
+// (the watcher serves this file to it: lib/difftate/adapters/inbound/review_api/server.py).
 
 // git quotes paths with unusual characters: "a/caf\303\251.txt"
 function unquote(s) {

@@ -6,7 +6,7 @@ is no longer on its lines.
 
 Notes are left out: they cost tokens on every run and say nothing about the code.
 The coding agent answers with dt-reply (bin/dt-reply), and nothing in the prompt names
-the store.
+the store. Threads are the core's (core/review/model.py, Thread).
 """
 import shlex
 
@@ -35,29 +35,29 @@ Summarize briefly what you handled."""
 
 
 def build(open_threads, ids, new_ids):
-    """The prompt for a run on the threads <ids>. <new_ids> holds the ids of the
-    comments no run has been sent yet."""
+    """The prompt for a run on the threads <ids>, among the <open_threads>.
+    <new_ids> holds the ids of the comments the run is sent: no run had them."""
     return PROMPT.format(threads=threads_part(open_threads, ids, new_ids), dt_reply=shlex.quote(DT_REPLY))
 
 
 def location(t):
-    a = t["anchor"]
+    a = t.anchor
     if a is None:
         return "general thread (not tied to a line)"
-    start, end = a["startLine"], a["endLine"]
-    loc = f"{a['file']}:{start}" + (f"-{end}" if end != start else "")
-    return loc + (" (old side, before the change)" if a["side"] == "old" else "")
+    start, end = a.start_line, a.end_line
+    loc = f"{a.file}:{start}" + (f"-{end}" if end != start else "")
+    return loc + (" (old side, before the change)" if a.side == "old" else "")
 
 
 def _conversation(t):
     """The thread's comments and replies, without notes."""
-    return [c for c in t["comments"] if c["kind"] in ("comment", "reply")]
+    return [c for c in t.comments if c.kind in ("comment", "reply")]
 
 
 def _speaker(c, new_ids=()):
-    if c["kind"] == "reply":
+    if c.kind == "reply":
         return "you"
-    return "reviewer (new)" if c["id"] in new_ids else "reviewer"
+    return "reviewer (new)" if c.id in new_ids else "reviewer"
 
 
 def short(s, n):
@@ -69,15 +69,15 @@ OUTDATED_MARK = " — outdated: its code changed after the thread was written"
 
 
 def render_full(t, new_ids):
-    outdated = t.get("outdated")
-    lines = [f"### Thread {t['id'][:8]} — {location(t)}{OUTDATED_MARK if outdated else ''}"]
-    code = ((t["anchor"] or {}).get("code") or "").rstrip("\n")
+    outdated = t.outdated
+    lines = [f"### Thread {t.id[:8]} — {location(t)}{OUTDATED_MARK if outdated else ''}"]
+    code = ((t.anchor and t.anchor.code) or "").rstrip("\n")
     if code:
         code = code.split("\n")
         if len(code) > ANCHOR_MAX_LINES:
             code = code[:ANCHOR_MAX_LINES] + [f"… ({len(code) - ANCHOR_MAX_LINES} more lines)"]
         lines += ["Code when the thread was written:" if outdated else "Code:", "```", *code, "```"]
-    lines += [f"{_speaker(c, new_ids)}: {c['body'].strip()}" for c in _conversation(t)]
+    lines += [f"{_speaker(c, new_ids)}: {c.body.strip()}" for c in _conversation(t)]
     return "\n".join(lines)
 
 
@@ -90,14 +90,14 @@ def render_summary(t):
     for i, c in enumerate(shown):
         if i == 1 and len(comments) > 2:
             parts.append(f"  … {len(comments) - 2} more")
-        parts.append(f"  {_speaker(c)}: {short(c['body'], SUMMARY_MAX)}")
-    return "\n".join([f"- {t['id'][:8]} — {location(t)}{' (outdated)' if t.get('outdated') else ''}", *parts])
+        parts.append(f"  {_speaker(c)}: {short(c.body, SUMMARY_MAX)}")
+    return "\n".join([f"- {t.id[:8]} — {location(t)}{' (outdated)' if t.outdated else ''}", *parts])
 
 
 def threads_part(threads, ids, new_ids):
     ids, new_ids = set(ids), set(new_ids)
-    mine = [t for t in threads if t["id"] in ids]
-    others = [s for s in (render_summary(t) for t in threads if t["id"] not in ids) if s]
+    mine = [t for t in threads if t.id in ids]
+    others = [s for s in (render_summary(t) for t in threads if t.id not in ids) if s]
     out = [f"## Reply to these threads ({len(mine)})", ""]
     out += ["\n\n".join(render_full(t, new_ids) for t in mine)]
     if others:

@@ -1,11 +1,11 @@
 """Seam: the local store over its review folder (beside the store contract in
-test_store_contract.py, which it also passes).
+test_stores.py, which it also passes).
 
-The review is written with today's LocalStore (test_core_replay's script:
-every kind of line it writes). The same events, appended to the new local
-store, give the same bytes in events.jsonl; today's events.jsonl loads
-through the new store; and the new store restores and reports lines it
-didn't write, as today's does. Every folder is a temporary one.
+The review in tests/fixtures/todays-review/ was written by the old LocalStore
+(local.py), with every kind of line it wrote. The same events, appended to
+the local store, give the same bytes in events.jsonl; that events.jsonl
+loads; and the store restores and reports lines it didn't write, as the old
+one did. Every folder is a temporary one.
 """
 import json
 import os
@@ -22,16 +22,16 @@ from core_fakes import FakeCode  # noqa: E402
 from difftate.adapters.outbound.history_files import HistoryFiles  # noqa: E402
 from difftate.adapters.outbound.local_store import LocalStore  # noqa: E402
 from difftate.adapters.outbound.local_store.lines import read_events  # noqa: E402
+from difftate.adapters.inbound.review_api.json_format import thread_json  # noqa: E402
 from difftate.core.review.model import (  # noqa: E402
-    Anchor, Comment, CommentAdded, CouldNotRead, NotesInProgress, Review, ThreadOpened,
+    Anchor, Comment, CommentAdded, CouldNotRead, ListedThread, NotesInProgress, Review, ThreadOpened,
 )
 from difftate.core.review.use_cases.add_comment import add_comment  # noqa: E402
 from difftate.core.review.use_cases.list_threads import list_threads  # noqa: E402
 from difftate.core.review.use_cases.mark_viewed import mark_viewed  # noqa: E402
 from difftate.core.review.use_cases.open_thread import open_thread  # noqa: E402
 from difftate.core.review.use_cases.set_status import set_status  # noqa: E402
-from difftate.local import History, LocalStore as TodaysLocalStore  # noqa: E402
-from test_core_replay import as_today, run_as_today, write_a_review  # noqa: E402
+from test_core_replay import TODAYS_REVIEW, as_stored, read_today, run_as_today  # noqa: E402
 
 TIME = "2026-11-07T10:00:00.000Z"
 
@@ -45,21 +45,16 @@ class TheLocalStore(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="difftate-local-store-test-")
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        # A review written today, in its own folder
+        # A review the old LocalStore wrote, in its own folder
         self.today_folder = os.path.join(self.tmp, "today")
         os.makedirs(self.today_folder)
-        self.threads = write_a_review(self.open_today())
+        shutil.copy(os.path.join(TODAYS_REVIEW, "events.jsonl"), self.today_folder)
+        self.today = read_today()
+        ids = self.today["thread_ids"]
+        self.threads = ids["moved"], ids["general"], ids["outdated"]
         self.today_file = os.path.join(self.today_folder, "events.jsonl")
         self.folder = os.path.join(self.tmp, "git", "difftate")
         self.warnings = []
-
-    def open_today(self):
-        about = {"repo": {"path": "/repo", "remote": None}, "branch": "feature", "base": "main", "review": "r"}
-        store = TodaysLocalStore(self.today_folder, {"id": "r", "branch": "feature", "base": "main"},
-                                 History(os.path.join(self.tmp, "history"), about), lambda ids: None,
-                                 lambda: "commit-1")
-        store._load()
-        return store
 
     def open_store(self, base="main"):
         return LocalStore.open(self.folder, branch="feature", base=base, on_tamper=self.warnings.append)
@@ -84,13 +79,13 @@ class TheLocalStore(unittest.TestCase):
         history = HistoryFiles({"review": "r"}, history_folder)
         code = FakeCode({"app.py": "def greet(name):\n    return 'hi ' + name\n"}, diff_hashes={"app.py": "h1"})
         tid = open_thread(store, notes, code, history, "reviewer", "Why concatenate?",
-                          Anchor("app.py", "new", 2, 2)).id
+                          Anchor("app.py", "new", 2, 2)).thread.id
         add_comment(store, notes, history, "difftate", tid, "progress", "Thinking…")  # not final: not kept
         add_comment(store, notes, history, "agent", tid, "reply", "It was there before.")
         set_status(store, notes, history, "reviewer", tid, "resolved")
         mark_viewed(store, code, history, "app.py")
 
-        [(thread, state)] = list_threads(self.open_store(), NotesInProgress())
+        [(thread, state, _)] = list_threads(self.open_store(), NotesInProgress(), code)
         self.assertEqual([(c.kind, c.body) for c in thread.comments],
                          [("comment", "Why concatenate?"), ("reply", "It was there before.")])
         self.assertEqual((thread.status, thread.anchor.code, state), ("resolved", "    return 'hi ' + name", None))
@@ -104,20 +99,21 @@ class TheLocalStore(unittest.TestCase):
     def test_an_events_file_written_today_loads(self):
         store = LocalStore(self.today_folder)
         review = Review.from_events(store.load())
-        today = self.open_today()
 
-        self.assertEqual([as_today(t) for t in review.threads()], today.threads())
-        self.assertEqual([run_as_today(r) for r in review.runs()], today.runs())
-        self.assertEqual(review.viewed(), today.viewed())
+        self.assertEqual([as_stored(thread_json(ListedThread(t, None))) for t in review.threads()],
+                         self.today["threads"])
+        self.assertEqual([run_as_today(r) for r in review.runs()], self.today["runs"])
+        self.assertEqual(review.viewed(), self.today["viewed"])
 
     def test_a_review_written_today_goes_on_in_the_new_store(self):
         moved = self.threads[0]
         reply = Comment("r9", "agent", "reply", "Done.", TIME, 99)
+        before = read(self.today_file)
         LocalStore(self.today_folder).append([CommentAdded(moved, reply)])
 
-        [thread] = [t for t in self.open_today().threads() if t["id"] == moved]
-        self.assertEqual(thread["comments"][-1]["body"], "Done.")
-        self.assertEqual(LocalStore(self.today_folder).load()[-1], CommentAdded(moved, reply))
+        self.assertTrue(read(self.today_file).startswith(before), "only appended")
+        reopened = Review.from_events(LocalStore(self.today_folder).load())
+        self.assertEqual(reopened.thread(moved).comments[-1], reply)
 
     def test_a_line_that_holds_no_event_is_skipped(self):
         with open(self.today_file, "a") as f:

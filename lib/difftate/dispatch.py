@@ -18,6 +18,10 @@ no reply are failed the same way.
 Between runs, Dispatch asks <between_runs> first: the watcher moves to the
 checked-out branch's review there (switch_review), so a run in progress
 finishes on its own threads.
+
+Dispatch changes the review only through the core's use cases (the review's,
+bound by watcher.bind_review), and reads threads as the core's types. It moves
+into the core in #67.
 """
 import glob
 import json
@@ -27,8 +31,8 @@ import uuid
 
 from . import prompt
 from .agent import Run, RunAccess
+from .core.review.model import CODING_AGENT, DIFFTATE, CouldNotRead, ReviewError
 from .runfolder import RunFolder
-from .store import StoreError
 
 QUEUED_NOTE = "🕒 **Queued** — agent is busy with another comment, will pick this up next."
 PICKED_UP_NOTE = "🕒 **Queued** — picked up by the next run (below)."
@@ -43,7 +47,7 @@ def now():
 
 class Dispatch:
     def __init__(self, review, agent, cwd, review_folder, interval, api, between_runs):
-        self.review = review
+        self.review = review  # the review's use cases, its ports bound (watcher.bind_review)
         self.between_runs = between_runs  # () -> None
         self.agent = agent
         self.cwd = cwd
@@ -66,11 +70,14 @@ class Dispatch:
             except OSError:
                 pass
         self.tampered = set()  # threads whose stored lines were changed outside difftate during the run
+        self.warned = None  # the last warning about the store, so a failing store isn't warned about every poll
+        self.unended = None  # () -> True once the end of the last run is kept: a run whose end the store couldn't keep
 
     def _open_threads(self):
+        """The open threads, each with its thread state (ListedThread)."""
         try:
-            return self.review.threads("open")
-        except StoreError:
+            return self.review.list_threads("open")
+        except CouldNotRead:
             return []
 
     def forever(self):
@@ -79,31 +86,47 @@ class Dispatch:
             self.once()
             time.sleep(self.interval)
 
-    def follow_code(self):
+    def _warn_once(self, text):
+        if text != self.warned:
+            print(f"[{now()}] Warning: {text}")
+        self.warned = text
+
+    def move_with_code(self):
         try:
-            for tid in self.review.follow_code():
+            for tid in self.review.move_with_code():
                 print(f"[{now()}] Thread {tid[:8]} is outdated: its code changed")
-        except StoreError as e:
+        except CouldNotRead as e:
             print(f"[{now()}] Warning: could not follow the threads' code ({e})")
 
     def switch_review(self, review, interrupted=()):
         """Dispatch for <review> from now on. <interrupted>: its threads that a run
-        whose watcher was killed left failed (Review.recover_runs)."""
+        whose watcher was killed left failed (recover_runs)."""
         self.review = review
         self.close_interrupted(interrupted)
 
     def once(self):
+        if self.unended and not self.unended():
+            return  # the last run is still in progress until its end is kept
         self.between_runs()
-        self.follow_code()
-        open_threads = self._open_threads()
-        waiting = [t for t in open_threads if t["state"] == "waiting"]
+        self.move_with_code()
+        listed = self._open_threads()
+        waiting = [t.thread for t in listed if t.state == "waiting"]
         if not waiting:
             return
+        # The run is kept before anything else, with the comments these threads
+        # had when read: the prompt shows them, and a later one waits for the next run
+        try:
+            run = self.review.start_run(waiting)
+        except CouldNotRead as e:
+            self._warn_once(f"could not record the run ({e}): it starts once it can be recorded")
+            return
+        self.warned = None
         print(f"[{now()}] New/changed threads detected — dispatching to {self.agent.name}")
 
-        ids = [t["id"] for t in waiting]
-        new_ids = [cid for t in waiting for cid in self.review.unsent(t)]
-        self.reply_to = frozenset(t["id"] for t in open_threads)
+        open_threads = [t.thread for t in listed]
+        ids = [t.id for t in waiting]
+        new_ids = list(run.sent)
+        self.reply_to = frozenset(t.id for t in open_threads)
         self.started = time.time()
         self.run_folder = RunFolder.create(self.reply_to)
         access = RunAccess(write=[self.run_folder.path], deny_write=[self.review_folder], deny_read=[self.api.token_file])
@@ -111,8 +134,8 @@ class Dispatch:
         for line in said:
             print(line)
         # A thread that ends in its queued note gets that note back as its progress note
-        picked_up = {t["id"]: self.queued.pop(t["id"]) for t in waiting if t["id"] in self.queued}
-        last = {t["id"]: t["comments"][-1]["id"] for t in waiting}
+        picked_up = {t.id: self.queued.pop(t.id) for t in waiting if t.id in self.queued}
+        last = {t.id: t.comments[-1].id for t in waiting}
         reused = {tid: nid for tid, nid in picked_up.items() if last[tid] == nid}
         self.close_queued_notes(nid for tid, nid in picked_up.items() if tid not in reused)
         self.notes = self.post_progress_notes(waiting, reused)
@@ -123,10 +146,6 @@ class Dispatch:
         fmt_env = dict(os.environ, **self.api.env(), DT_NOTES=json.dumps(self.notes), DT_RUN_END=self.run_end)
         agent_env = dict(os.environ, DT_RUN_DIR=self.run_folder.path)
         try:
-            self.review.start_run(waiting)
-        except StoreError as e:
-            print(f"[{now()}] Warning: could not record the run ({e}): a restarted watcher may send it again")
-        try:
             self.run = Run(self.agent.name, argv, self.cwd, fmt_env, agent_env)
         except OSError as e:
             # A prompt too long for the command line, or a --cmd that can't run any more
@@ -135,7 +154,7 @@ class Dispatch:
             return
         # Threads that arrive meanwhile get a queued note right away. Runs stay one at a time.
         while self.run.running():
-            self.follow_code()
+            self.move_with_code()
             self.post_replies()
             for tid in self.post_queued_notes():
                 print(f"[{now()}] Queued thread {tid[:8]} (agent busy)")
@@ -158,8 +177,8 @@ class Dispatch:
                 self.run_folder.posted(name)
                 continue
             try:
-                self.review.add_comment(tid, "reply", body)
-            except StoreError as e:
+                self.review.add_comment(CODING_AGENT, tid, "reply", body)
+            except ReviewError as e:
                 if last_try:
                     print(f"[{now()}] Warning: could not post the reply to thread {tid[:8]} ({e}). The reply:")
                     print(body)
@@ -172,13 +191,13 @@ class Dispatch:
         notes = {}
         for t in threads:
             try:
-                if t["id"] in queued:
-                    note = self.review.edit_note(queued[t["id"]], "progress", THINKING_NOTE)
+                if t.id in queued:
+                    note = self.review.edit_note(DIFFTATE, queued[t.id], "progress", THINKING_NOTE)
                 else:
-                    note = self.review.add_comment(t["id"], "progress", THINKING_NOTE)
-                notes[t["id"]] = note["id"]
-            except StoreError as e:
-                print(f"[{now()}] Warning: could not post the progress note on thread {t['id'][:8]} ({e})")
+                    note = self.review.add_comment(DIFFTATE, t.id, "progress", THINKING_NOTE)
+                notes[t.id] = note.id
+            except ReviewError as e:
+                print(f"[{now()}] Warning: could not post the progress note on thread {t.id[:8]} ({e})")
         return notes
 
     def end_run(self, why="", say=True, stopped=False, outcome="done"):
@@ -192,21 +211,32 @@ class Dispatch:
         notes, self.notes = self.notes, {}
         ending = self._formatter_ending()
         secs = int(time.time() - self.started)
+        self.unended = lambda: self._close_run("stopped" if stopped else outcome, why, say, stopped, notes, secs,
+                                               ending)
+        self.unended()
+
+    def _close_run(self, outcome, why, say, stopped, notes, secs, ending):
+        """The run's end is kept; then the threads it didn't reply to are failed,
+        and every progress note gets its final line. True once done. When the
+        store can't keep the end, the run is still in progress in the review:
+        once() tries again before anything else, so no other run starts first."""
         try:
-            failed = self.review.end_run("stopped" if stopped else outcome)
-            threads = {t["id"]: t for t in self.review.threads()}
-        except StoreError:
-            self.tampered = set()
-            return
+            failed = self.review.end_run(outcome)
+            thread_ids = {t.thread.id for t in self.review.list_threads()}
+        except CouldNotRead as e:
+            self._warn_once(f"could not record the end of the run ({e}): no run starts until it is recorded")
+            return False
+        self.unended, self.warned = None, None
         for t in failed:
             if say:
-                print(f"[{now()}] No reply to thread {t['id'][:8]} — it waits for your next comment")
-            self.note_no_reply(t, secs, why, notes.get(t["id"]), ending)
-        failed_ids = {t["id"] for t in failed}
+                print(f"[{now()}] No reply to thread {t.id[:8]} — it waits for your next comment")
+            self.note_no_reply(t, secs, why, notes.get(t.id), ending)
+        failed_ids = {t.id for t in failed}
         for tid, note_id in notes.items():
-            if tid not in failed_ids and tid in threads:
+            if tid not in failed_ids and tid in thread_ids:
                 self.finish_note(tid, note_id, secs, stopped, ending)
         self.tampered = set()
+        return True
 
     def _formatter_ending(self):
         """How the formatter says the run ended ({"state", "body"}), or None when
@@ -243,14 +273,14 @@ class Dispatch:
         if thread_id in self.tampered:
             body += f"\n\n{TAMPERED}"
         try:
-            self.review.edit_note(note_id, "progress", body, final=True)
-        except StoreError:
+            self.review.edit_note(DIFFTATE, note_id, "progress", body, final=True)
+        except ReviewError:
             pass
 
     def close_interrupted(self, threads):
         """<threads> were in a run whose watcher was killed, and got no reply."""
         for t in threads:
-            print(f"[{now()}] No reply to thread {t['id'][:8]} — the watcher stopped during its run")
+            print(f"[{now()}] No reply to thread {t.id[:8]} — the watcher stopped during its run")
             self.note_no_reply(t, None, " (the watcher stopped)")
 
     def warn_tampered(self, thread_ids):
@@ -275,12 +305,13 @@ class Dispatch:
         """A queued note on each queued thread that has none yet."""
         posted = []
         for t in self._open_threads():
-            if t["state"] != "queued" or t["id"] in self.queued:
+            tid = t.thread.id
+            if t.state != "queued" or tid in self.queued:
                 continue
             try:
-                self.queued[t["id"]] = self.review.add_comment(t["id"], "queued", QUEUED_NOTE)["id"]
-                posted.append(t["id"])
-            except StoreError:
+                self.queued[tid] = self.review.add_comment(DIFFTATE, tid, "queued", QUEUED_NOTE).id
+                posted.append(tid)
+            except ReviewError:
                 pass
         return posted
 
@@ -290,8 +321,8 @@ class Dispatch:
         says the run picked the thread up instead."""
         for note_id in note_ids:
             try:
-                self.review.edit_note(note_id, "queued", PICKED_UP_NOTE)
-            except StoreError:
+                self.review.edit_note(DIFFTATE, note_id, "queued", PICKED_UP_NOTE)
+            except ReviewError:
                 pass
 
     def note_no_reply(self, thread, secs, why="", note_id=None, ending=None):
@@ -302,12 +333,12 @@ class Dispatch:
         failed = f"❌ **Failed**{'' if secs is None else f' after {secs}s'} — no reply{why}"
         if note_id is None:
             try:
-                note_id = self.review.add_comment(thread["id"], "progress", failed)["id"]
-            except StoreError:
+                note_id = self.review.add_comment(DIFFTATE, thread.id, "progress", failed).id
+            except ReviewError:
                 return
             body = failed
         elif ending and ending["state"] == "failed":
             body = f"{ending['body']}\n\nNo reply{why}."
         else:
             body = failed
-        self._final(thread["id"], note_id, body)
+        self._final(thread.id, note_id, body)

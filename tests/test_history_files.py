@@ -3,8 +3,9 @@
 
 One JSON-lines file per month: every event the store keeps, as its
 events.jsonl line, with the repository, branch, base and review added. For
-the same events, the new adapter writes the same lines as today's History
-(local.py). The history folder is a temporary one, never ~/.difftate.
+the same events, the adapter writes the same lines as the old History
+(local.py) did: tests/fixtures/todays-review/history.jsonl. The history
+folder is a temporary one, never ~/.difftate.
 """
 import json
 import os
@@ -22,8 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from difftate.adapters.outbound.history_files import HistoryFiles  # noqa: E402
 from difftate.adapters.outbound.local_store.lines import read_events  # noqa: E402
 from difftate.core.review.model import ThreadOpened  # noqa: E402
-from difftate.local import History, LocalStore as TodaysLocalStore  # noqa: E402
-from test_core_replay import write_a_review  # noqa: E402
+from test_core_replay import TODAYS_REVIEW  # noqa: E402
 
 ABOUT = {"repo": {"path": "/repo", "remote": "git@example.com:me/repo.git"}, "branch": "feature",
          "base": "main", "review": "feature-1234abcd"}
@@ -44,12 +44,7 @@ class TheReviewHistoryFiles(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
     def test_the_same_events_give_the_same_lines_as_today(self):
-        review = os.path.join(self.tmp, "review")
-        os.makedirs(review)
-        today_history = os.path.join(self.tmp, "today")
-        write_a_review(TodaysLocalStore(review, {"id": "r"}, History(today_history, ABOUT), lambda ids: None,
-                                        lambda: "commit-1"))
-        with open(os.path.join(review, "events.jsonl"), encoding="utf-8") as f:
+        with open(os.path.join(TODAYS_REVIEW, "events.jsonl"), encoding="utf-8") as f:
             events = read_events(f.read())
         history = HistoryFiles(ABOUT, os.path.join(self.tmp, "new"))
 
@@ -57,7 +52,8 @@ class TheReviewHistoryFiles(unittest.TestCase):
         for event in events[2:]:
             history.record([event])
 
-        self.assertEqual(lines_in(os.path.join(self.tmp, "new")), lines_in(today_history))
+        with open(os.path.join(TODAYS_REVIEW, "history.jsonl"), "rb") as f:
+            self.assertEqual(lines_in(os.path.join(self.tmp, "new")), f.read().splitlines(keepends=True))
 
     def test_a_line_is_the_stored_line_with_the_review_it_came_from(self):
         folder = os.path.join(self.tmp, "history")

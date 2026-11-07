@@ -5,26 +5,28 @@ The Review is the aggregate root. A method such as open_thread checks the
 rules and returns events: facts in the past tense. apply() is the only place
 the Review's state changes, so a Review rebuilt from its events is the same
 Review. There is one event type for each line type the local store keeps
-today ("opened", "comment", "note", "status", "moved", "outdated", "run",
+("opened", "comment", "note", "status", "moved", "outdated", "run",
 "run-ended", "viewed").
 
-The rules (as review.py states them):
+The rules:
   1. Only a reviewer opens a thread or changes its thread status.
   2. Each author writes only their own kind: the coding agent writes only replies.
   3. Only difftate writes notes, and only notes can be edited. A final note
      doesn't change again.
   4. One rule gives the thread state (Review.state).
-A file stays viewed until its diff in the changeset changes. While another
-branch is checked out, nothing that reads the code changes the review.
+A thread moves with its code, or is outdated, only as difftate finds it
+(move_with_code). A file stays viewed until its diff in the changeset
+changes. While another branch is checked out, nothing that reads the code
+changes the review.
 """
 from __future__ import annotations
 
 import datetime
 import uuid
 from dataclasses import dataclass, replace
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Collection, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
-from ..changes.model import Snapshot, same_code
+from ..changes.model import Moved, Outdated, Snapshot, same_code
 
 REVIEWER = "reviewer"
 CODING_AGENT = "agent"
@@ -65,7 +67,9 @@ class Conflict(ReviewError):
 
 
 class CouldNotRead(ReviewError):
-    """A driven port could not read what the core asked for (the code, say)."""
+    """A driven port could not do what the core asked: read the code, or keep
+    the review (a store that can't write or restore its events, say). The
+    review API answers 502 for it: the fault is outside the core."""
 
 
 # ── Threads and comments ─────────────────────────────────────────────────────
@@ -114,6 +118,16 @@ class Thread:
     status: str = "open"
     outdated: bool = False
     comments: Tuple[Comment, ...] = ()
+
+
+class ListedThread(NamedTuple):
+    """A thread as a viewer lists it, with its thread state (None unless it is
+    open). In a view, its anchor's lines are where its code is in that view.
+    <in_view> False: the view doesn't show its code, so it is listed but not
+    placed on a line, and keeps the lines of the view it was written in."""
+    thread: Thread
+    state: Optional[str]
+    in_view: bool = True
 
 
 @dataclass(frozen=True)
@@ -227,7 +241,7 @@ def lasting(events: List[Event]) -> List[Event]:
 
 class NotesInProgress:
     """The notes that aren't final yet, in this process's memory: each one's
-    last write. They are lost when the process ends, as today (local.py:28-31).
+    last write. They are lost when the process ends, as they always were.
     A use case rebuilds the Review from the store's events and these, so a
     note shows, and keeps its place, while its run works."""
 
@@ -290,6 +304,14 @@ class Review:
         """The runs, oldest first."""
         return list(self._runs.values())
 
+    def in_progress(self) -> Set[str]:
+        """The ids of the threads a run in progress has."""
+        return {tid for run in self._runs.values() if run.outcome is None for tid in run.threads}
+
+    def failed_among(self, thread_ids: Collection[str]) -> List[Thread]:
+        """The open threads among <thread_ids> whose run ended with no reply to them."""
+        return [t for t in self.threads("open") if t.id in thread_ids and self.state(t.id) == "failed"]
+
     def unsent(self, thread_id: str) -> List[str]:
         """The ids of the thread's reviewer comments that no run has been sent yet."""
         sent = {cid for run in self._runs.values() for cid in run.sent}
@@ -308,7 +330,7 @@ class Review:
         thread = self.thread(thread_id)
         if thread.status != "open":
             return None
-        running = {tid for run in self._runs.values() if run.outcome is None for tid in run.threads}
+        running = self.in_progress()
         if thread.id in running:
             return "working"
         if self.unsent(thread.id):
@@ -371,8 +393,10 @@ class Review:
         if found is None:
             raise NotFound(f"no note {note_id}")
         thread, note = found
-        if note.kind not in NOTE_KINDS or kind not in NOTE_KINDS:
-            raise NotAllowed("only notes can be edited, and a note stays a note")
+        if note.kind not in NOTE_KINDS:
+            raise NotAllowed(f"{note_id} is not a note: only notes can be edited")
+        if kind not in NOTE_KINDS:
+            raise NotAllowed("a note stays a note")
         if note_id in self._final:
             raise Conflict(f"the note {note_id} is final")
         event = NoteWritten(thread.id, replace(note, kind=kind, body=body), final)
@@ -386,6 +410,27 @@ class Review:
         event = ThreadStatusChanged(self.thread(thread_id).id, status, _now())
         self.apply(event)
         return [event]
+
+    # ── Moving with the code ─────────────────────────────────────────────────
+    def move_with_code(self, found: Dict[str, Union[Moved, Outdated]]) -> List[Event]:
+        """Each thread in <found> moves with its code (Moved: only its line
+        numbers changed) or is outdated (its code changed), as the code reader
+        and core/changes found. Only difftate moves threads: no reviewer or
+        coding agent can. An outdated thread stays outdated, keeps the lines
+        it had and never moves again; a general thread has no code."""
+        events: List[Event] = []
+        for thread_id, decided in found.items():
+            thread = self.thread(thread_id)
+            if thread.anchor is None or thread.outdated:
+                continue
+            if isinstance(decided, Moved):
+                events.append(ThreadMoved(thread_id, decided.start_line, decided.end_line, decided.snapshot_id,
+                                          _now()))
+            else:
+                events.append(ThreadOutdated(thread_id, _now()))
+        for event in events:
+            self.apply(event)
+        return events
 
     # ── Viewed files ─────────────────────────────────────────────────────────
     def viewed(self) -> Dict[str, str]:
@@ -414,12 +459,15 @@ class Review:
         return events
 
     # ── Runs (Dispatch) ──────────────────────────────────────────────────────
-    def start_run(self, thread_ids: List[str]) -> List[Event]:
+    def start_run(self, thread_ids: List[str], in_prompt: Optional[Collection[str]] = None) -> List[Event]:
         """A run starts on the threads: every reviewer comment in them that no
-        run was sent is sent to it."""
+        run was sent is sent to it. <in_prompt>: the ids of the comments the
+        run's prompt shows, as Dispatch read the threads (None: all of them).
+        A comment written since isn't in the prompt, so it isn't sent: it waits
+        for the next run."""
         threads = [self.thread(tid) for tid in thread_ids]
         event = RunStarted(_new_id(), tuple(t.id for t in threads),
-                           tuple(cid for t in threads for cid in self.unsent(t.id)),
+                           tuple(cid for t in threads for cid in self.unsent(t.id) if in_prompt is None or cid in in_prompt),
                            {t.id: tuple(sorted(_replies(t))) for t in threads}, _now())
         self.apply(event)
         return [event]
