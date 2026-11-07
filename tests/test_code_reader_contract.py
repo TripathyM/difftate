@@ -168,7 +168,9 @@ class TheFakeCodeReader(CodeReaderContract, unittest.TestCase):
         self.code.checked_out = False
 
 
-class TheGitAdapter(CodeReaderContract, unittest.TestCase):
+class InAGitRepository:
+    """The review in a temporary git repository, read by the git adapter."""
+
     def setUp(self):
         tmp = tempfile.mkdtemp(prefix="difftate-git-")
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
@@ -209,7 +211,11 @@ class TheGitAdapter(CodeReaderContract, unittest.TestCase):
         self.git("checkout", "-q", "-b", "other")
 
 
-class TheGitAdapterInEachView(TheGitAdapter):
+class TheGitAdapter(InAGitRepository, CodeReaderContract, unittest.TestCase):
+    pass
+
+
+class TheGitAdapterInEachView(InAGitRepository, unittest.TestCase):
     """Only git has views: the fake shows all changes in every view. Each view
     compares two versions of a file: a commit, HEAD and the index (staged),
     the index and the files on disk (unstaged)."""
