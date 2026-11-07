@@ -21,37 +21,37 @@ class Terminal:
     def _line(self, text: str) -> None:
         print(f"[{now()}] {text}", flush=True)
 
-    def _agent(self, icon: str, text: str) -> None:
+    def _coding_agent(self, icon: str, text: str) -> None:
         print(f"  [{now()}] {icon} {text}", flush=True)
 
-    def dispatching(self, agent: str) -> None:
-        self._line(f"New/changed threads detected — dispatching to {agent}")
+    def dispatching(self, coding_agent: str) -> None:
+        self._line(f"New/changed threads detected — dispatching to {coding_agent}")
 
     def model_chosen(self, model: str, source: str) -> None:
         print(f"  Model: {model} (from {source})" if model else "  Model: CLI default", flush=True)
 
-    def session_started(self, session: str, model: str) -> None:
-        self._agent("🚀", f"session {session[:8]} started · model {model}")
+    def agent_session_started(self, agent_session: str, model: str) -> None:
+        self._coding_agent("🚀", f"session {agent_session[:8]} started · model {model}")
 
     def said(self, text: str) -> None:
-        self._agent("💬", short(text, TEXT_MAX))
+        self._coding_agent("💬", short(text, TEXT_MAX))
 
     def step(self, label: str, failed: bool) -> None:
-        self._agent("❌" if failed else "🔧", label)
+        self._coding_agent("❌" if failed else "🔧", label)
 
-    def agent_error(self, error: str) -> None:
-        self._agent("❌", error)
+    def coding_agent_failed(self, error: str) -> None:
+        self._coding_agent("❌", error)
 
     def finished(self, ok: bool, secs: int, cost: Optional[float], context: str) -> None:
         extra = f", ${cost:.4f}" if isinstance(cost, (int, float)) else ""
         extra += f" · {context}" if context else ""
-        self._agent("✅" if ok else "❌", f"{'done' if ok else 'failed'} in {secs}s{extra}")
+        self._coding_agent("✅" if ok else "❌", f"{'done' if ok else 'failed'} in {secs}s{extra}")
 
     def output(self, line: str) -> None:
         print(line, flush=True)
 
     def unparsed(self, reason: str) -> None:
-        self._agent("⚠️", f"unparsed event ({reason})")
+        self._coding_agent("⚠️", f"unparsed event ({reason})")
 
     def outdated(self, thread_id: str) -> None:
         self._line(f"Thread {thread_id[:8]} is outdated: its code changed")

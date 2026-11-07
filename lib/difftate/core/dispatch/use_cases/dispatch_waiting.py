@@ -11,7 +11,7 @@ from ..model import (
     reused_queued_notes, waiting,
 )
 from ..ports import ForAskingTheCodingAgent, ForReporting
-from .end_run import end_run, warn_once
+from .end_run import end_run
 
 
 def dispatch_waiting(dispatch: Dispatch, agent: ForAskingTheCodingAgent, report: ForReporting) -> None:
@@ -43,7 +43,9 @@ def start_run(dispatch: Dispatch, agent: ForAskingTheCodingAgent, report: ForRep
     try:
         recorded = review.start_run(sent)
     except CouldNotRead as e:
-        warn_once(dispatch, report, f"could not record the run ({e}): it starts once it can be recorded")
+        text = f"could not record the run ({e}): it starts once it can be recorded"
+        if dispatch.should_warn(text):
+            report.warning(text)
         return
     dispatch.warned = None
     report.dispatching(agent.name)
@@ -63,6 +65,7 @@ def start_run(dispatch: Dispatch, agent: ForAskingTheCodingAgent, report: ForRep
     except CouldNotStart as e:
         report.warning(f"could not start {agent.name}: {e}")
         end_run(dispatch, report, "failed", f" (could not start {agent.name}: {e})")
+
 
 
 def post_progress_notes(dispatch: Dispatch, report: ForReporting, threads: Sequence[Thread],

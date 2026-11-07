@@ -17,9 +17,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core_fakes import FakeClock, FakeCode, FakeCodingAgent, FakeHistory, FakeReporter, FakeRun  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
 from difftate.core.dispatch.model import (  # noqa: E402
-    ContextUsed, Dispatch, Exited, Finished, ModelChosen, Output, Reply, Said, SessionStarted, Step, Unparsed,
+    ContextUsed, Dispatch, Exited, Finished, ModelChosen, Output, Reply, Said, AgentSessionStarted, Step, Unparsed,
 )
-from difftate.core.dispatch.use_cases.end_run import stop_run  # noqa: E402
+from difftate.core.dispatch.use_cases.stop_run import stop_run  # noqa: E402
 from difftate.core.dispatch.use_cases.poll import poll  # noqa: E402
 from difftate.core.dispatch.use_cases.recover_runs import recover_runs  # noqa: E402
 from difftate.core.review.model import CouldNotRead, Review, RunEnded  # noqa: E402
@@ -104,7 +104,7 @@ class AWholeRun(DispatchTest):
     def test_the_coding_agents_own_lines_are_reported_as_they_come(self):
         tid = self.a_thread()
         agent = FakeCodingAgent(FakeRun([
-            [ModelChosen("opus", "session"), SessionStarted("fake-session", "fake-model"), Output("not json"),
+            [ModelChosen("opus", "session"), AgentSessionStarted("fake-session", "fake-model"), Output("not json"),
              Unparsed("bad event"), Step("Bash  false", failed=True)],
             [Reply(tid, "Done."), ContextUsed(tokens=150_000), ContextUsed(window=200_000),
              Finished(True, cost=None), Exited(0)],
@@ -115,7 +115,7 @@ class AWholeRun(DispatchTest):
         self.assertEqual(self.report.reported, [
             ("dispatching", "fake"),
             ("model_chosen", "opus", "session"),
-            ("session_started", "fake-session", "fake-model"),
+            ("agent_session_started", "fake-session", "fake-model"),
             ("output", "not json"),
             ("unparsed", "bad event"),
             ("step", "Bash  false", True),
@@ -132,6 +132,14 @@ class AWholeRun(DispatchTest):
         self.assertEqual(self.comments(tid)[-1], ("progress", "⏳ **Thinking…** (0s)"))
         self.poll(agent)
         self.assertEqual(self.comments(tid)[-1], ("progress", "⏳ **Thinking…** (3s)"))
+
+    def test_once_the_coding_agent_finished_its_progress_notes_keep_the_time_it_took(self):
+        tid = self.a_thread()
+        agent = FakeCodingAgent(FakeRun([[], [Finished(True)]]))  # its process lingers after it finished
+
+        self.poll(agent, times=8)
+
+        self.assertEqual(self.comments(tid)[-1], ("progress", "✅ **Done** in 2s"))
 
     def test_the_progress_note_shows_the_last_eight_steps(self):
         tid = self.a_thread()
@@ -171,7 +179,7 @@ class ARunWithNoReply(DispatchTest):
 
         self.assertEqual(self.comments(tid)[1], ("progress", "❌ **Failed** after 2s\n- ✅ `Read app.py`\n\n"
                                                              "The model is overloaded.\n\nNo reply."))
-        self.assertIn(("agent_error", "The model is overloaded."), self.report.reported)
+        self.assertIn(("coding_agent_failed", "The model is overloaded."), self.report.reported)
         self.assertIn(("finished", False, 2, None, ""), self.report.reported)
 
     def test_a_coding_agent_that_exits_without_finishing_fails_its_threads(self):
@@ -269,6 +277,15 @@ class StoppingARun(DispatchTest):
         self.assertEqual(self.report.of("stopping"), [(4242,)])
         self.assertEqual(self.report.of("no_reply"), [], "the watcher says it stopped instead")
         self.assertEqual([r.outcome for r in Review.from_events(self.store.load()).runs()], ["stopped"])
+
+    def test_a_run_that_finished_before_it_was_stopped_keeps_its_ending(self):
+        tid = self.a_thread()
+        run = FakeRun([[]], left_on_stop=[Reply(tid, "Yes."), Finished(True)])
+        self.poll(FakeCodingAgent(run))
+
+        stop_run(self.dispatch, self.report)
+
+        self.assertEqual(self.comments(tid)[1:], [("progress", "✅ **Done** in 1s"), ("reply", "Yes.")])
 
     def test_a_run_its_watcher_was_killed_during_is_recovered_by_the_next_watcher(self):
         tid = self.a_thread()

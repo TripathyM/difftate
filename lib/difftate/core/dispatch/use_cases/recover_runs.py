@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from ..model import WATCHER_STOPPED
 from ..ports import ForReporting, ReviewForDispatch
-from .end_run import fail_thread
+from ..final_notes import fail_thread
 
 
 def recover_runs(review: ReviewForDispatch, report: ForReporting) -> None:

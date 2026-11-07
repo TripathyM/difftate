@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from typing import List
 
-from .....core.dispatch.model import ContextUsed, Finished, News, Said, SessionStarted, Step, short
-from ..events import describe
-
-ERROR_MAX = 300
+from .....core.dispatch.model import ContextUsed, Finished, News, Said, AgentSessionStarted, Step, short
+from ..events import ERROR_MAX, describe
 
 
 class ClaudeEvents:
@@ -15,7 +13,7 @@ class ClaudeEvents:
         kind = event.get("type")
         found: List[News] = []
         if kind == "system" and event.get("subtype") == "init":
-            found.append(SessionStarted(event.get("session_id", "?"), event.get("model", "?")))
+            found.append(AgentSessionStarted(event.get("session_id", "?"), event.get("model", "?")))
         elif kind == "assistant":
             message = event.get("message") or {}
             usage = message.get("usage") or {}

@@ -4,17 +4,18 @@ from __future__ import annotations
 from typing import Optional
 
 from ..model import (
-    NOT_FINISHED, ContextUsed, Dispatch, Exited, Finished, ModelChosen, Output, Reply, Said, SessionStarted, Step,
+    NOT_FINISHED, AgentSessionStarted, ContextUsed, Dispatch, Exited, Finished, ModelChosen, Output, Reply, Said, Step,
     Unparsed,
 )
 from ..ports import ForReporting
 
 
-def read_news(dispatch: Dispatch, report: ForReporting, replies_only: bool = False) -> Optional[int]:
+def read_news(dispatch: Dispatch, report: ForReporting, stopped: bool = False) -> Optional[int]:
     """Take the run in progress's news: report what the coding agent does,
     keep its steps in the progress note, and its replies for post_replies.
-    Returns the run's exit code once it is over, else None. <replies_only>:
-    the watcher stopped the run, so only its replies count."""
+    Returns the run's exit code once it is over, else None. <stopped>: the
+    watcher stopped the run, so a coding agent that didn't finish was stopped,
+    not crashed."""
     run = dispatch.run
     if run is None:
         return None
@@ -24,29 +25,27 @@ def read_news(dispatch: Dispatch, report: ForReporting, replies_only: bool = Fal
             run.replies.append(news)
         elif isinstance(news, Exited):
             exited = news.code
-        elif replies_only:
-            continue
         elif isinstance(news, Step):
             report.step(news.label, news.failed)
             run.progress.step(news.label)
             run.changed = True
         elif isinstance(news, Finished):
             if news.error:
-                report.agent_error(news.error)
+                report.coding_agent_failed(news.error)
             finished(dispatch, report, news)
         elif isinstance(news, ContextUsed):
             run.progress.use(news)
         elif isinstance(news, Said):
             report.said(news.text)
-        elif isinstance(news, SessionStarted):
-            report.session_started(news.session, news.model)
+        elif isinstance(news, AgentSessionStarted):
+            report.agent_session_started(news.agent_session, news.model)
         elif isinstance(news, ModelChosen):
             report.model_chosen(news.model, news.source)
         elif isinstance(news, Output):
             report.output(news.line)
         elif isinstance(news, Unparsed):
             report.unparsed(news.reason)
-    if exited is not None and not replies_only and not run.progress.finished:
+    if exited is not None and not stopped and not run.progress.finished:
         # The coding agent crashed, or was killed, before it said it finished
         finished(dispatch, report, Finished(False, error=NOT_FINISHED))
     return exited

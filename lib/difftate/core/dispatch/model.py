@@ -45,16 +45,16 @@ def short(text: str, n: int) -> str:
 # ── News: what a run tells Dispatch ──────────────────────────────────────────
 @dataclass(frozen=True)
 class ModelChosen:
-    """The model the run uses, and where that came from ("--model", "session");
-    model "" for the coding agent's default."""
+    """The model the run uses, and where that came from (the watcher's
+    --model, or the agent session); model "" for the coding agent's default."""
     model: str
     source: str = ""
 
 
 @dataclass(frozen=True)
-class SessionStarted:
-    """The coding agent started its agent session."""
-    session: str
+class AgentSessionStarted:
+    """The coding agent started its agent session (<agent_session>, its id)."""
+    agent_session: str
     model: str
 
 
@@ -115,7 +115,7 @@ class Exited:
     code: int
 
 
-News = Union[ModelChosen, SessionStarted, Said, Step, ContextUsed, Reply, Finished, Output, Unparsed, Exited]
+News = Union[ModelChosen, AgentSessionStarted, Said, Step, ContextUsed, Reply, Finished, Output, Unparsed, Exited]
 
 
 class CouldNotStart(Exception):
@@ -278,6 +278,12 @@ class Dispatch:
     queued: Dict[str, str] = field(default_factory=dict)
     unended: Optional[Callable[[], bool]] = None
     warned: Optional[str] = None
+
+    def should_warn(self, text: str) -> bool:
+        """A failing store isn't warned about on every poll: True only when
+        <text> isn't the last warning."""
+        warn, self.warned = text != self.warned, text
+        return warn
 
     def secs(self, started: float) -> int:
         return int(self.clock() - started)

@@ -26,14 +26,14 @@ from types import SimpleNamespace
 from . import changes, viewer
 from .adapters.inbound.review_api import ReviewApi, ShownView, ask_running_watcher, running_watcher, token_file
 from .adapters.outbound import git
-from .adapters.outbound.coding_agents import AGENTS
+from .adapters.outbound.coding_agents import CODING_AGENTS
 from .adapters.outbound.history_files import HistoryFiles
 from .adapters.outbound.local_store import LocalStore
 from .adapters.outbound.terminal import Terminal, now
 from .core.changes.use_cases.changeset import changeset
 from .core.changes.use_cases.checked_out import checked_out
 from .core.dispatch.model import Dispatch
-from .core.dispatch.use_cases.end_run import stop_run
+from .core.dispatch.use_cases.stop_run import stop_run
 from .core.dispatch.use_cases.poll import poll
 from .core.dispatch.use_cases.recover_runs import recover_runs as recover_interrupted_runs
 from .core.review.use_cases.end_run import end_run
@@ -119,8 +119,8 @@ def parse(argv):
     opts["cwd"] = opts["cwd"] or os.getcwd()
     if opts["open"] not in viewer.OPEN_IN:
         raise Exit(1, f"Error: --open (or DT_OPEN) must be browser, herdr or both, not '{opts['open']}'")
-    if opts["tool"] not in AGENTS:
-        raise Exit(1, f"Error: unsupported tool '{opts['tool']}'. Supported: {' '.join(AGENTS)}")
+    if opts["tool"] not in CODING_AGENTS:
+        raise Exit(1, f"Error: unsupported tool '{opts['tool']}'. Supported: {' '.join(CODING_AGENTS)}")
     try:
         interval = float(opts["interval"])
     except ValueError:
@@ -231,7 +231,7 @@ class Watcher:
         o = self.opts
         self.folder, self.root = review_folder(o["cwd"])
         self.claim()
-        agent_cls = AGENTS[o["tool"]]
+        agent_cls = CODING_AGENTS[o["tool"]]
         cmd = resolve_cmd(o["cmd"] or agent_cls.default_cmd)
         self.agent = agent_cls(cmd, o["session"], o["model"], cwd=o["cwd"], keep_out=[self.folder],
                                secrets=[token_file(self.folder)])
@@ -371,6 +371,8 @@ class Watcher:
             if new:
                 recover_interrupted_runs(review, self.report)
         except (CouldNotRead, OSError) as e:
+            if new:
+                self.reviews.pop(branch, None)  # opened again, and recovered, on the next try
             if branch != self.unreadable_branch:
                 print(f"[{now()}] Warning: could not read the review of {branch} ({e}): "
                       f"still showing the review of {self.branch}")

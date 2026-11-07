@@ -15,7 +15,7 @@ from .processes import STOP_GRACE_S, stop_tree
 from .reply_channel import RunFolder
 
 
-class AgentRun:
+class ProcessRun:
     """The coding agent's process, started in its own process session, with
     <first> as its first news. <channel> is the run's folder, removed once
     the run is over."""
@@ -36,6 +36,7 @@ class AgentRun:
         self._reader = threading.Thread(target=self._read, args=(events,), daemon=True)
         self._reader.start()
         self._over = False
+        self._stopped = False
 
     def _read(self, events: ReadsEvents) -> None:
         assert self.proc.stdout is not None
@@ -48,8 +49,10 @@ class AgentRun:
         if self._over:
             return []
         # Read before taking the news: once the output is read to its end and
-        # the process is gone, every news item is queued
-        over = not self._reader.is_alive() and self.proc.poll() is not None
+        # the process is gone, every news item is queued. A stopped run is
+        # over once its process is, even if something it started still holds
+        # its output open.
+        over = self.proc.poll() is not None and (self._stopped or not self._reader.is_alive())
         found: List[News] = []
         while True:
             try:
@@ -66,6 +69,7 @@ class AgentRun:
         return found
 
     def stop(self) -> None:
+        self._stopped = True
         stop_tree(self.proc)
         self._reader.join(timeout=STOP_GRACE_S)
 

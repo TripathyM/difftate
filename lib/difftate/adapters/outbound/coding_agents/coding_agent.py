@@ -8,7 +8,7 @@ from typing import Dict, List, Sequence, Tuple
 from ....core.dispatch.model import CouldNotStart, News
 from .events import ReadsEvents
 from .reply_channel import REPLY_COMMAND, RunFolder
-from .run import AgentRun, context_window
+from .run import ProcessRun, context_window
 
 NONE_FOUND = "    (none found)"
 
@@ -45,11 +45,11 @@ class CodingAgent:
         """A reader for one run's event stream."""
         raise NotImplementedError
 
-    def start(self, prompt: str, threads: Sequence[str]) -> AgentRun:
+    def start(self, prompt: str, threads: Sequence[str]) -> ProcessRun:
         try:
             folder = RunFolder.create(threads)
         except OSError as e:
             raise CouldNotStart(f"could not make the run's folder ({e})")
         argv, first = self.command(prompt, folder)
         env: Dict[str, str] = dict(os.environ, DT_RUN_DIR=folder.path)
-        return AgentRun(argv, self.cwd, env, self.events(), folder, context_window() + first)
+        return ProcessRun(argv, self.cwd, env, self.events(), folder, context_window() + first)

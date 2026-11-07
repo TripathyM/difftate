@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Collection, List, Optional, Sequence
 
 from ..review.model import Comment, Thread
+from .model import short
 
 ANCHOR_MAX_LINES = 20
 SUMMARY_MAX = 200  # chars per comment in the "other open threads" section
@@ -62,11 +63,6 @@ def _speaker(c: Comment, new_ids: Collection[str] = ()) -> str:
     if c.kind == "reply":
         return "you"
     return "reviewer (new)" if c.id in new_ids else "reviewer"
-
-
-def short(s: str, n: int) -> str:
-    s = " ".join(s.split())
-    return s if len(s) <= n else s[: n - 1] + "…"
 
 
 OUTDATED_MARK = " — outdated: its code changed after the thread was written"

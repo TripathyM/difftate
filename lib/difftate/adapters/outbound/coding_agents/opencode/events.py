@@ -4,9 +4,7 @@ from __future__ import annotations
 from typing import List
 
 from .....core.dispatch.model import ContextUsed, Finished, News, Said, Step, short
-from ..events import describe
-
-ERROR_MAX = 300
+from ..events import ERROR_MAX, describe
 
 
 class OpenCodeEvents:

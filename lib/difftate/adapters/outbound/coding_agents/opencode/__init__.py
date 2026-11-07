@@ -6,7 +6,7 @@ import subprocess
 from typing import List, Tuple
 
 from .....core.dispatch.model import News
-from ..agent import NONE_FOUND, CodingAgent
+from ..coding_agent import NONE_FOUND, CodingAgent
 from ..reply_channel import RunFolder
 from .events import OpenCodeEvents
 

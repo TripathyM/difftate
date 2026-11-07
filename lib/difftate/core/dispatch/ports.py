@@ -42,20 +42,20 @@ class ForAskingTheCodingAgent(Protocol):
 class ForReporting(Protocol):
     """What Dispatch tells whoever watches it: the terminal's lines."""
 
-    def dispatching(self, agent: str) -> None:
+    def dispatching(self, coding_agent: str) -> None:
         """A run starts on the waiting threads."""
 
     def model_chosen(self, model: str, source: str) -> None:
         """The run's model ("" for the coding agent's default)."""
 
-    def session_started(self, session: str, model: str) -> None: ...
+    def agent_session_started(self, agent_session: str, model: str) -> None: ...
 
     def said(self, text: str) -> None:
         """Text the coding agent wrote."""
 
     def step(self, label: str, failed: bool) -> None: ...
 
-    def agent_error(self, error: str) -> None:
+    def coding_agent_failed(self, error: str) -> None:
         """The coding agent says it failed, and why."""
 
     def finished(self, ok: bool, secs: int, cost: Optional[float], context: str) -> None:

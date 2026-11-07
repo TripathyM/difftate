@@ -18,9 +18,9 @@ from difftate.adapters.outbound.coding_agents.claude_code.events import ClaudeEv
 from difftate.adapters.outbound.coding_agents.events import read_line  # noqa: E402
 from difftate.adapters.outbound.coding_agents.opencode.events import OpenCodeEvents  # noqa: E402
 from difftate.adapters.outbound.coding_agents.reply_channel import RunFolder  # noqa: E402
-from difftate.adapters.outbound.coding_agents.run import AgentRun  # noqa: E402
+from difftate.adapters.outbound.coding_agents.run import ProcessRun  # noqa: E402
 from difftate.core.dispatch.model import (  # noqa: E402
-    ContextUsed, CouldNotStart, Exited, Finished, Output, Reply, Said, SessionStarted, Step, Unparsed,
+    ContextUsed, CouldNotStart, Exited, Finished, Output, Reply, Said, AgentSessionStarted, Step, Unparsed,
 )
 
 
@@ -46,7 +46,7 @@ class ReadingClaudeCodesEvents(unittest.TestCase):
         )
 
         self.assertEqual(news, [
-            SessionStarted("3f1c9a20-aaaa", "claude-opus-5-5"),
+            AgentSessionStarted("3f1c9a20-aaaa", "claude-opus-5-5"),
             ContextUsed(tokens=28000),
             Step("Read  src/app.ts"),
             Said("Done reading."),
@@ -107,7 +107,7 @@ class ARun(unittest.TestCase):
         folder = RunFolder.create(["thread-1"])
         self.addCleanup(folder.remove)
         env = dict(os.environ, DT_RUN_DIR=folder.path, PYTHONPATH=os.path.join(ROOT, "lib"))
-        run = AgentRun([sys.executable, "-c", textwrap.dedent(script)], ROOT, env, ClaudeEvents(), folder)
+        run = ProcessRun([sys.executable, "-c", textwrap.dedent(script)], ROOT, env, ClaudeEvents(), folder)
         self.addCleanup(run.stop)
         return run, folder
 
@@ -166,7 +166,7 @@ class ARun(unittest.TestCase):
         folder = RunFolder.create(["thread-1"])
 
         with self.assertRaises(CouldNotStart):
-            AgentRun([os.path.join(ROOT, "no-such-agent")], ROOT, dict(os.environ), ClaudeEvents(), folder)
+            ProcessRun([os.path.join(ROOT, "no-such-agent")], ROOT, dict(os.environ), ClaudeEvents(), folder)
 
         self.assertFalse(os.path.exists(folder.path))
 
