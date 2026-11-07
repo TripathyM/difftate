@@ -44,7 +44,9 @@ from difftate.adapters.outbound.history_files import HistoryFiles  # noqa: E402
 from difftate.adapters.outbound.local_store import LocalStore  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
 from difftate.core.review.model import CouldNotRead, NotFound  # noqa: E402
-from difftate.watcher import bind_review  # noqa: E402
+from difftate.main import bind_review  # noqa: E402
+
+OPEN_IN = ("browser", "herdr", "both")  # where a request may open the review (main.py's viewers)
 
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "review_api_script.json")
 LONG = "".join(f"line_{n} = {n}\n" for n in range(1, 21))
@@ -59,7 +61,7 @@ def serve(repo, folder, history):
     about = store.review()
     review = bind_review(store, git.GitCodeReader(repo, "main", "feature"),
                          HistoryFiles({"review": about["id"]}, history), about)
-    shown = ShownView("", lambda view: git.need_view(repo, view))
+    shown = ShownView("", lambda view: git.need_view(repo, view), open_in=OPEN_IN)
     api = ReviewApi(review, folder, repo, shown)
 
     class Served:
@@ -348,7 +350,7 @@ class TheReviewApiOnFakes(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         self.review = bind_review(store or MemoryStore(), code or FakeCode({"app.py": "x = 1\n"}),
                                   FakeHistory(), {"id": "r", "branch": "feature", "base": "main"})
-        self.api = ReviewApi(self.review, tmp, tmp, ShownView(view, a_fake_view))
+        self.api = ReviewApi(self.review, tmp, tmp, ShownView(view, a_fake_view, open_in=OPEN_IN))
         self.api.start()
         self.addCleanup(self.api.stop)
 

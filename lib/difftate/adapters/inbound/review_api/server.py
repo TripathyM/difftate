@@ -98,7 +98,6 @@ from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ....core.review.model import AUTHOR_OF, DIFFTATE, Conflict, CouldNotRead, NotAllowed, NotFound
-from ....viewer import OPEN_IN
 from .json_format import (NOTE_KINDS, BadRequest, anchor_from_json, changeset_json, comment_json, fields, need,
                           need_bool, need_kind, need_status, need_text, thread_json)
 
@@ -179,6 +178,12 @@ def ask_running_watcher(folder, method, path, payload=None):
                 return e.code, None
 
 
+def one_of(names):
+    """("browser", "herdr", "both") as "browser, herdr or both"."""
+    names = list(names)
+    return " or ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else "".join(names)
+
+
 def _write_private(path, text):
     """Write <path> readable only by the user, replacing it atomically."""
     tmp = f"{path}.{os.getpid()}.tmp"
@@ -191,12 +196,14 @@ def _write_private(path, text):
 class ShownView:
     """The view viewers show. <check>(view) gives it as a view, or raises the
     core's NotFound (the code reader has no such view); <on_switch>(view,
-    open_in) runs when a request switches the view."""
+    open_in) runs when a request switches the view. <open_in> names where a
+    request may ask to open the review as well (the viewers main.py picked)."""
 
-    def __init__(self, view, check, on_switch=None):
+    def __init__(self, view, check, on_switch=None, open_in=()):
         self.view = view
         self.check = check
         self.on_switch = on_switch or (lambda view, open_in: None)
+        self.open_in = tuple(open_in)
         self._lock = threading.Lock()
 
     def current(self):
@@ -247,7 +254,7 @@ class PageLogin:
 
 class ReviewApi:
     """The review API on <review>: the use cases of one review, with its ports
-    bound (watcher.bind_review): about ({"id", "branch", "base"}),
+    bound (main.bind_review): about ({"id", "branch", "base"}),
     list_threads, open_thread, add_comment, edit_note, set_status,
     mark_viewed, list_viewed, changeset and checked_out."""
 
@@ -325,8 +332,8 @@ def _handler(current, token, shown, login):
 
     def open_in(payload):
         where = fields(payload).get("open")
-        if where is not None and where not in OPEN_IN:
-            raise BadRequest("open must be browser, herdr or both")
+        if where is not None and where not in shown.open_in:
+            raise BadRequest(f"open must be {one_of(shown.open_in)}")
         return where
 
     def get_review(q, p):

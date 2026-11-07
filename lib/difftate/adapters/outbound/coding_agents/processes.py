@@ -1,10 +1,36 @@
-"""Stopping a process and everything it started."""
+"""Finding a coding agent's command, and stopping a process and everything
+it started."""
 import os
+import shutil
 import signal
 import subprocess
 import time
 
+from ....core.dispatch.model import CouldNotStart
+
 STOP_GRACE_S = 3
+
+
+def find_command(cmd):
+    """The command's path, following a zsh alias when it isn't on PATH.
+    Raises the core's CouldNotStart when it is neither."""
+    if shutil.which(cmd):
+        return cmd
+    try:
+        raw = subprocess.run(["zsh", "-ic", f"which {cmd}"], capture_output=True, text=True).stdout
+    except OSError:
+        raw = ""
+    lines = raw.strip().split("\n")
+    raw = lines[-1] if lines else ""
+    if "aliased to " in raw:
+        resolved = raw.split("aliased to ", 1)[1]
+    elif raw.startswith("/"):
+        resolved = raw
+    else:
+        resolved = ""
+    if resolved and os.access(resolved, os.X_OK):
+        return resolved
+    raise CouldNotStart(f"command '{cmd}' not found (not in PATH, not a shell alias)")
 
 
 def descendants(pid):

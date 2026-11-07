@@ -84,7 +84,7 @@ class ForReporting(Protocol):
 
 class ReviewForDispatch(Protocol):
     """The review's use cases Dispatch calls, with their ports bound
-    (watcher.bind_review). Not a driven port: the Review is in the core too."""
+    (main.bind_review). Not a driven port: the Review is in the core too."""
 
     def list_threads(self, status: Optional[str] = None) -> List[ListedThread]: ...
 

@@ -125,10 +125,14 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 | `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the session, then start `difftate-watch.py` |
 | `difftate-watch.py`, `lib/difftate/` | The watcher: opens the [review](#the-review), serves the [review API](#review-api) and the browser viewer, dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
 | `bin/dt-reply` | How the coding agent answers a thread: `dt-reply <thread> "<answer>"` |
+| `lib/difftate/main.py` | The composition root: picks the adapters (which store, coding agent and viewers, in one marked block), binds them to the core's use cases, and runs the command line |
+| `lib/difftate/core/` | The core: the Review, the changes and Dispatch, with no technology ([ADR 0003](docs/adr/0003-the-core-knows-no-technology.md)). It reaches the rest only through its ports |
+| `lib/difftate/adapters/inbound/cli/` | The command line: options and help, one watcher per repository (`watcher.lock`), switching a running watcher's view, opening a viewer, the timer, following the checked-out branch |
 | `lib/difftate/core/dispatch/` | Dispatch: the loop, one run at a time, the queued and progress notes, the prompt (`prompt.py`) |
 | `lib/difftate/adapters/outbound/coding_agents/` | Claude Code and OpenCode: command line, agent session, model, sandbox settings, and the reader of each one's JSON event stream. `reply_channel/` is the run's folder that `dt-reply` writes to |
 | `lib/difftate/adapters/outbound/terminal/` | The watcher terminal's lines for Dispatch |
 | `lib/difftate/adapters/inbound/review_api/` | The [review API](#review-api) (`server.py`, the thread format in `json_format.py`) and, in `web/`, difftate's own browser viewer, which reads and writes the review through it |
+| `lib/difftate/adapters/outbound/` | The other driven adapters: `local_store/` and `memory_store/` keep the review, `history_files/` records the review history, `git/` reads the code |
 | `tests/` | Watcher tests: a temporary repository, the real watcher, a fake coding agent. See [Tests](#tests) |
 | `herdr/mods/difftate/` | The Herdr Review tab (optional): code view, keys, threads, editing. See [Review in Herdr](#review-in-herdr-optional) |
 | `herdr/keys.json`, `herdr/RECIPE.md`, `herdr/preview.png` | Herdr's sharing files: the optional key binding, the build brief, the screenshot |
@@ -304,7 +308,7 @@ So a follow-up you write while the agent works on the same thread is answered in
 python3 -m unittest discover -s tests -v
 ```
 
-`tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_review_api.py` runs a scripted review through every review API route and compares each answer with `tests/fixtures/review_api_script.json`. The core's tests (`tests/test_core_*.py`) need no repository and no process. `tests/test_stores.py` runs one test suite against every store (memory and local). CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
+`tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_review_api.py` runs a scripted review through every review API route and compares each answer with `tests/fixtures/review_api_script.json`. The core's tests (`tests/test_core_*.py`) need no repository and no process. `tests/test_core_boundary.py` checks that the core imports no technology, and that only `main.py` imports both the core and the adapters. `tests/test_stores.py` runs one test suite against every store (memory and local). CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
 
 ## Known limitations
 

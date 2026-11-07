@@ -1,4 +1,5 @@
-"""git on the repository: the checked-out branch, the views and the changeset.
+"""git on the repository: its difftate folder, the base, the checked-out
+branch, the views and the changeset.
 
 The changeset is every change from where the branch left the base (their merge
 base, as in a pull request) to the files on disk, new untracked files included.
@@ -10,7 +11,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from typing import Optional
+from typing import Optional, Tuple
 
 from ....core.changes.model import NAMED_VIEWS, Changeset
 from ....core.review.model import CouldNotRead, NotFound
@@ -20,6 +21,40 @@ def git(cwd: str, *args: str, env: Optional[dict] = None) -> Optional[str]:
     """git's output, stripped; None when it fails."""
     r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True, env=env)
     return r.stdout.strip() if r.returncode == 0 else None
+
+
+def difftate_folder(cwd: str) -> Optional[Tuple[str, str]]:
+    """The repository's difftate folder, inside its git folder (shared by
+    worktrees, never committed), and the repository's top folder. None when
+    <cwd> is not in a git repository."""
+    common = git(cwd, "rev-parse", "--git-common-dir")
+    if common is None:
+        return None
+    top = git(cwd, "rev-parse", "--show-toplevel")
+    return (os.path.realpath(os.path.join(cwd, common, "difftate")), os.path.realpath(top or cwd))
+
+
+def base(cwd: str, given: str = "") -> str:
+    """The review's base: <given>, else the repository's default branch
+    (origin/HEAD; without it, a local main or master). Raises the core's
+    NotFound when there is none."""
+    if given:
+        if git(cwd, "rev-parse", "--verify", "--quiet", f"{given}^{{commit}}") is None:
+            raise NotFound(f"the base '{given}' is not a branch or commit in this repository")
+        return given
+    origin = git(cwd, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+    if origin and git(cwd, "rev-parse", "--verify", "--quiet", f"{origin}^{{commit}}"):
+        return origin
+    for name in ("main", "master"):
+        if git(cwd, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}"):
+            return name
+    raise NotFound("no default branch found (no origin/HEAD, main or master). "
+                   "Pass --base <branch>, or run: git remote set-head origin --auto")
+
+
+def remote_url(cwd: str) -> Optional[str]:
+    """The repository's origin, for the review history; None without one."""
+    return git(cwd, "remote", "get-url", "origin")
 
 
 def need_view(cwd: str, view: object) -> str:

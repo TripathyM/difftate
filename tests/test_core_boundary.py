@@ -1,4 +1,5 @@
-"""Seam: the core's boundary (ADR 0003, the core knows no technology).
+"""Seam: the core's boundary (ADR 0003, the core knows no technology), and
+main.py as the one place that wires the adapters to the core.
 
 Every module under lib/difftate/core/ is read with ast, so a new file is
 covered without listing it. A module breaks the boundary if it imports an
@@ -92,6 +93,96 @@ class TheCoreKnowsNoTechnology(unittest.TestCase):
                 path = os.path.join(LIB, "difftate", *package.split("/"), "__init__.py")
                 with open(path, encoding="utf-8") as f:
                     self.assertTrue(ast.get_docstring(ast.parse(f.read())))
+
+
+def imported_names(source, module_name, is_package=False):
+    """Every module name this module's source imports, relative paths resolved."""
+    names = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names += [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            base = _absolute(node, module_name, is_package)
+            names += [base] + [f"{base}.{alias.name}" for alias in node.names]
+    return names
+
+
+def _within(name, package):
+    return name == package or name.startswith(package + ".")
+
+
+def own_adapter(module_name):
+    """The adapter a module belongs to (difftate.adapters.<side>.<adapter>),
+    or None outside one."""
+    parts = module_name.split(".")
+    return ".".join(parts[:4]) if parts[:2] == ["difftate", "adapters"] and len(parts) >= 4 else None
+
+
+# What one adapter may share with another, and why. Nothing else crosses.
+SHARED = {
+    "difftate.adapters.outbound.local_store.lines": "the event line format: review history lines are event lines",
+}
+
+
+def _shared(name):
+    return any(_within(name, shared) for shared in SHARED)
+
+
+def wiring(names, module_name):
+    """Whether these imports wire adapters to the core: they name the core and
+    an adapter other than the module's own."""
+    own = own_adapter(module_name)
+    core = any(_within(name, "difftate.core") for name in names)
+    adapters = [name for name in names if _within(name, "difftate.adapters")
+                and not (own and _within(name, own)) and not _shared(name)]
+    return core and bool(adapters)
+
+
+def modules_outside_the_core():
+    """(dotted name, is package, path) for every .py file under difftate/ but core/."""
+    for folder, _, files in os.walk(os.path.join(LIB, "difftate")):
+        if os.path.commonpath([folder, CORE]) == CORE:
+            continue
+        for file in sorted(files):
+            if file.endswith(".py"):
+                path = os.path.join(folder, file)
+                parts = os.path.relpath(path, LIB)[:-len(".py")].split(os.sep)
+                is_package = parts[-1] == "__init__"
+                yield ".".join(parts[:-1] if is_package else parts), is_package, path
+
+
+class MainWiresTheAdapters(unittest.TestCase):
+    def test_difftate_holds_only_the_core_the_adapters_and_main(self):
+        entries = {e for e in os.listdir(os.path.join(LIB, "difftate")) if e != "__pycache__"}
+        self.assertEqual(entries, {"__init__.py", "main.py", "core", "adapters"})
+
+    def test_only_main_imports_both_the_core_and_the_adapters(self):
+        wired = []
+        for name, is_package, path in modules_outside_the_core():
+            with open(path, encoding="utf-8") as f:
+                if wiring(imported_names(f.read(), name, is_package), name):
+                    wired.append(name)
+        self.assertEqual(wired, ["difftate.main"])
+
+    def test_an_adapter_never_imports_another_adapter(self):
+        crossings = []
+        for name, is_package, path in modules_outside_the_core():
+            own = own_adapter(name)
+            if not own:
+                continue
+            with open(path, encoding="utf-8") as f:
+                names = imported_names(f.read(), name, is_package)
+            crossings += [f"{name} imports {n}" for n in names
+                          if _within(n, "difftate") and not _within(n, own) and not _within(n, "difftate.core")
+                          and not _shared(n)]
+        self.assertEqual(crossings, [])
+
+    def test_an_adapter_may_import_the_core_and_itself_but_not_another_adapter(self):
+        module = "difftate.adapters.inbound.cli.watcher"
+        self.assertFalse(wiring(imported_names("from ....core.review.model import NotFound\nfrom . import viewers\n",
+                                               module), module))
+        self.assertTrue(wiring(imported_names("from ....core.review.model import NotFound\n"
+                                              "from ...outbound import git\n", module), module))
 
 
 class TheBoundaryChecker(unittest.TestCase):
