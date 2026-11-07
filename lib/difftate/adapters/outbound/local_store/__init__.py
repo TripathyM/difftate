@@ -1,7 +1,9 @@
-"""The local store: difftate's own, in the repository's git folder (see
-difftate/local.py for the folder and its events.jsonl lines).
+"""The local store: difftate's own, in the repository's git folder. It plugs
+into the core's port for keeping the review.
 
-So far it holds only the line reader (lines.py), which turns today's
-events.jsonl lines into the core's events. The store itself, behind the
-core's port for keeping the review, comes next (#64).
+store.py is the store (the review's folder, and the tamper check); lines.py
+turns the core's events into today's events.jsonl lines and back.
 """
+from .store import LocalStore, review_id
+
+__all__ = ["LocalStore", "review_id"]

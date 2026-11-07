@@ -1,10 +1,13 @@
-"""Reading today's events.jsonl lines as the core's events.
+"""Today's events.jsonl lines, read as the core's events and written from them.
 
 Each line type is one event type (local.py lists the lines):
   opened → ThreadOpened      comment → CommentAdded     note → NoteWritten (final)
   status → ThreadStatusChanged   moved → ThreadMoved    outdated → ThreadOutdated
   run → RunStarted           run-ended → RunEnded       viewed → FileViewed
 A "note" line is a note's final body: notes are stored only once final.
+
+A line is written with its keys in the order local.py writes them, so the
+same events give the same bytes as today's LocalStore.
 """
 from __future__ import annotations
 
@@ -65,3 +68,48 @@ def read_events(text: str) -> List[Event]:
         except (ValueError, KeyError, TypeError, AttributeError):
             continue
     return events
+
+
+def _anchor_line(anchor: Optional[Anchor]) -> Optional[Dict[str, Any]]:
+    if anchor is None:
+        return None
+    return {"file": anchor.file, "side": anchor.side, "startLine": anchor.start_line, "endLine": anchor.end_line,
+            "code": anchor.code, "snapshot": anchor.snapshot_id, "view": anchor.view, "commit": anchor.commit}
+
+
+def _comment_line(kind: str, thread_id: str, comment: Comment) -> Dict[str, Any]:
+    return {"id": comment.id, "author": comment.author, "kind": comment.kind, "body": comment.body,
+            "time": comment.time, "seq": comment.seq, "type": kind, "thread": thread_id}
+
+
+def line_from_event(event: Event) -> Dict[str, Any]:
+    """The line that holds <event>. A NoteWritten is a "note" line, which has
+    no place for "final": the core gives a store only final notes (lasting)."""
+    if isinstance(event, ThreadOpened):
+        return {"type": "opened", "thread": event.thread_id, "anchor": _anchor_line(event.anchor),
+                "time": event.time}
+    if isinstance(event, CommentAdded):
+        return _comment_line("comment", event.thread_id, event.comment)
+    if isinstance(event, NoteWritten):
+        return _comment_line("note", event.thread_id, event.comment)
+    if isinstance(event, ThreadStatusChanged):
+        return {"type": "status", "thread": event.thread_id, "status": event.status, "time": event.time}
+    if isinstance(event, ThreadMoved):
+        return {"type": "moved", "thread": event.thread_id, "startLine": event.start_line,
+                "endLine": event.end_line, "snapshot": event.snapshot_id, "time": event.time}
+    if isinstance(event, ThreadOutdated):
+        return {"type": "outdated", "thread": event.thread_id, "time": event.time}
+    if isinstance(event, RunStarted):
+        return {"type": "run", "run": event.run_id, "threads": list(event.threads), "sent": list(event.sent),
+                "repliesBefore": {tid: list(ids) for tid, ids in event.replies_before.items()},
+                "time": event.time}
+    if isinstance(event, RunEnded):
+        return {"type": "run-ended", "run": event.run_id, "outcome": event.outcome, "time": event.time}
+    if isinstance(event, FileViewed):
+        return {"type": "viewed", "file": event.file, "diffHash": event.diff_hash, "time": event.time}
+    raise TypeError(f"no line for {event!r}")
+
+
+def line_text(line: Dict[str, Any]) -> str:
+    """One line of events.jsonl (or of the review history), as local.py writes it."""
+    return json.dumps(line, ensure_ascii=False, separators=(",", ":")) + "\n"
