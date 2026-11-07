@@ -19,7 +19,10 @@ class ForKeepingTheReview(Protocol):
         ...
 
     def append(self, events: List[Event]) -> None:
-        """Keep <events> after the ones already kept."""
+        """Keep <events> after the ones already kept. A note that isn't final
+        yet (NoteWritten, final False) need last only as long as this process:
+        load() returns it until then, and a store may keep only what
+        model.lasting() keeps for good."""
         ...
 
 
@@ -28,5 +31,6 @@ class ForRecordingReviewHistory(Protocol):
     on this machine, never deleted."""
 
     def record(self, events: List[Event]) -> None:
-        """Add <events> to the review history."""
+        """Add <events> to the review history. The use cases record only the
+        events that last (model.lasting): no note that isn't final yet."""
         ...
