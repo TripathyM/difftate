@@ -59,6 +59,15 @@ class StoreContract:
 
         self.assertEqual(self.store.load(), odd)
 
+    def test_it_keeps_a_note_that_isnt_final_as_not_final(self):
+        # The core gives a store only final notes (lasting); a store that is
+        # given one anyway keeps it as it was given
+        progress = [ThreadOpened(T1, None, TIME), NoteWritten(T1, NOTE, final=False)]
+
+        self.store.append(progress)
+
+        self.assertEqual(self.store.load(), progress)
+
     def test_appending_nothing_keeps_what_was_there(self):
         self.store.append(OPENING)
         self.store.append([])
@@ -93,9 +102,11 @@ class LocalStoreContract(StoreContract, unittest.TestCase):
         self.store.append(OPENING)
         self.store.append(WORK)
 
+        self.store.append([NoteWritten(T1, NOTE, final=False)])
+
         reopened = LocalStore.open(self.folder, branch="feature", base="main")
 
-        self.assertEqual(reopened.load(), OPENING + WORK)
+        self.assertEqual(reopened.load(), OPENING + WORK + [NoteWritten(T1, NOTE, final=False)])
 
 
 if __name__ == "__main__":

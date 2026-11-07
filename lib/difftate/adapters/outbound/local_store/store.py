@@ -23,7 +23,7 @@ import threading
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from ....core.review.model import CouldNotRead, Event
-from .lines import line_from_event, line_text, read_events
+from .lines import lines_text, read_events
 
 REVIEW_FILE = "review.json"
 EVENTS_FILE = "events.jsonl"
@@ -53,21 +53,17 @@ class LocalStore:
         self.on_tamper = on_tamper or (lambda ids: None)
         self.events_file = os.path.join(folder, EVENTS_FILE)
         self._lock = threading.Lock()
-        try:
-            with open(self.events_file, "rb") as f:
-                self._expected = f.read()  # the events file as this store wrote it
-        except FileNotFoundError:
-            self._expected = b""
+        self._expected = self._read() or b""  # the events file as this store wrote it
         self._stat = self._stat_now()
         self._events = read_events(self._expected.decode("utf-8", errors="replace"))
 
     @classmethod
-    def open(cls, review_folder: str, branch: str, base: str,
+    def open(cls, difftate_folder: str, branch: str, base: str,
              on_tamper: Optional[Callable[[List[str]], None]] = None) -> LocalStore:
         """The store of the review of <branch> against <base>, in
-        <review_folder>/reviews/: started now, or reused."""
+        <difftate_folder>/reviews/ (<git dir>/difftate): started now, or reused."""
         rid = review_id(branch, base)
-        folder = os.path.join(review_folder, "reviews", rid)
+        folder = os.path.join(difftate_folder, "reviews", rid)
         os.makedirs(folder, mode=0o700, exist_ok=True)
         review_file = os.path.join(folder, REVIEW_FILE)
         try:
@@ -86,15 +82,15 @@ class LocalStore:
     # ── The port for keeping the review ──────────────────────────────────────
     def load(self) -> List[Event]:
         with self._lock:
-            self._check()
+            self._restore_if_changed()
             return list(self._events)
 
     def append(self, events: List[Event]) -> None:
         if not events:
             return
-        data = "".join(line_text(line_from_event(e)) for e in events).encode("utf-8")
+        data = lines_text(events).encode("utf-8")
         with self._lock:
-            self._check()
+            self._restore_if_changed()
             try:
                 with open(self.events_file, "ab") as f:
                     f.write(data)
@@ -112,31 +108,40 @@ class LocalStore:
         except FileNotFoundError:
             return None
 
-    def _check(self) -> None:
-        """Restore the events file if it changed in a way this store didn't make."""
-        if self._stat_now() == self._stat:
-            return
+    def _read(self) -> Optional[bytes]:
+        """The events file as it is now; None when there is none."""
         try:
             with open(self.events_file, "rb") as f:
-                found: Optional[bytes] = f.read()
+                return f.read()
         except FileNotFoundError:
-            found = None
+            return None
+
+    def _restore_if_changed(self) -> None:
+        """Put the events file back as this store wrote it if it changed in a
+        way this store didn't make, and report the threads the changed lines
+        name."""
+        if self._stat_now() == self._stat:
+            return
+        found = self._read()
         if found == self._expected:
             self._stat = self._stat_now()
             return
         ours = set(self._expected.splitlines())
         theirs = set((found or b"").splitlines())
-        tids: Set[str] = set()
+        thread_ids: Set[str] = set()
         for raw in ours ^ theirs:
             try:
                 line = json.loads(raw)
                 named = [line.get("thread")] + list(line.get("threads") or [])
             except (ValueError, AttributeError, TypeError):
                 continue
-            tids.update(t for t in named if isinstance(t, str))
+            thread_ids.update(t for t in named if isinstance(t, str))
         tmp = f"{self.events_file}.{os.getpid()}.tmp"
-        with open(tmp, "wb") as f:
-            f.write(self._expected)
-        os.replace(tmp, self.events_file)
+        try:
+            with open(tmp, "wb") as f:
+                f.write(self._expected)
+            os.replace(tmp, self.events_file)
+        except OSError as e:
+            raise CouldNotRead(f"could not restore the review: {e}") from e
         self._stat = self._stat_now()
-        self.on_tamper(sorted(tids))
+        self.on_tamper(sorted(thread_ids))

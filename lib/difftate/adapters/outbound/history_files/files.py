@@ -14,7 +14,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from ....core.review.model import Event
-from ..local_store.lines import line_from_event, line_text
+from ..local_store.lines import lines_text
 
 
 def history_folder() -> str:
@@ -38,6 +38,6 @@ class HistoryFiles:
         try:
             os.makedirs(self.folder, mode=0o700, exist_ok=True)
             with open(os.path.join(self.folder, f"{month}.jsonl"), "a", encoding="utf-8") as f:
-                f.write("".join(line_text(dict(line_from_event(e), **self.about)) for e in events))
+                f.write(lines_text(events, self.about))
         except OSError as e:
             print(f"Warning: could not write the review history ({e})")
