@@ -1,7 +1,7 @@
 """The Review context: threads, comments, anchors, thread status and state,
 viewed files, and the review history (GLOSSARY.md, Review).
 
-The Review is the aggregate root. ADR 0004 (proposed) has it check the thread
+The Review is the aggregate root. ADR 0004 has it check the thread
 rules and return domain events, so that applying an event is the only way its
 state changes.
 Its driven ports are for keeping the review (load, append) and for recording

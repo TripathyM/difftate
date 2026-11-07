@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # The review is event-sourced in the core
