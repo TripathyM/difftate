@@ -370,21 +370,22 @@ class MovingThreadsWithTheirCode(ForRunningTheLoop):
 
         self.assertEqual(self.store.load(), kept)
 
-    def test_the_code_reader_keeps_the_snapshot_a_thread_moved_to_and_lets_the_one_before_go(self):
+    def test_the_code_reader_keeps_the_snapshot_a_thread_moved_to_and_the_one_before(self):
         before = self.rebuilt().thread(self.tid).anchor.snapshot_id
         self.code.files["long.py"] = "import os\n" + LONG
 
         self.move()
 
-        self.assertEqual(self.code.asked_to_keep, {self.now_id()})
+        self.assertEqual(self.code.asked_to_keep, {before, self.now_id()})
         self.assertNotEqual(self.now_id(), before)
 
-    def test_the_snapshot_of_a_thread_that_became_outdated_is_no_longer_kept(self):
+    def test_the_snapshot_of_a_thread_that_became_outdated_is_still_kept(self):
+        snapshot = self.rebuilt().thread(self.tid).anchor.snapshot_id
         self.code.files["long.py"] = LONG.replace("line_12 = 12", "line_12 = 1200")
 
         self.move()
 
-        self.assertEqual(self.code.asked_to_keep, set())
+        self.assertEqual(self.code.asked_to_keep, {snapshot}, "for the review history")
 
     def test_a_move_whose_snapshot_cant_be_kept_is_not_kept_until_it_can_be(self):
         self.code.files["long.py"] = "import os\n" + LONG
@@ -398,7 +399,7 @@ class MovingThreadsWithTheirCode(ForRunningTheLoop):
         self.move()
         self.assertEqual(self.rebuilt().thread(self.tid).anchor.start_line, 13)
 
-    def test_a_move_the_store_cant_keep_leaves_the_snapshot_before_it_kept(self):
+    def test_a_move_the_store_cant_keep_still_keeps_the_snapshot_before_it(self):
         before = self.rebuilt().thread(self.tid).anchor.snapshot_id
         self.code.files["long.py"] = "import os\n" + LONG
         store = StoreThatCannotKeep()

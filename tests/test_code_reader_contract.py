@@ -87,7 +87,7 @@ class CodeReaderContract:
 
         self.assertEqual(self.code.hunks(snapshot, self.now()), [Hunk(0, 0, 1, 1)])
 
-    def test_a_snapshot_no_longer_kept_is_lost_to_garbage_collection(self):
+    def test_a_snapshot_kept_once_stays_kept_when_it_isnt_asked_for_again(self):
         before = self.code.snapshot("long.py", "new", "", 12, 12).id
         self.code.keep([before])
         self.write("long.py", "import os\n" + LONG)
@@ -96,8 +96,15 @@ class CodeReaderContract:
 
         self.collect_garbage()
 
-        self.assertIsNone(self.code.hunks(before, after))
-        self.assertEqual(self.code.hunks(after, self.now()), [])
+        self.assertEqual(self.code.hunks(before, after), [Hunk(0, 0, 1, 1)])
+
+    def test_a_snapshot_never_kept_is_lost_to_garbage_collection(self):
+        snapshot = self.code.snapshot("long.py", "new", "", 12, 12).id
+        self.write("long.py", "import os\n" + LONG)
+
+        self.collect_garbage()
+
+        self.assertIsNone(self.code.hunks(snapshot, self.now()))
 
     # ── The files now ────────────────────────────────────────────────────────
     def test_a_file_that_didnt_change_is_its_snapshot(self):
@@ -305,18 +312,28 @@ class TheGitAdapterKeepingSnapshots(InAGitRepository, unittest.TestCase):
         rows = self.git_out("ls-tree", self.REF)  # <mode> <type> <id>\t<name>, one after the other
         return {rows[i + 2]: rows[i + 1] for i in range(0, len(rows), 4)}
 
-    def test_the_reviews_ref_holds_only_the_snapshots_it_keeps(self):
+    def test_the_reviews_ref_holds_only_snapshot_blobs_and_never_lets_one_go(self):
+        self.code.keep([])
+        self.assertEqual(self.git_out("for-each-ref", "refs/difftate/"), [], "nothing to keep: no ref")
         app = self.code.snapshot("app.py", "new", "", 2, 2).id
         long = self.code.snapshot("long.py", "new", "", 12, 12).id
 
-        self.code.keep([app, long])
+        self.code.keep([app])
+        self.code.keep([long])
         self.assertEqual(self.kept(), {app: "blob", long: "blob"})
 
-        self.code.keep([long])
-        self.assertEqual(self.kept(), {long: "blob"})
-
         self.code.keep([])
-        self.assertEqual(self.git_out("for-each-ref", "refs/difftate/"), [], "nothing to keep: no ref")
+        self.assertEqual(self.kept(), {app: "blob", long: "blob"})
+
+    def test_another_reader_of_the_same_review_adds_to_its_ref(self):
+        app = self.code.snapshot("app.py", "new", "", 2, 2).id
+        self.code.keep([app])
+        again = GitCodeReader(self.repo, "main", "feature", REVIEW)  # the watcher started again, say
+        long = again.snapshot("long.py", "new", "", 12, 12).id
+
+        again.keep([long])
+
+        self.assertEqual(self.kept(), {app: "blob", long: "blob"})
 
     def test_a_snapshot_already_lost_is_left_out(self):
         long = self.code.snapshot("long.py", "new", "", 12, 12).id

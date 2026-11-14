@@ -41,6 +41,7 @@ class FakeCode:
         self.reads = 0  # how many times the code was read
         self._kept = {}  # id: text, for every id given out
         self.asked_to_keep = None  # the ids it was last asked to keep
+        self._kept_for_good = set()  # every id it was ever asked to keep
 
     def _id(self, file, text):
         if text is None:
@@ -63,10 +64,11 @@ class FakeCode:
 
     def keep(self, file_ids):
         self.asked_to_keep = set(file_ids)
+        self._kept_for_good |= self.asked_to_keep
 
     def collect_garbage(self):
-        """What git gc --prune=now does: lose every file it wasn't asked to keep."""
-        self._kept = {i: text for i, text in self._kept.items() if i in (self.asked_to_keep or ())}
+        """What git gc --prune=now does: lose every file it was never asked to keep."""
+        self._kept = {i: text for i, text in self._kept.items() if i in self._kept_for_good}
 
     def versions(self, files):
         self.reads += 1

@@ -1057,6 +1057,23 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertFalse(self.thread(tid)["outdated"], "its snapshot outlasted git gc")
         self.assertEqual(self.anchor(tid), (15, 15))
 
+    def test_every_snapshot_of_the_review_outlasts_git_gc_for_its_review_history(self):
+        self.write("long.py", self.LONG)
+        self.release_agent()
+        self.start_watcher()
+        moves = self.open_thread("Why 12?", line=12, file="long.py")
+        outdated = self.open_thread("Why 5?", line=5, file="long.py")
+
+        self.write("long.py", "import os\n" + self.LONG.replace("line_5 = 5", "line_5 = 'five'"))
+        wait_for("the outdated thread", lambda: self.thread(outdated["id"])["outdated"])
+        wait_for("the thread to move", lambda: self.anchor(moves["id"]) == (13, 13))
+        git(self.repo, self.env, "gc", "-q", "--prune=now")
+
+        for snapshot in (moves["anchor"]["snapshot"], outdated["anchor"]["snapshot"],
+                         self.thread(moves["id"])["anchor"]["snapshot"]):
+            self.assertEqual(subprocess.run(["git", "-C", self.repo, "cat-file", "-e", snapshot],
+                                            env=self.env).returncode, 0, f"{snapshot} is still there")
+
     def test_the_snapshots_of_a_review_whose_folder_is_gone_can_go(self):
         def refs():
             return subprocess.run(["git", "-C", self.repo, "for-each-ref", "--format=%(refname)", "refs/difftate/"],

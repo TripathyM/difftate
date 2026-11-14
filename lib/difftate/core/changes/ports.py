@@ -26,9 +26,9 @@ class ForReadingTheCode(Protocol):
         ...
 
     def keep(self, file_ids: Collection[str]) -> None:
-        """Keep the files <file_ids> for as long as the review lasts: the
-        snapshots its threads move with their code from. They replace the
-        files it was asked to keep before, which may go. Raises the core's
+        """Keep the files <file_ids> for as long as the review lasts: every
+        snapshot its threads had. Only ever adds: a file it was asked to keep
+        before stays kept, asked for again or not. Raises the core's
         CouldNotRead when they can't be kept."""
         ...
 

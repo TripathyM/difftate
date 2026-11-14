@@ -282,6 +282,7 @@ class Review:
         self._final: Set[str] = set()  # ids of the notes that won't change again
         self._runs: Dict[str, Run] = {}  # id: run, in the order they started
         self._viewed: Dict[str, str] = {}  # file: the hash of its diff when the reviewer marked it viewed
+        self._snapshots: Set[str] = set()  # the id of every snapshot a thread had
 
     @classmethod
     def from_events(cls, events: List[Event]) -> Review:
@@ -301,11 +302,10 @@ class Review:
         return [t for t in self._threads.values() if status is None or t.status == status]
 
     def snapshots(self) -> Set[str]:
-        """The ids of the snapshots that threads move with their code from: those
-        of every thread with an anchor that isn't outdated. An outdated thread
-        never moves again, so its snapshot isn't needed."""
-        return {t.anchor.snapshot_id for t in self._threads.values()
-                if t.anchor is not None and t.anchor.snapshot_id and not t.outdated}
+        """The id of every snapshot the review's threads ever had: the one each
+        was written on, and each it moved to. All of them are kept, the review
+        history's too, outdated threads included."""
+        return set(self._snapshots)
 
     def runs(self) -> List[Run]:
         """The runs, oldest first."""
@@ -502,6 +502,8 @@ class Review:
         """The one place the Review's state changes."""
         if isinstance(event, ThreadOpened):
             self._threads[event.thread_id] = Thread(event.thread_id, event.anchor)
+            if event.anchor is not None and event.anchor.snapshot_id:
+                self._snapshots.add(event.anchor.snapshot_id)
         elif isinstance(event, (CommentAdded, NoteWritten)):
             thread, comment = self._threads[event.thread_id], event.comment
             # A note written again replaces itself, in its place
@@ -518,6 +520,7 @@ class Review:
             anchor = replace(thread.anchor, start_line=event.start_line, end_line=event.end_line,
                              snapshot_id=event.snapshot_id)
             self._threads[thread.id] = replace(thread, anchor=anchor)
+            self._snapshots.add(event.snapshot_id)
         elif isinstance(event, ThreadOutdated):
             self._threads[event.thread_id] = replace(self._threads[event.thread_id], outdated=True)
         elif isinstance(event, RunStarted):

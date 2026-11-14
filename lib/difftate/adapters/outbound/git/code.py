@@ -11,9 +11,11 @@ is outdated (core/changes/model.py).
 Nothing in git refers to a blob written that way, so git gc prunes it in time
 (gc.pruneExpire, two weeks by default). The snapshots the core keeps stay
 reachable from a ref of difftate's own, refs/difftate/<review id>: a tree
-whose entries are the snapshot blobs, each named by its id. A tree, not a
-commit, so there is nothing to sign and `git log --all` doesn't show it. A
-plain `git push` sends only refs/heads and refs/tags, never this ref.
+whose entries are the snapshot blobs, each named by its id. It only grows,
+so every snapshot of the review stays for its review history; only a review
+that is gone loses its ref (forget_kept_snapshots). A tree, not a commit, so
+there is nothing to sign and `git log --all` doesn't show it. A plain `git
+push` sends only refs/heads and refs/tags, never this ref.
 """
 from __future__ import annotations
 
@@ -118,34 +120,43 @@ class GitCodeReader:
 
     def keep(self, file_ids: Collection[str]) -> None:
         wanted = frozenset(file_ids)
-        # Every poll asks: the snapshots are written only when they or the ref changed
-        if self._kept is not None and self._kept[0] == wanted and self._ref_now() == self._kept[1]:
+        tree = self._ref_now()
+        # Every poll asks: git writes only when there is a snapshot the ref may not hold
+        if self._kept is not None and wanted <= self._kept[0] and tree == self._kept[1]:
             return
-        tree = self._write_tree(wanted)
-        if tree is None:
+        kept = self._added(tree, wanted)
+        if kept is None:
             raise CouldNotRead("could not keep the snapshots")
-        self._kept = (wanted, tree)
+        self._kept = kept
 
     def _ref_now(self) -> str:
         """The tree the review's ref names now; "" when there is no ref."""
         return self._run("rev-parse", "--verify", "--quiet", self.ref)[1].strip()
 
-    def _write_tree(self, file_ids: FrozenSet[str]) -> Optional[str]:
-        """Point the review's ref at a tree of the blobs <file_ids> (no ref when
-        there are none): the tree, "" for no ref, or None when git fails. A
-        snapshot already lost to git gc is left out: a tree may not name a
-        missing blob."""
+    def _added(self, tree: str, file_ids: FrozenSet[str]) -> Optional[Tuple[FrozenSet[str], str]]:
+        """Point the review's ref at a tree of the blobs in <tree> (the ref's
+        now, "" for none) and <file_ids>: those blobs and the new tree ("" when
+        there are none, and no ref), or None when git fails. A snapshot
+        already lost to git gc is left out: a tree may not name a missing blob."""
+        held = set()
+        if tree:
+            code, out = self._run("ls-tree", tree)  # <mode> <type> <id>\t<name>, a line each
+            if code != 0:
+                return None
+            held = {row.split()[2] for row in out.splitlines()}
+        new = sorted(file_ids - held)
         code, out = self._run("cat-file", "--batch-check=%(objectname) %(objecttype)",
-                              stdin="".join(f"{i}\n" for i in sorted(file_ids)))
+                              stdin="".join(f"{i}\n" for i in new))
         if code != 0:
             return None
-        blobs = [row.split()[0] for row in out.splitlines() if row.endswith(" blob")]
-        if not blobs:
-            return "" if self._run("update-ref", "-d", self.ref)[0] == 0 else None
-        code, tree = self._run("mktree", stdin="".join(f"100644 blob {b}\t{b}\n" for b in blobs))
-        if code != 0 or self._run("update-ref", self.ref, tree.strip())[0] != 0:
+        blobs = held | {row.split()[0] for row in out.splitlines() if row.endswith(" blob")}
+        if blobs == held:
+            return frozenset(file_ids | held), tree
+        code, made = self._run("mktree", stdin="".join(f"100644 blob {b}\t{b}\n" for b in sorted(blobs)))
+        # Only over the tree read above: another writer's tree is read and added to next time
+        if code != 0 or self._run("update-ref", self.ref, made.strip(), tree)[0] != 0:
             return None
-        return tree.strip()
+        return frozenset(file_ids | blobs), made.strip()
 
     def versions(self, files: Sequence[FileInView]) -> Dict[FileInView, Optional[str]]:
         # Where the branch left the base, once for every file that needs it

@@ -66,10 +66,10 @@ class OpeningAThread(unittest.TestCase):
 
         self.assertEqual(Review.from_events(self.store.load()).thread(thread.id), thread)
 
-    def test_an_outdated_threads_snapshot_is_not_kept(self):
-        self.open_a_thread("reviewer", "Why an f-string?", CHANGED_SINCE)
+    def test_an_outdated_threads_snapshot_is_kept_too(self):
+        thread = self.open_a_thread("reviewer", "Why an f-string?", CHANGED_SINCE)
 
-        self.assertEqual(self.code.asked_to_keep, set(), "it never moves with its code again")
+        self.assertEqual(self.code.asked_to_keep, {thread.anchor.snapshot_id}, "for the review history")
 
     def test_a_thread_whose_code_changed_since_the_viewer_showed_it_is_outdated_at_once(self):
         thread = self.open_a_thread("reviewer", "Why an f-string?", CHANGED_SINCE)
