@@ -66,7 +66,7 @@ or from Herdr's `keys.json` as `"difftate.<action>"`.
 In a comment, type `\n` for a line break.
 Shift-click a line to extend a selection.
 
-General threads (on the review, not on a file) are listed under **General threads**, above the changed files
+General threads (about the changeset as a whole, not on a file) are listed under **General threads**, above the changed files
 when the review has some. `r` replies to the one picked, `R` resolves it, as on a file.
 
 `Space Space` finds any file in the repo; changed files are marked:

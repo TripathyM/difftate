@@ -449,7 +449,7 @@ export default class Review extends View {
     }
     if (record && this.view?.mode !== "general") this.pushJump();
     this.view = { path: "", mode: "general", versions: null };
-    this.rows = [{ kind: "meta", text: "General threads: on the review, not on a file" }];
+    this.rows = [{ kind: "meta", text: "General threads: about the changeset as a whole, not on a file" }];
     this.lang = null;
     this.hlUpTo = 0;
     this.hlState = false;
@@ -463,7 +463,7 @@ export default class Review extends View {
 
   async reopen() {
     const h = this.here();
-    if (h.mode === "general") { this.openGeneral(false); return; }
+    if (h.mode === "general") { this.rebuildItems(); return; } // threads may have changed; the place stays
     const exists = this.fileOf(h.path) || h.mode === "file";
     if (!exists) { this.view = null; this.rows = []; this.rebuildItems(); if (this.files.length) await this.openFile(this.files[0].path, "diff", null, false); return; }
     await this.openFile(h.path, h.mode, { line: h.line, col: h.col, row: h.row }, false);
@@ -549,6 +549,10 @@ export default class Review extends View {
       for (const th of byRow.get(i) ?? []) items.push({ t: "thread", th, i, key: `t${th.id}`, ...this.layoutThread(th) });
     });
     for (const th of general) items.push({ t: "thread", th, i: -1, key: `t${th.id}`, ...this.layoutThread(th) });
+    // In the general threads, one is always picked (and highlighted): the one r and R act on
+    if (this.view?.mode === "general" && !general.some((th) => th.id === this.curThread)) {
+      this.curThread = (general.find((th) => th.status === "open") ?? general[0])?.id ?? null;
+    }
     if (orphans.length) {
       items.push({ t: "note", h: RH + 8, key: "orphans", text: `${orphans.length} thread(s) on lines this view doesn't show. <leader>v switches diff / full file.` });
       for (const th of orphans) items.push({ t: "thread", th, i: -1, key: `t${th.id}`, ...this.layoutThread(th) });
@@ -904,7 +908,7 @@ export default class Review extends View {
     if (!this.api) { this.msg = "Start difftate (or dto) in this repo to reply."; return; }
     const th = this.threadAtCursor();
     if (!th) { this.msg = "No thread on this line (]d jumps to the next one)"; return; }
-    this.openPrompt({ kind: "reply", label: `Reply on ${threadPlace(th)}`, thread: th });
+    this.openPrompt({ kind: "reply", label: `Reply on ${threadPlace(th)}${isGeneral(th) ? `: ${(th.comments[0]?.body ?? "").split("\n")[0].slice(0, 40)}` : ""}`, thread: th });
   }
 
   setThreadStatus(status, cx) {

@@ -52,7 +52,7 @@ class TheThreadsPicker(unittest.TestCase):
         groups = run("m.pickerThreads(a.threads, a.files)", threads=threads, files=files("a.py", "b.py"))
         self.assertEqual([ids(t) for t in groups], [["g1", "g3", "g2"], ["f2", "f1", "f3"]])
 
-    def test_without_general_threads_the_list_is_as_before(self):
+    def test_without_general_threads_the_general_group_is_empty(self):
         threads = [thread("f1", "b.py", 3), thread("f2", "a.py", 9), thread("f3", "a.py", 1, status="resolved")]
         groups = run("m.pickerThreads(a.threads, a.files)", threads=threads, files=files("a.py", "b.py"))
         self.assertEqual([ids(t) for t in groups], [[], ["f2", "f1", "f3"]])
