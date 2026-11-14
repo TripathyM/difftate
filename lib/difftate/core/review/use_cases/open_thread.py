@@ -14,9 +14,10 @@ def open_thread(store: ForKeepingTheReview, notes: NotesInProgress, code: ForRea
                 history: ForRecordingReviewHistory, author: str, body: str,
                 anchor: Optional[Anchor] = None, by: Optional[str] = None) -> ListedThread:
     """A thread on <anchor> (None: a general thread), with <author>'s comment
-    <body> by the reviewer named <by>, and its thread state now. Raises NotAllowed for anyone but a
-    reviewer, Conflict while another branch is checked out, and CouldNotRead
-    when the code can't be read; nothing is kept then."""
+    <body> by the reviewer named <by>, and its thread state now. Raises
+    NotAllowed for anyone but a reviewer, Conflict while another branch is
+    checked out, and CouldNotRead when the code can't be read; nothing is
+    kept then."""
     review = Review.from_events(store.load() + notes.events())  # notes too: a comment's seq comes after them
     on_branch = code.on_branch()
     snapshot, shown, since = None, None, None

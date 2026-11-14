@@ -16,7 +16,7 @@ KINDS = tuple(AUTHOR_OF)  # comment, reply, queued, progress
 THREAD_STATUSES = ("open", "resolved", "dismissed")
 SIDES = ("old", "new")
 ANCHOR_NEEDS = "anchor needs file, side (old|new), startLine and endLine (1 ≤ start ≤ end)"
-NAME_MAX = 100  # characters in a reviewer name
+REVIEWER_NAME_MAX = 100  # characters in a reviewer name
 
 
 class BadRequest(Exception):
@@ -59,15 +59,15 @@ def need_status(status: Any) -> str:
 
 def reviewer_name(payload: Any, default: Optional[str]) -> Optional[str]:
     """The reviewer name the request gives ("reviewer"), without the spaces
-    around it: one line of text, at most NAME_MAX characters. <default> when
-    the request gives none."""
+    around it: one line of text, at most REVIEWER_NAME_MAX characters.
+    <default> when the request gives none."""
     given = fields(payload)
     if "reviewer" not in given:
         return default
     name = given["reviewer"]
     if not isinstance(name, str) or not name.strip() or "\n" in name or "\r" in name \
-            or len(name.strip()) > NAME_MAX:
-        raise BadRequest(f"reviewer must be a name: one line of text, at most {NAME_MAX} characters")
+            or len(name.strip()) > REVIEWER_NAME_MAX:
+        raise BadRequest(f"reviewer must be a name: one line of text, at most {REVIEWER_NAME_MAX} characters")
     return name.strip()
 
 

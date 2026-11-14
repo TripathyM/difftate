@@ -349,7 +349,7 @@ def a_fake_view(view):
     return view
 
 
-class TheReviewApiOnFakes(unittest.TestCase):
+class ServedOnFakes:
     """The review API on the use cases as the watcher binds them, over the
     memory store and a fake code reader."""
 
@@ -366,6 +366,8 @@ class TheReviewApiOnFakes(unittest.TestCase):
     def ask(self, *args, **kwargs):
         return ask(self.api, *args, **kwargs)
 
+
+class TheReviewApiOnFakes(ServedOnFakes, unittest.TestCase):
     def test_code_that_cannot_be_read_is_502(self):
         self.serve(code=UnreadableCode())
         anchor = {"file": "app.py", "side": "new", "startLine": 1, "endLine": 1}
@@ -417,14 +419,12 @@ class TheReviewApiOnFakes(unittest.TestCase):
         self.assertEqual([c.seq for c in thread.thread.comments], list(range(1, 10)), "each its own place")
 
 
-class TheReviewerName(unittest.TestCase):
+class TheReviewerName(ServedOnFakes, unittest.TestCase):
     """The reviewer name the review API takes ("reviewer"), and gives back on
     each comment ("by") and on a thread's last status change ("statusBy")."""
 
     def serve(self, default_reviewer=lambda: "Ada"):
-        TheReviewApiOnFakes.serve(self, default_reviewer=default_reviewer)
-
-    ask = TheReviewApiOnFakes.ask
+        super().serve(default_reviewer=default_reviewer)
 
     def thread(self, tid):
         return next(t for t in self.ask("GET", "/api/threads")[1] if t["id"] == tid)
