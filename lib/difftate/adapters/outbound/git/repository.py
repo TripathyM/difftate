@@ -114,9 +114,10 @@ def changeset(cwd: str, base: str, view: str = "") -> Changeset:
     tmp = tempfile.mkdtemp(prefix="difftate-index-")
     try:
         index = os.path.join(tmp, "index")
-        if git_dir and os.path.exists(os.path.join(git_dir, "index")):
+        real_index = os.path.join(git_dir, "index") if git_dir else ""
+        if real_index and os.path.exists(real_index):
             # copy2 keeps the times: git checks racily clean entries against them
-            shutil.copy2(os.path.join(git_dir, "index"), index)
+            shutil.copy2(real_index, index)
         env = dict(os.environ, GIT_INDEX_FILE=index)
         top = git(cwd, "rev-parse", "--show-toplevel") or cwd
         subprocess.run(["git", "-C", top, "add", "--intent-to-add", "--all"], capture_output=True, env=env)

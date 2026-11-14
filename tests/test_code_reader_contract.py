@@ -196,6 +196,11 @@ class InAGitRepository:
     def git(self, *args):
         subprocess.run(["git", "-C", self.repo, *args], check=True, capture_output=True, env=self.env)
 
+    def output(self, *args):
+        """git's output, stripped."""
+        return subprocess.run(["git", "-C", self.repo, *args], check=True, capture_output=True, text=True,
+                              env=self.env).stdout.strip()
+
     def write(self, file, text):
         with open(os.path.join(self.repo, file), "w") as f:
             f.write(text)
@@ -249,15 +254,18 @@ class TheGitAdapterInEachView(InAGitRepository, unittest.TestCase):
         self.git("config", "core.trustctime", "false")  # ctime can't be set; mtime stands for both
         self.commit()
         path = os.path.join(self.repo, "long.py")
-        second = 1_700_000_000
-        self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'a'"))
-        os.utime(path, (second, second))
-        self.git("add", "long.py")
-        os.utime(os.path.join(self.repo, ".git", "index"), (second, second))
-        self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'b'"))  # the same size, the same second
-        os.utime(path, (second, second))
+        index_written_at = 1_700_000_000
 
-        self.assertIn("+line_3 = 'b'", self.code.changeset("").diff)
+        def write_in_that_second(text):
+            self.write("long.py", text)
+            os.utime(path, (index_written_at, index_written_at))
+        write_in_that_second(LONG.replace("line_3 = 3", "line_3 = 'a'"))
+        self.git("add", "long.py")
+        os.utime(os.path.join(self.repo, self.output("rev-parse", "--git-path", "index")), (index_written_at, index_written_at))
+        write_in_that_second(LONG.replace("line_3 = 3", "line_3 = 'b'"))  # the same size
+
+        # A stale entry names the old blob in all changes, and hides the edit from unstaged
+        self.assertIn(".." + self.output("hash-object", "long.py")[:7], self.code.changeset("").diff)
         self.assertIn("+line_3 = 'b'", self.code.changeset("unstaged").diff)
 
     def test_a_thread_on_the_old_side_of_a_commit_view_has_its_file_in_that_view(self):
