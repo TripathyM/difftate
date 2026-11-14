@@ -17,8 +17,8 @@ code changed: the Review uses it when a thread is opened.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import NamedTuple, Optional, Sequence, Tuple, Union
+from dataclasses import dataclass, field
+from typing import Dict, NamedTuple, Optional, Sequence, Tuple, Union
 
 NAMED_VIEWS = ("staged", "unstaged")
 
@@ -54,19 +54,32 @@ class View:
         return f"the commits after {self.given}"
 
 
+class Versions(NamedTuple):
+    """The two versions of a changed file that a view shows: the id of the
+    file on its old side and on its new side. None where there is no such
+    file, or none the code reader can read later."""
+    old: Optional[str]
+    new: Optional[str]
+
+
 @dataclass(frozen=True)
 class Changeset:
     """The review's changeset in a view.
 
-    view    the view ("" for all changes)
-    base    the review's base
-    commit  where the branch left the base
-    diff    the changes, as a unified diff (new untracked files included)
+    view      the view ("" for all changes)
+    base      the review's base
+    commit    where the branch left the base
+    diff      the changes, as a unified diff (new untracked files included)
+    versions  {file: the Versions the diff shows of it}, by the path a viewer
+              shows (the old one for a deleted file, else the new one). A
+              viewer that says which version it showed gets a thread that
+              moves with its code from there (open_thread)
     """
     view: str
     base: str
     commit: str
     diff: str
+    versions: Dict[str, Versions] = field(default_factory=dict)
 
 
 class CheckedOut(NamedTuple):

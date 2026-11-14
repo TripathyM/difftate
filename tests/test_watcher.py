@@ -1187,6 +1187,19 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertTrue(thread["outdated"], "the file changed since the viewer showed that code")
         self.assertEqual(thread["anchor"]["code"], "    return 'hi ' + name")
 
+    def test_a_thread_on_code_that_only_moved_since_the_viewer_showed_it_moves_with_its_code(self):
+        self.start_watcher()
+        shown = self.api("GET", "/api/changeset")["versions"]["app.py"]["new"]
+        code = self.read("app.py").split("\n")[1]
+        self.write("app.py", "import os\nimport sys\n" + self.read("app.py"))  # the coding agent, say
+
+        thread = self.api("POST", "/api/threads", {"body": "Why an f-string here?", "anchor": {
+            "file": "app.py", "side": "new", "startLine": 2, "endLine": 2, "code": code, "version": shown}})
+
+        self.assertFalse(thread["outdated"], "its code only moved")
+        self.assertEqual(self.anchor(thread["id"]), (4, 4))
+        self.assertEqual(thread["anchor"]["code"], code)
+
     def test_a_thread_written_before_snapshots_existed_starts_following_its_code(self):
         self.write("long.py", self.LONG)
         self.start_watcher()

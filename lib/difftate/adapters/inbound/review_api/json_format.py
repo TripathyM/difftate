@@ -64,7 +64,8 @@ def need_bool(value: Any, name: str) -> bool:
 
 def anchor_from_json(anchor: Any, view: str) -> Optional[Anchor]:
     """The anchor a viewer sent, written in <view>: file, side, startLine,
-    endLine and the code (optional). None is a general thread."""
+    endLine, and optionally the code and the version of the file it showed
+    (the changeset's versions). None is a general thread."""
     if anchor is None:
         return None
     if not isinstance(anchor, dict) or not isinstance(anchor.get("file"), str) or not anchor["file"] \
@@ -76,7 +77,10 @@ def anchor_from_json(anchor: Any, view: str) -> Optional[Anchor]:
     code = anchor.get("code")
     if code is not None and not isinstance(code, str):
         raise BadRequest("anchor code must be text")
-    return Anchor(anchor["file"], anchor["side"], start, end, code, view=view)
+    version = anchor.get("version")
+    if version is not None and (not isinstance(version, str) or not version):
+        raise BadRequest("anchor version must be text: a version the changeset names")
+    return Anchor(anchor["file"], anchor["side"], start, end, code, view=view, snapshot_id=version)
 
 
 def _line_number(value: Any) -> int:
@@ -109,4 +113,8 @@ def thread_json(listed: ListedThread) -> Dict[str, Any]:
 
 
 def changeset_json(changeset: Changeset) -> Dict[str, Any]:
-    return {"view": changeset.view, "base": changeset.base, "commit": changeset.commit, "diff": changeset.diff}
+    """The changeset, with "versions": {file: {"old", "new"}}, the version of
+    each side the diff shows (null for none). A viewer sends the one it showed
+    as its anchor's "version"."""
+    return {"view": changeset.view, "base": changeset.base, "commit": changeset.commit, "diff": changeset.diff,
+            "versions": {f: {"old": v.old, "new": v.new} for f, v in changeset.versions.items()}}

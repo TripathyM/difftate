@@ -3,6 +3,7 @@ branch, the views and the changeset.
 
 The changeset is every change from where the branch left the base (their merge
 base, as in a pull request) to the files on disk, new untracked files included.
+Its diff names each blob in full (--full-index): the versions a viewer shows.
 A view shows part of it (core/changes/model.py, View).
 """
 from __future__ import annotations
@@ -103,7 +104,7 @@ def changeset(cwd: str, base: str, view: str = "") -> Changeset:
     if not commit:
         raise CouldNotRead("the repository has no commit yet")
     if view == "staged":
-        r = subprocess.run(["git", "-C", cwd, "diff", "--no-color", "--no-ext-diff", "--cached", "HEAD", "--"],
+        r = subprocess.run(["git", "-C", cwd, "diff", "--no-color", "--no-ext-diff", "--full-index", "--cached", "HEAD", "--"],
                            capture_output=True, text=True)
         if r.returncode != 0:
             raise CouldNotRead(f"git diff failed: {r.stderr.strip()}")
@@ -121,7 +122,7 @@ def changeset(cwd: str, base: str, view: str = "") -> Changeset:
         env = dict(os.environ, GIT_INDEX_FILE=index)
         top = git(cwd, "rev-parse", "--show-toplevel") or cwd
         subprocess.run(["git", "-C", top, "add", "--intent-to-add", "--all"], capture_output=True, env=env)
-        r = subprocess.run(["git", "-C", top, "diff", "--no-color", "--no-ext-diff", *against, "--"],
+        r = subprocess.run(["git", "-C", top, "diff", "--no-color", "--no-ext-diff", "--full-index", *against, "--"],
                            capture_output=True, text=True, env=env)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

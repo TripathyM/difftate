@@ -8,6 +8,11 @@ the core diffs the snapshot against that file now (hunks, with `git diff
 -U0` on the two blobs) and decides whether the thread moved with its code or
 is outdated (core/changes/model.py).
 
+The changeset names the versions a viewer shows: the blobs of its diff, each
+one written to the object database, so a thread written on a version the
+viewer showed moves with its code from there, even when the file changed
+after the viewer showed it.
+
 Nothing in git refers to a blob written that way, so git gc prunes it in time
 (gc.pruneExpire, two weeks by default). The snapshots the core keeps stay
 reachable from a ref of difftate's own, refs/difftate/<review id>: a tree
@@ -22,13 +27,15 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-from typing import Collection, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple
+from dataclasses import replace
+from typing import Collection, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
 
-from ....core.changes.model import Changeset, FileInView, Hunk, Snapshot
+from ....core.changes.model import Changeset, FileInView, Hunk, Snapshot, Versions
 from ....core.review.model import CouldNotRead
 from . import repository
-from .diff_hashes import diff_hashes
+from .diff_hashes import blob_ids, diff_hashes
 
+BLOB_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")  # a full object id (SHA-1 or SHA-256)
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
 SNAPSHOT_REFS = "refs/difftate/"  # + a review's id: the ref that keeps its snapshots
 
@@ -57,6 +64,7 @@ class GitCodeReader:
         self._kept: Optional[Tuple[FrozenSet[str], str]] = None  # what it last kept, and the ref's tree then
         self._hashed: Dict[str, Tuple[tuple, str]] = {}  # path: (its stat, its blob)
         self._diffs: Dict[Tuple[str, str], Tuple[Hunk, ...]] = {}  # (blob, blob): hunks
+        self._stored: Set[str] = set()  # blobs known to be in git's object database
 
     def _run(self, *args: str, stdin: Optional[str] = None) -> Tuple[int, str]:
         # Files in any encoding: only the line structure matters here
@@ -177,6 +185,9 @@ class GitCodeReader:
         return found
 
     def hunks(self, from_id: str, to_id: str) -> Optional[List[Hunk]]:
+        # An id may come from a viewer: anything but a blob id is no file, never an option to git
+        if not (BLOB_ID.fullmatch(from_id) and BLOB_ID.fullmatch(to_id)):
+            return None
         if (from_id, to_id) not in self._diffs:
             code, out = self._run("diff", "--no-color", "--no-ext-diff", "-U0", from_id, to_id)
             if code != 0:
@@ -189,6 +200,8 @@ class GitCodeReader:
         return list(self._diffs[(from_id, to_id)])
 
     def code_on_lines(self, file_id: str, start_line: int, end_line: int) -> Optional[str]:
+        if not BLOB_ID.fullmatch(file_id):
+            return None  # an id a viewer sent that is no blob id
         code, out = self._run("cat-file", "blob", file_id)
         if code != 0:
             return None
@@ -204,7 +217,31 @@ class GitCodeReader:
         return repository.review_branch(self.cwd, self.base)
 
     def changeset(self, view: str) -> Changeset:
-        return repository.changeset(self.cwd, self.base, view)
+        c = repository.changeset(self.cwd, self.base, view)
+        return replace(c, versions=self._stored_versions(blob_ids(c.diff), on_disk=c.view != "staged"))
+
+    def _stored_versions(self, blobs: Dict[str, Tuple[Optional[str], Optional[str]]],
+                  on_disk: bool) -> Dict[str, Versions]:
+        """The versions the diff names (<blobs>), each one in git's object
+        database, so a thread written on it can be read later. git diff names
+        a file on disk (the new side, <on_disk>) by the blob it would be, but
+        doesn't write it: it is written here. A version that can't be (the
+        file changed since the diff, or git failed) is None."""
+        named = {b for pair in blobs.values() for b in pair if b and b not in self._stored}
+        if named:
+            code, out = self._run("cat-file", "--batch-check=%(objectname) %(objecttype)",
+                                  stdin="".join(f"{b}\n" for b in sorted(named)))
+            if code == 0:
+                self._stored |= {row.split()[0] for row in out.splitlines() if row.endswith(" blob")}
+        unwritten = sorted(f for f, (_, new) in blobs.items() if on_disk and new and new not in self._stored)
+        if unwritten:
+            code, out = self._run("hash-object", "-w", "--stdin-paths", stdin="".join(f"{f}\n" for f in unwritten))
+            # One file git can't write (removed since the diff, say) fails them all: then one by one
+            written = out.split() if code == 0 else [self._run("hash-object", "-w", "--", f)[1].strip()
+                                                       for f in unwritten]
+            # The blob the file on disk is now: the diff's when it didn't change since
+            self._stored |= {w for f, w in zip(unwritten, written) if w == blobs[f][1]}
+        return {f: Versions(*(b if b in self._stored else None for b in pair)) for f, pair in blobs.items()}
 
     def diff_hashes(self) -> Dict[str, str]:
         return diff_hashes(repository.changeset(self.cwd, self.base).diff)

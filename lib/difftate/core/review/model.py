@@ -95,8 +95,10 @@ class Anchor:
 
     view         the view the thread was written in ("" for all changes): the
                  thread moves with its code there
-    snapshot_id  the file as it was then (Snapshot.id); None until the Review
-                 opens the thread
+    snapshot_id  the file as it was then (Snapshot.id). A viewer may give the
+                 version it showed (Changeset.versions); the Review writes the
+                 thread on it when it has the viewer's code on those lines, else
+                 on the file when the thread is opened
     commit       the commit checked out then; None until the Review opens the thread
     """
     file: str
@@ -350,23 +352,38 @@ class Review:
         return "replied" if _replies(thread) - set(before) else "failed"
 
     def open_thread(self, author: str, body: str, anchor: Optional[Anchor] = None,
-                    snapshot: Optional[Snapshot] = None, on_branch: bool = True) -> List[Event]:
+                    snapshot: Optional[Snapshot] = None, on_branch: bool = True,
+                    shown: Optional[Snapshot] = None, since: Union[None, Moved, Outdated] = None) -> List[Event]:
         """A thread on <anchor>, or a general thread (no anchor), with <author>'s
         first comment. <snapshot> is the anchor's file now, from the code reader:
         needed with an anchor. <on_branch>: whether the review's branch is
-        checked out (see _need_branch)."""
+        checked out (see _need_branch).
+
+        <shown> is the version of the file the viewer showed, when it said
+        which (the anchor's snapshot_id) and it isn't the file now; <since> is
+        how the anchor's lines changed from it to the file now (core/changes,
+        moved_or_outdated)."""
         if author != REVIEWER:
             raise NotAllowed("only a reviewer opens a thread")
         _need_branch(on_branch)
         thread_id, time = _new_id(), _now()
-        outdated = False
+        outdated, moved_since = False, None
         if anchor is not None:
-            # With no code from the viewer, the thread is written on the code there now
-            code = snapshot.code if anchor.code is None else anchor.code
-            anchor = replace(anchor, code=code, snapshot_id=snapshot.id, commit=snapshot.commit)
-            # A thread is written on the code the viewer showed. If the file no
-            # longer has that code there, it changed since: outdated at once
-            outdated = snapshot.code is None or not same_code(anchor.code, snapshot.code)
+            # The thread is written on the version the viewer showed, when it
+            # has the viewer's code on those lines; else on the file now
+            on_shown = shown is not None and shown.code is not None and (
+                anchor.code is None or same_code(anchor.code, shown.code))
+            written_on = shown if on_shown else snapshot
+            # With no code from the viewer, the thread is written on the code there
+            code = written_on.code if anchor.code is None else anchor.code
+            anchor = replace(anchor, code=code, snapshot_id=written_on.id, commit=written_on.commit)
+            if on_shown:
+                # Since the viewer showed it, the code moved (it moves with it) or changed
+                moved_since = since
+            else:
+                # A thread is written on the code the viewer showed. If the file no
+                # longer has that code there, it changed since: outdated at once
+                outdated = snapshot.code is None or not same_code(anchor.code, snapshot.code)
         events: List[Event] = [
             ThreadOpened(thread_id, anchor, time),
             CommentAdded(thread_id, Comment(_new_id(), author, "comment", body, time, self._seq + 1)),
@@ -375,6 +392,8 @@ class Review:
             events.append(ThreadOutdated(thread_id, time))
         for event in events:
             self.apply(event)
+        if moved_since is not None:
+            events += self.move_with_code({thread_id: moved_since})
         return events
 
     def add_comment(self, author: str, thread_id: str, kind: str, body: str) -> List[Event]:

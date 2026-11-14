@@ -167,6 +167,17 @@ class CodeReaderContract:
         self.assertIn("long.py", changeset.diff)
         self.assertIn("app.py", changeset.diff)
 
+    def test_each_version_the_changeset_shows_can_be_read_after_the_file_changes_again(self):
+        self.write("app.py", BASE.replace("'hi ' + name", "'hey ' + name"))  # on disk, never read before
+        versions = self.code.changeset("").versions
+        self.write("app.py", BASE)
+
+        self.assertEqual(set(versions), {"app.py", "long.py"})
+        self.assertEqual(self.code.code_on_lines(versions["app.py"].new, 2, 2), "    return 'hey ' + name")
+        self.assertEqual(self.code.code_on_lines(versions["app.py"].old, 2, 2), "    return 'hi ' + name")
+        self.assertEqual(self.code.code_on_lines(versions["long.py"].new, 20, 20), "line_20 = 20")
+        self.assertIsNone(versions["long.py"].old, "a new file has no old side")
+
     def test_a_view_that_names_no_commit_is_not_found(self):
         with self.assertRaises(NotFound):
             self.code.changeset("no-such-commit")
@@ -261,7 +272,24 @@ class InAGitRepository:
 
 
 class TheGitAdapter(InAGitRepository, CodeReaderContract, unittest.TestCase):
-    pass
+    def test_an_id_a_viewer_sent_that_is_no_blob_id_is_no_file_and_never_an_option_to_git(self):
+        out = os.path.join(self.repo, "written")
+        for sent in (f"--output={out}", "HEAD", "-p"):
+            with self.subTest(sent=sent):
+                self.assertIsNone(self.code.code_on_lines(sent, 1, 1))
+                self.assertIsNone(self.code.hunks(sent, self.now()))
+                self.assertIsNone(self.code.hunks(self.now(), sent))
+        self.assertFalse(os.path.exists(out))
+
+    def test_a_submodule_in_the_changeset_has_no_version_and_leaves_the_others_theirs(self):
+        # A submodule's side is a commit, not a file: git can't write it from the folder on disk
+        os.makedirs(os.path.join(self.repo, "sub"))
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{self.output('rev-parse', 'HEAD')},sub")
+
+        versions = self.code.changeset("").versions
+
+        self.assertNotIn("sub", versions)
+        self.assertEqual(self.code.code_on_lines(versions["long.py"].new, 20, 20), "line_20 = 20")
 
 
 class TheGitAdapterInEachView(InAGitRepository, unittest.TestCase):

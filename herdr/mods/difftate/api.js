@@ -58,10 +58,11 @@ export class ReviewApi {
     return body;
   }
 
-  // The changeset in the view viewers show: {view, base, commit, diff (the unified diff text), files (parsed)}
+  // The changeset in the view viewers show: {view, base, commit, diff (the unified diff text), files (parsed)}.
+  // Each file has the versions of its two sides, {old, new} (null from a watcher that doesn't name them)
   async changeset() {
     const c = await this.call("GET", "/api/changeset");
-    return { ...c, view: c.view ?? "", files: parseDiff(c.diff) };
+    return { ...c, view: c.view ?? "", files: parseDiff(c.diff).map((f) => ({ ...f, versions: c.versions?.[f.path] ?? null })) };
   }
 
   // Show another view in every viewer: "" (all changes), a commit (the commits after it), HEAD, staged or unstaged
@@ -69,8 +70,9 @@ export class ReviewApi {
 
   async threads(view = "") { return (await this.call("GET", `/api/threads?view=${encodeURIComponent(view)}`)).map(viewThread); }
 
-  async openThread({ filePath, side, startLine, endLine, code }, body, view = "") {
-    return viewThread(await this.call("POST", "/api/threads", { anchor: { file: filePath, side, startLine, endLine, code }, body, view }));
+  // <version>: the version of the file shown (a file's versions), so a thread on code that moved since moves with it
+  async openThread({ filePath, side, startLine, endLine, code, version }, body, view = "") {
+    return viewThread(await this.call("POST", "/api/threads", { anchor: { file: filePath, side, startLine, endLine, code, version: version ?? undefined }, body, view }));
   }
 
   comment(threadId, body) { return this.call("POST", `/api/threads/${encodeURIComponent(threadId)}/comments`, { kind: "comment", body }); }

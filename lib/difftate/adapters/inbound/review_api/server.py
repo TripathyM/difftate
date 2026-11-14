@@ -20,6 +20,8 @@ gets 401.
   GET   /api/changeset[?view=<view>]    the review's changeset in the view (default: the
                                         one viewers show), from git: {"view", "base",
                                         "commit" (where the branch left the base), "diff",
+                                        "versions": {file: {"old", "new"}} (the version
+                                        of each side the diff shows; null for none),
                                         "waitingForRun", "checkedOut" (as /api/review)}
   GET   /api/threads[?status=open][&view=<view>]
                                         list threads; with a view, each anchor's lines
@@ -53,7 +55,11 @@ A view ("" for all changes, a commit such as HEAD~2 for the commits after it, HE
 for the uncommitted changes, staged or unstaged) shows part of the review: every
 thread belongs to the review, whatever view it was written in. POST /api/threads
 takes the "view" it was written in (default all changes): its lines are that
-view's. A thread listed with a view has "inView": false when its code isn't in
+view's. Its anchor may also give the "version" of the file the viewer showed (from
+the changeset's "versions"): when the file changed since, the thread is written on
+that version and moves with its code to where it is now, or is outdated when the
+code itself changed. Without one, it is written on the file now: outdated at once
+when the code on its lines isn't the code the viewer sent. A thread listed with a view has "inView": false when its code isn't in
 that view (its lines are then those of the view it was written in, its anchor's
 "view"). A view that isn't one gets 400.
 
