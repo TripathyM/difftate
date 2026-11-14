@@ -62,7 +62,7 @@ def serve(repo, folder, history):
     review = bind_review(store, git.GitCodeReader(repo, "main", "feature", about["id"]),
                          HistoryFiles({"review": about["id"]}, history), about)
     shown = ShownView("", lambda view: git.need_view(repo, view), open_in=OPEN_IN)
-    api = ReviewApi(review, folder, repo, shown)
+    api = ReviewApi(review, folder, repo, shown, default_reviewer=lambda: git.user_name(repo))
 
     class Served:
         def start_run(self, thread_ids):
@@ -349,22 +349,25 @@ def a_fake_view(view):
     return view
 
 
-class TheReviewApiOnFakes(unittest.TestCase):
+class ServedOnFakes:
     """The review API on the use cases as the watcher binds them, over the
     memory store and a fake code reader."""
 
-    def serve(self, store=None, code=None, view=""):
+    def serve(self, store=None, code=None, view="", default_reviewer=None):
         tmp = tempfile.mkdtemp(prefix="difftate-review-api-fakes-")
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         self.review = bind_review(store or MemoryStore(), code or FakeCode({"app.py": "x = 1\n"}),
                                   FakeHistory(), {"id": "r", "branch": "feature", "base": "main"})
-        self.api = ReviewApi(self.review, tmp, tmp, ShownView(view, a_fake_view, open_in=OPEN_IN))
+        self.api = ReviewApi(self.review, tmp, tmp, ShownView(view, a_fake_view, open_in=OPEN_IN),
+                             default_reviewer=default_reviewer)
         self.api.start()
         self.addCleanup(self.api.stop)
 
     def ask(self, *args, **kwargs):
         return ask(self.api, *args, **kwargs)
 
+
+class TheReviewApiOnFakes(ServedOnFakes, unittest.TestCase):
     def test_code_that_cannot_be_read_is_502(self):
         self.serve(code=UnreadableCode())
         anchor = {"file": "app.py", "side": "new", "startLine": 1, "endLine": 1}
@@ -414,6 +417,90 @@ class TheReviewApiOnFakes(unittest.TestCase):
         [thread] = self.review.list_threads()
         self.assertEqual(sorted(c.body for c in thread.thread.comments[1:]), [f"Comment {n}" for n in range(8)])
         self.assertEqual([c.seq for c in thread.thread.comments], list(range(1, 10)), "each its own place")
+
+
+class TheReviewerName(ServedOnFakes, unittest.TestCase):
+    """The reviewer name the review API takes ("reviewer"), and gives back on
+    each comment ("by") and on a thread's last status change ("statusBy")."""
+
+    def serve(self, default_reviewer=lambda: "Ada"):
+        super().serve(default_reviewer=default_reviewer)
+
+    def thread(self, tid):
+        return next(t for t in self.ask("GET", "/api/threads")[1] if t["id"] == tid)
+
+    def test_two_reviewers_comment_on_one_thread_and_the_one_who_resolves_it_is_named(self):
+        self.serve()
+        tid = self.ask("POST", "/api/threads", {"body": "Is this ready?", "reviewer": "security-bot"})[1]["id"]
+        status, comment = self.ask("POST", f"/api/threads/{tid}/comments", {"body": "Tests?", "reviewer": "docs-bot"})
+        self.assertEqual((status, comment["by"]), (200, "docs-bot"))
+
+        status, answer = self.ask("PATCH", f"/api/threads/{tid}/status", {"status": "resolved", "reviewer": "docs-bot"})
+
+        self.assertEqual((status, answer), (200, {"id": tid, "status": "resolved", "statusBy": "docs-bot"}))
+        thread = self.thread(tid)
+        self.assertEqual([(c["author"], c["by"], c["body"]) for c in thread["comments"]],
+                         [("reviewer", "security-bot", "Is this ready?"), ("reviewer", "docs-bot", "Tests?")])
+        self.assertEqual(thread["statusBy"], "docs-bot")
+
+    def test_without_a_name_the_reviewer_is_the_default_reviewer(self):
+        self.serve(default_reviewer=lambda: "Ada")
+        tid = self.ask("POST", "/api/threads", {"body": "Is this ready?"})[1]["id"]
+        self.ask("POST", f"/api/threads/{tid}/comments", {"body": "Tests?"})
+        self.ask("PATCH", f"/api/threads/{tid}/status", {"status": "dismissed"})
+
+        thread = self.thread(tid)
+
+        self.assertEqual([c["by"] for c in thread["comments"]], ["Ada", "Ada"])
+        self.assertEqual(thread["statusBy"], "Ada")
+
+    def test_with_no_name_and_no_default_a_comment_has_none(self):
+        self.serve(default_reviewer=lambda: None)
+        tid = self.ask("POST", "/api/threads", {"body": "Is this ready?"})[1]["id"]
+
+        thread = self.thread(tid)
+
+        self.assertEqual(([c["by"] for c in thread["comments"]], thread["statusBy"]), ([None], None))
+
+    def test_a_thread_written_before_reviewer_names_shows_no_name(self):
+        self.serve()
+        tid = self.review.open_thread("reviewer", "Written before names").thread.id
+        self.review.add_comment("agent", tid, "reply", "It is ready.")
+
+        thread = self.thread(tid)
+
+        self.assertEqual([c["by"] for c in thread["comments"]], [None, None])
+        self.assertIsNone(thread["statusBy"])
+
+    def test_a_reply_or_note_has_no_reviewer_name_and_gets_none_by_default(self):
+        self.serve()
+        tid = self.ask("POST", "/api/threads", {"body": "Is this ready?"})[1]["id"]
+
+        self.assertEqual(self.ask("POST", f"/api/threads/{tid}/comments", {"kind": "reply", "body": "Yes."})[1]["by"],
+                         None)
+        status, answer = self.ask("POST", f"/api/threads/{tid}/comments",
+                                  {"kind": "reply", "body": "Yes.", "reviewer": "security-bot"})
+        self.assertEqual((status, set(answer)), (403, {"error"}))
+
+    def test_a_name_that_is_not_one_line_of_text_is_400(self):
+        self.serve()
+        tid = self.ask("POST", "/api/threads", {"body": "Is this ready?"})[1]["id"]
+
+        for name in ("", "  ", 7, None, "two\nlines", "x" * 101):
+            with self.subTest(name=name):
+                for method, path, payload in (("POST", "/api/threads", {"body": "Hi"}),
+                                              ("POST", f"/api/threads/{tid}/comments", {"body": "Hi"}),
+                                              ("PATCH", f"/api/threads/{tid}/status", {"status": "resolved"})):
+                    status, answer = self.ask(method, path, dict(payload, reviewer=name))
+                    self.assertEqual((status, set(answer)), (400, {"error"}), path)
+        self.assertEqual(len(self.thread(tid)["comments"]), 1)
+
+    def test_a_name_is_kept_without_the_spaces_around_it(self):
+        self.serve()
+
+        thread = self.ask("POST", "/api/threads", {"body": "Is this ready?", "reviewer": "  security-bot "})[1]
+
+        self.assertEqual(thread["comments"][0]["by"], "security-bot")
 
 
 class StoreThatCannotWrite(MemoryStore):

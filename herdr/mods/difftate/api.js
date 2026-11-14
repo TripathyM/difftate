@@ -34,6 +34,7 @@ function viewThread(t) {
   return {
     id: t.id, filePath: a?.file ?? null, side: a?.side ?? "new", startLine: a?.startLine ?? 0, endLine: a?.endLine ?? 0, code: a?.code ?? null, writtenIn: a?.view ?? "",
     inView: t.inView !== false, status: t.status, state: t.state, outdated: !!t.outdated, comments: t.comments ?? [],
+    statusBy: t.statusBy ?? null, // the reviewer name of the last thread status change (none from an older watcher)
   };
 }
 

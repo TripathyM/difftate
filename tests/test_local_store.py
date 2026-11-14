@@ -31,7 +31,7 @@ from difftate.core.review.use_cases.list_threads import list_threads  # noqa: E4
 from difftate.core.review.use_cases.mark_viewed import mark_viewed  # noqa: E402
 from difftate.core.review.use_cases.open_thread import open_thread  # noqa: E402
 from difftate.core.review.use_cases.set_status import set_status  # noqa: E402
-from test_core_replay import TODAYS_REVIEW, as_stored, read_today, run_as_today  # noqa: E402
+from test_core_replay import TODAYS_REVIEW, as_stored, read_today, run_as_today, with_no_names  # noqa: E402
 
 TIME = "2026-11-07T10:00:00.000Z"
 
@@ -101,7 +101,7 @@ class TheLocalStore(unittest.TestCase):
         review = Review.from_events(store.load())
 
         self.assertEqual([as_stored(thread_json(ListedThread(t, None))) for t in review.threads()],
-                         self.today["threads"])
+                         with_no_names(self.today["threads"]))
         self.assertEqual([run_as_today(r) for r in review.runs()], self.today["runs"])
         self.assertEqual(review.viewed(), self.today["viewed"])
 

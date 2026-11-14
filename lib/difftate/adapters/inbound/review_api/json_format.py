@@ -16,6 +16,7 @@ KINDS = tuple(AUTHOR_OF)  # comment, reply, queued, progress
 THREAD_STATUSES = ("open", "resolved", "dismissed")
 SIDES = ("old", "new")
 ANCHOR_NEEDS = "anchor needs file, side (old|new), startLine and endLine (1 ≤ start ≤ end)"
+REVIEWER_NAME_MAX = 100  # characters in a reviewer name
 
 
 class BadRequest(Exception):
@@ -54,6 +55,20 @@ def need_status(status: Any) -> str:
     if status not in THREAD_STATUSES:
         raise BadRequest(f"status must be one of {', '.join(THREAD_STATUSES)}")
     return status
+
+
+def reviewer_name(payload: Any, default: Optional[str]) -> Optional[str]:
+    """The reviewer name the request gives ("reviewer"), without the spaces
+    around it: one line of text, at most REVIEWER_NAME_MAX characters.
+    <default> when the request gives none."""
+    given = fields(payload)
+    if "reviewer" not in given:
+        return default
+    name = given["reviewer"]
+    if not isinstance(name, str) or not name.strip() or "\n" in name or "\r" in name \
+            or len(name.strip()) > REVIEWER_NAME_MAX:
+        raise BadRequest(f"reviewer must be a name: one line of text, at most {REVIEWER_NAME_MAX} characters")
+    return name.strip()
 
 
 def need_bool(value: Any, name: str) -> bool:
@@ -97,8 +112,8 @@ def anchor_json(anchor: Anchor) -> Dict[str, Any]:
 
 
 def comment_json(comment: Comment) -> Dict[str, Any]:
-    return {"id": comment.id, "author": comment.author, "kind": comment.kind, "body": comment.body,
-            "time": comment.time}
+    return {"id": comment.id, "author": comment.author, "by": comment.by, "kind": comment.kind,
+            "body": comment.body, "time": comment.time}
 
 
 def thread_json(listed: ListedThread) -> Dict[str, Any]:
@@ -106,7 +121,8 @@ def thread_json(listed: ListedThread) -> Dict[str, Any]:
     show its code."""
     t = listed.thread
     thread = {"id": t.id, "anchor": anchor_json(t.anchor) if t.anchor else None, "outdated": t.outdated,
-              "status": t.status, "comments": [comment_json(c) for c in t.comments], "state": listed.state}
+              "status": t.status, "statusBy": t.status_by, "comments": [comment_json(c) for c in t.comments],
+              "state": listed.state}
     if not listed.in_view:
         thread["inView"] = False
     return thread

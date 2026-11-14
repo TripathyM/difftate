@@ -26,6 +26,8 @@ const SPECIAL = {
   pageup: "<pageup>", pagedown: "<pagedown>", home: "<home>", end: "<end>",
 };
 const STATE_LABEL = { waiting: "waiting for agent", queued: "queued", working: "agent working", replied: "agent replied", failed: "failed: no reply", resolved: "resolved", dismissed: "dismissed" };
+// "resolved by security-bot": a resolved or dismissed thread names the reviewer who closed it, when it has a name.
+const stateLabel = (th, state) => `${STATE_LABEL[state] ?? state}${th.status !== "open" && th.statusBy ? ` by ${th.statusBy}` : ""}`;
 // Where a thread stands: the API's thread state while open, else its status (resolved, dismissed).
 const stateOf = (th) => (th.status === "open" ? th.state ?? "waiting" : th.status);
 // How the tab names a view of the review
@@ -271,7 +273,7 @@ export default class Review extends View {
     if (!this.api) return;
     const list = await this.api.threads(this.reviewView).catch(() => null);
     if (!list) return;
-    const sig = JSON.stringify(list.map((t) => [t.id, t.status, t.state, t.outdated, t.inView, t.startLine, t.endLine, t.comments.length, t.comments.at(-1)?.body]));
+    const sig = JSON.stringify(list.map((t) => [t.id, t.status, t.statusBy, t.state, t.outdated, t.inView, t.startLine, t.endLine, t.comments.length, t.comments.at(-1)?.body]));
     if (sig === this.threadSig) return false;
     this.threadSig = sig;
     this.threads = list;
@@ -477,7 +479,7 @@ export default class Review extends View {
     const cols = this.wrapCols();
     const state = stateOf(th);
     const range = th.startLine === th.endLine ? `${th.startLine}` : `${th.startLine}-${th.endLine}`;
-    const lines = [{ k: "head", text: `${state === "resolved" || state === "dismissed" ? "○" : "●"} ${STATE_LABEL[state] ?? state}  ·  ${th.side === "old" ? "old " : ""}line ${range}${th.outdated ? "  ·  outdated" : ""}` }];
+    const lines = [{ k: "head", text: `${state === "resolved" || state === "dismissed" ? "○" : "●"} ${stateLabel(th, state)}  ·  ${th.side === "old" ? "old " : ""}line ${range}${th.outdated ? "  ·  outdated" : ""}` }];
     if (th.outdated && th.code) {
       const code = th.code.replace(/\n$/, "").split("\n");
       lines.push({ k: "author", text: "code when written (it changed since)" });
@@ -490,7 +492,8 @@ export default class Review extends View {
       lines.push({ k: "hint", text: "<leader>cR reopen" });
     } else {
       for (const c of th.comments) {
-        let body = c.body ?? "", who = "you", k = "body";
+        // A reviewer's comment shows their reviewer name; one with none (written before names) is "you"
+        let body = c.body ?? "", who = c.by ?? "you", k = "body";
         if (c.author === "agent") { who = "agent"; k = "agent"; }
         else if (c.author === "difftate") { body = body.split("\n").slice(0, 6).join("\n"); who = "note"; k = "status"; }
         lines.push({ k: "author", text: who });
@@ -1000,7 +1003,7 @@ export default class Review extends View {
     this.openPicker("Review threads", all.map((t) => ({
       label: `${t.filePath}:${t.startLine === t.endLine ? t.startLine : `${t.startLine}-${t.endLine}`}`,
       match: " " + (t.comments[0]?.body ?? ""),
-      detail: `${STATE_LABEL[stateOf(t)] ?? t.status}${t.outdated ? " · outdated" : !t.inView ? " · not in this view" : ""} · ${(t.comments[0]?.body ?? "").split("\n")[0].slice(0, 60)}`,
+      detail: `${stateLabel(t, stateOf(t))}${t.outdated ? " · outdated" : !t.inView ? " · not in this view" : ""} · ${(t.comments[0]?.body ?? "").split("\n")[0].slice(0, 60)}`,
       value: t,
     })), (t, cx) => this.goToThread(t, cx));
   }

@@ -275,17 +275,19 @@ The watcher (Python 3.9 or later, nothing else) serves the **review API** on `12
 | `POST /api/threads` | Open a thread: `anchor` (`file`, `side` `old`/`new`, `startLine`, `endLine`, `code`; `null` for a general thread), `body`, `view` (the view its lines are in; default all changes) |
 | `POST /api/threads/<id>/comments` | Add a comment: `kind` (`comment`, the default; `reply`; `queued` or `progress` for a note), `body` |
 | `PATCH /api/notes/<id>` | Edit a note: `kind`, `body`. Anything that isn't a note gets 403; a note whose run has ended gets 409 |
-| `PATCH /api/threads/<id>/status` | Set the thread status: `open`, `resolved` or `dismissed` |
+| `PATCH /api/threads/<id>/status` | Set the thread status: `open`, `resolved` or `dismissed`. Answers `id`, `status` and `statusBy` |
 
-Opening a thread and setting its status take an optional `author`, which must be `reviewer`: anyone else gets 403. That enforces the review's rules for difftate's own callers; it isn't a security check (the token is). Threads come back in difftate's own format:
+Opening a thread and setting its status take an optional `author`, which must be `reviewer`: anyone else gets 403. That enforces the review's rules for difftate's own callers; it isn't a security check (the token is).
+
+Opening a thread, adding a comment and setting the thread status also take an optional `reviewer`: the **reviewer name**, which says which reviewer wrote the comment or changed the status (one line of text, at most 100 characters). Give each reviewing agent its own name, such as `security-bot`. Without one, the name is the repository's `git config user.name`, so your own viewers need nothing. The name is what the caller says: any token holder can give any name. Each comment comes back with its `by` (`null` for a reply, a note, or a comment written before reviewer names), and each thread with `statusBy`, the name of its last status change. The prompt shows the coding agent each comment's reviewer name, and the review history keeps it. Threads come back in difftate's own format:
 
 ```json
 {"id": "…", "anchor": {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2,
                        "code": "    return f'hello {name}'", "commit": "<sha>"},
- "outdated": false, "status": "open", "state": "replied",
- "comments": [{"id": "…", "author": "reviewer", "kind": "comment", "body": "Why an f-string?", "time": "…"},
-              {"id": "…", "author": "difftate", "kind": "progress", "body": "✅ **Done** in 12s", "time": "…"},
-              {"id": "…", "author": "agent", "kind": "reply", "body": "It reads better.", "time": "…"}]}
+ "outdated": false, "status": "open", "statusBy": null, "state": "replied",
+ "comments": [{"id": "…", "author": "reviewer", "by": "security-bot", "kind": "comment", "body": "Why an f-string?", "time": "…"},
+              {"id": "…", "author": "difftate", "by": null, "kind": "progress", "body": "✅ **Done** in 12s", "time": "…"},
+              {"id": "…", "author": "agent", "by": null, "kind": "reply", "body": "It reads better.", "time": "…"}]}
 ```
 
 The **thread state** of an open thread (`null` otherwise) is the one rule the watcher dispatches by:

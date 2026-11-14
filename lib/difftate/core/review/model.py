@@ -9,7 +9,8 @@ Review. There is one event type for each line type the local store keeps
 "run-ended", "viewed").
 
 The rules:
-  1. Only a reviewer opens a thread or changes its thread status.
+  1. Only a reviewer opens a thread or changes its thread status, and only
+     a reviewer's comment or status change has a reviewer name.
   2. Each author writes only their own kind: the coding agent writes only replies.
   3. Only difftate writes notes, and only notes can be edited. A final note
      doesn't change again.
@@ -79,13 +80,15 @@ class Comment:
     difftate's note. <author> is who wrote it ("reviewer"), <kind> what it is
     ("comment"), and <seq> its place in the review: a thread's comments are in
     seq order, so a note kept only when its run ends keeps the place where it
-    was written."""
+    was written. <by> is the reviewer name, what the reviewer said they are
+    ("security-bot"): None for a reply, a note, or a comment with no name."""
     id: str
     author: str
     kind: str
     body: str
     time: str
     seq: int
+    by: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -114,12 +117,14 @@ class Anchor:
 @dataclass(frozen=True)
 class Thread:
     """A conversation about one anchor, or about the changeset as a whole (a
-    general thread: no anchor)."""
+    general thread: no anchor). <status_by> is the reviewer name of the last
+    thread status change (None for none, or one with no name)."""
     id: str
     anchor: Optional[Anchor]
     status: str = "open"
     outdated: bool = False
     comments: Tuple[Comment, ...] = ()
+    status_by: Optional[str] = None
 
 
 class ListedThread(NamedTuple):
@@ -177,10 +182,12 @@ class NoteWritten:
 
 @dataclass(frozen=True)
 class ThreadStatusChanged:
-    """A reviewer opened, resolved or dismissed a thread (the "status" line)."""
+    """A reviewer opened, resolved or dismissed a thread (the "status" line).
+    <by>: the reviewer name, as on a Comment."""
     thread_id: str
     status: str
     time: str
+    by: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -353,11 +360,13 @@ class Review:
 
     def open_thread(self, author: str, body: str, anchor: Optional[Anchor] = None,
                     snapshot: Optional[Snapshot] = None, on_branch: bool = True,
-                    shown: Optional[Snapshot] = None, since: Union[None, Moved, Outdated] = None) -> List[Event]:
+                    shown: Optional[Snapshot] = None, since: Union[None, Moved, Outdated] = None,
+                    by: Optional[str] = None) -> List[Event]:
         """A thread on <anchor>, or a general thread (no anchor), with <author>'s
-        first comment. <snapshot> is the anchor's file now, from the code reader:
-        needed with an anchor. <on_branch>: whether the review's branch is
-        checked out (see _need_branch).
+        first comment, written by the reviewer named <by>. <snapshot> is the
+        anchor's file now, from the code reader: needed with an anchor.
+        <on_branch>: whether the review's branch is checked out (see
+        _need_branch).
 
         <shown> is the version of the file the viewer showed, when it said
         which (the anchor's snapshot_id) and it isn't the file now; <since> is
@@ -386,7 +395,7 @@ class Review:
                 outdated = snapshot.code is None or not same_code(anchor.code, snapshot.code)
         events: List[Event] = [
             ThreadOpened(thread_id, anchor, time),
-            CommentAdded(thread_id, Comment(_new_id(), author, "comment", body, time, self._seq + 1)),
+            CommentAdded(thread_id, Comment(_new_id(), author, "comment", body, time, self._seq + 1, by)),
         ]
         if outdated:
             events.append(ThreadOutdated(thread_id, time))
@@ -396,13 +405,18 @@ class Review:
             events += self.move_with_code({thread_id: moved_since})
         return events
 
-    def add_comment(self, author: str, thread_id: str, kind: str, body: str) -> List[Event]:
+    def add_comment(self, author: str, thread_id: str, kind: str, body: str,
+                    by: Optional[str] = None) -> List[Event]:
         """<author>'s comment, reply or note (<kind> says which) at the end of the
-        thread. Rule 2: each author writes only their own kind."""
+        thread; <by>: the reviewer name of a reviewer's comment. Rule 2: each
+        author writes only their own kind. Rule 1: only a reviewer has a
+        reviewer name."""
         thread = self.thread(thread_id)
         if AUTHOR_OF.get(kind) != author:
             raise NotAllowed(f"{author} doesn't write a {kind}")
-        comment = Comment(_new_id(), author, kind, body, _now(), self._seq + 1)
+        if by is not None and author != REVIEWER:
+            raise NotAllowed(f"{author} has no reviewer name: only a reviewer does")
+        comment = Comment(_new_id(), author, kind, body, _now(), self._seq + 1, by)
         event: Event = (NoteWritten(thread.id, comment, final=False) if kind in NOTE_KINDS
                         else CommentAdded(thread.id, comment))
         self.apply(event)
@@ -429,11 +443,12 @@ class Review:
         self.apply(event)
         return [event]
 
-    def set_status(self, author: str, thread_id: str, status: str) -> List[Event]:
-        """<status>: open, resolved or dismissed. Rule 1: only a reviewer changes it."""
+    def set_status(self, author: str, thread_id: str, status: str, by: Optional[str] = None) -> List[Event]:
+        """<status>: open, resolved or dismissed, set by the reviewer named <by>.
+        Rule 1: only a reviewer changes it."""
         if author != REVIEWER:
             raise NotAllowed("only a reviewer changes a thread's status")
-        event = ThreadStatusChanged(self.thread(thread_id).id, status, _now())
+        event = ThreadStatusChanged(self.thread(thread_id).id, status, _now(), by)
         self.apply(event)
         return [event]
 
@@ -533,7 +548,8 @@ class Review:
             if isinstance(event, NoteWritten) and event.final:
                 self._final.add(comment.id)
         elif isinstance(event, ThreadStatusChanged):
-            self._threads[event.thread_id] = replace(self._threads[event.thread_id], status=event.status)
+            self._threads[event.thread_id] = replace(self._threads[event.thread_id], status=event.status,
+                                                     status_by=event.by)
         elif isinstance(event, ThreadMoved):
             thread = self._threads[event.thread_id]
             anchor = replace(thread.anchor, start_line=event.start_line, end_line=event.end_line,

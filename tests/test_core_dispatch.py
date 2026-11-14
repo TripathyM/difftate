@@ -152,6 +152,28 @@ class AWholeRun(DispatchTest):
             *[f"- ✅ `Read file{n}.py`" for n in range(2, 9)], "- ⏳ `Read file9.py`"])
 
 
+class ThePrompt(DispatchTest):
+    def test_it_shows_the_coding_agent_who_wrote_each_comment(self):
+        tid = self.review.open_thread("reviewer", "Why an f-string here?", by="Ada").thread.id
+        other = self.review.open_thread("reviewer", "And the docs?", by="docs-bot").thread.id
+        self.review.add_comment("reviewer", tid, "comment", "Is it safe?", by="security-bot")
+        agent = FakeCodingAgent(FakeRun([[Reply(tid[:8], "Yes."), Reply(other[:8], "Done."), Finished(True),
+                                          Exited(0)]]),
+                                FakeRun([[Finished(True), Exited(0)]]))
+
+        self.poll(agent)
+        self.review.add_comment("reviewer", tid, "comment", "Thanks.")
+        self.poll(agent, times=3)
+
+        first, second = agent.started[0][0], agent.started[1][0]
+        self.assertIn("reviewer Ada (new): Why an f-string here?", first)
+        self.assertIn("reviewer security-bot (new): Is it safe?", first)
+        self.assertIn("reviewer docs-bot (new): And the docs?", first)
+        self.assertIn("reviewer Ada: Why an f-string here?", second)
+        self.assertIn("reviewer (new): Thanks.", second, "a comment with no name names no one")
+        self.assertIn("  reviewer docs-bot: And the docs?", second, "the other open threads name them too")
+
+
 class ARunWithNoReply(DispatchTest):
     def test_a_thread_the_run_didnt_reply_to_is_failed_until_the_reviewer_comments(self):
         tid = self.a_thread()

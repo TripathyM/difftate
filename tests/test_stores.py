@@ -38,6 +38,11 @@ WORK = [RunStarted("run-1", (T1, T2), ("c1", "c2"), {T1: (), T2: ("r0",)}, TIME)
         NoteWritten(T1, NOTE, final=True), CommentAdded(T1, REPLY), RunEnded("run-1", "done", TIME),
         ThreadStatusChanged(T2, "resolved", TIME), ThreadMoved(T1, 5, 6, "b" * 40, TIME),
         ThreadOutdated(T1, TIME), FileViewed("app.py", "c" * 40, TIME), FileViewed("app.py", None, TIME)]
+# A reviewer name on comments and status changes, beside ones with none
+NAMED = [ThreadOpened(T1, None, TIME), CommentAdded(T1, Comment("c1", "reviewer", "comment", "Ready?", TIME, 1, "Ada")),
+         CommentAdded(T1, Comment("c2", "reviewer", "comment", "Tests? ✨", TIME, 2, "security-bot")),
+         CommentAdded(T1, Comment("c3", "reviewer", "comment", "No name", TIME, 3)),
+         ThreadStatusChanged(T1, "resolved", TIME, "security-bot"), ThreadStatusChanged(T1, "open", TIME)]
 
 
 class StoreContract:
@@ -69,6 +74,11 @@ class StoreContract:
         self.store.append(progress)
 
         self.assertEqual(self.store.load(), progress)
+
+    def test_it_keeps_the_reviewer_name_on_each_comment_and_status_change(self):
+        self.store.append(NAMED)
+
+        self.assertEqual(self.store.load(), NAMED)
 
     def test_appending_nothing_keeps_what_was_there(self):
         self.store.append(OPENING)
@@ -105,10 +115,11 @@ class LocalStoreContract(StoreContract, unittest.TestCase):
         self.store.append(WORK)
 
         self.store.append([NoteWritten(T1, NOTE, final=False)])
+        self.store.append(NAMED)
 
         reopened = LocalStore.open(self.folder, branch="feature", base="main")
 
-        self.assertEqual(reopened.load(), OPENING + WORK + [NoteWritten(T1, NOTE, final=False)])
+        self.assertEqual(reopened.load(), OPENING + WORK + [NoteWritten(T1, NOTE, final=False)] + NAMED)
 
 
 if __name__ == "__main__":
