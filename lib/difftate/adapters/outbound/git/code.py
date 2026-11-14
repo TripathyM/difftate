@@ -28,14 +28,15 @@ from . import repository
 from .diff_hashes import diff_hashes
 
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
-KEPT = "refs/difftate/"  # + the review's id: the review's snapshots
+SNAPSHOT_REFS = "refs/difftate/"  # + a review's id: the ref that keeps its snapshots
 
 
 def forget_kept_snapshots(cwd: str, reviews: Iterable[str]) -> None:
     """Drop the ref of every review that isn't one of <reviews> (their ids):
-    the snapshots of a review that is gone can go."""
-    names = repository.git(cwd, "for-each-ref", "--format=%(refname)", KEPT)
-    still = {KEPT + r for r in reviews}
+    the snapshots of a review that is gone can go. A ref git can't drop now
+    is dropped next time."""
+    names = repository.git(cwd, "for-each-ref", "--format=%(refname)", SNAPSHOT_REFS)
+    still = {SNAPSHOT_REFS + r for r in reviews}
     for ref in (names or "").split():
         if ref not in still:
             repository.git(cwd, "update-ref", "-d", ref)
@@ -50,15 +51,15 @@ class GitCodeReader:
         self.base = base
         self.branch = branch
         self.top = repository.git(cwd, "rev-parse", "--show-toplevel") or cwd
-        self.ref = KEPT + review_id
-        self._kept: Optional[FrozenSet[str]] = None  # what this reader last wrote to the ref
+        self.ref = SNAPSHOT_REFS + review_id
+        self._kept: Optional[Tuple[FrozenSet[str], str]] = None  # what it last kept, and the ref's tree then
         self._hashed: Dict[str, Tuple[tuple, str]] = {}  # path: (its stat, its blob)
         self._diffs: Dict[Tuple[str, str], Tuple[Hunk, ...]] = {}  # (blob, blob): hunks
 
-    def _run(self, *args: str, given: Optional[str] = None) -> Tuple[int, str]:
+    def _run(self, *args: str, stdin: Optional[str] = None) -> Tuple[int, str]:
         # Files in any encoding: only the line structure matters here
         r = subprocess.run(["git", "-C", self.top, *args], capture_output=True, text=True, errors="replace",
-                           input=given)
+                           input=stdin)
         return r.returncode, r.stdout
 
     # ── Where each version of a file is ──────────────────────────────────────
@@ -117,23 +118,34 @@ class GitCodeReader:
 
     def keep(self, file_ids: Collection[str]) -> None:
         wanted = frozenset(file_ids)
-        if wanted == self._kept:
-            return  # every poll asks: git runs only when the snapshots change
-        code, out = self._run("cat-file", "--batch-check=%(objectname) %(objecttype)",
-                              given="".join(f"{i}\n" for i in sorted(wanted)))
-        if code != 0:
+        # Every poll asks: the snapshots are written only when they or the ref changed
+        if self._kept is not None and self._kept[0] == wanted and self._ref_now() == self._kept[1]:
+            return
+        tree = self._write_tree(wanted)
+        if tree is None:
             raise CouldNotRead("could not keep the snapshots")
-        # A snapshot already lost to git gc is left out: a tree may not name a missing blob
+        self._kept = (wanted, tree)
+
+    def _ref_now(self) -> str:
+        """The tree the review's ref names now; "" when there is no ref."""
+        return self._run("rev-parse", "--verify", "--quiet", self.ref)[1].strip()
+
+    def _write_tree(self, file_ids: FrozenSet[str]) -> Optional[str]:
+        """Point the review's ref at a tree of the blobs <file_ids> (no ref when
+        there are none): the tree, "" for no ref, or None when git fails. A
+        snapshot already lost to git gc is left out: a tree may not name a
+        missing blob."""
+        code, out = self._run("cat-file", "--batch-check=%(objectname) %(objecttype)",
+                              stdin="".join(f"{i}\n" for i in sorted(file_ids)))
+        if code != 0:
+            return None
         blobs = [row.split()[0] for row in out.splitlines() if row.endswith(" blob")]
         if not blobs:
-            code, _ = self._run("update-ref", "-d", self.ref)
-        else:
-            code, tree = self._run("mktree", given="".join(f"100644 blob {b}\t{b}\n" for b in blobs))
-            if code == 0:
-                code, _ = self._run("update-ref", self.ref, tree.strip())
-        if code != 0:
-            raise CouldNotRead("could not keep the snapshots")
-        self._kept = wanted
+            return "" if self._run("update-ref", "-d", self.ref)[0] == 0 else None
+        code, tree = self._run("mktree", stdin="".join(f"100644 blob {b}\t{b}\n" for b in blobs))
+        if code != 0 or self._run("update-ref", self.ref, tree.strip())[0] != 0:
+            return None
+        return tree.strip()
 
     def versions(self, files: Sequence[FileInView]) -> Dict[FileInView, Optional[str]]:
         # Where the branch left the base, once for every file that needs it

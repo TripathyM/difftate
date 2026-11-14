@@ -50,27 +50,26 @@ class OpeningAThread(unittest.TestCase):
         self.assertEqual(len(self.store.load()), 4)
         self.assertEqual(self.history.recorded, self.store.load())
 
-    def test_the_code_reader_keeps_the_snapshot_of_each_thread_that_follows_its_code(self):
+    def test_the_code_reader_keeps_the_snapshot_of_each_thread_that_moves_with_its_code(self):
         first = self.open_a_thread("reviewer", "Why an f-string?", SHOWN)
         self.code.files["app.py"] = "import os\n" + APP
         second = self.open_a_thread("reviewer", "Why an f-string here?", Anchor("app.py", "new", 3, 3))
         self.open_a_thread("reviewer", "Is this ready?")
 
-        self.assertEqual(self.code.kept, {first.anchor.snapshot_id, second.anchor.snapshot_id})
+        self.assertEqual(self.code.asked_to_keep, {first.anchor.snapshot_id, second.anchor.snapshot_id})
         self.assertNotEqual(first.anchor.snapshot_id, second.anchor.snapshot_id)
 
-    def test_a_thread_whose_snapshot_cant_be_kept_is_not_opened(self):
+    def test_a_thread_whose_snapshot_cant_be_kept_now_is_opened_all_the_same(self):
         self.code = CodeThatCantKeep({"app.py": APP})
 
-        with self.assertRaises(CouldNotRead):
-            self.open_a_thread("reviewer", "Why an f-string?", SHOWN)
+        thread = self.open_a_thread("reviewer", "Why an f-string?", SHOWN)
 
-        self.assertEqual((self.store.load(), self.history.recorded), ([], []))
+        self.assertEqual(Review.from_events(self.store.load()).thread(thread.id), thread)
 
     def test_an_outdated_threads_snapshot_is_not_kept(self):
         self.open_a_thread("reviewer", "Why an f-string?", CHANGED_SINCE)
 
-        self.assertEqual(self.code.kept, set(), "it never follows its code again")
+        self.assertEqual(self.code.asked_to_keep, set(), "it never moves with its code again")
 
     def test_a_thread_whose_code_changed_since_the_viewer_showed_it_is_outdated_at_once(self):
         thread = self.open_a_thread("reviewer", "Why an f-string?", CHANGED_SINCE)

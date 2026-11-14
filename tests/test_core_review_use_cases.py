@@ -376,7 +376,7 @@ class MovingThreadsWithTheirCode(ForRunningTheLoop):
 
         self.move()
 
-        self.assertEqual(self.code.kept, {self.now_id()})
+        self.assertEqual(self.code.asked_to_keep, {self.now_id()})
         self.assertNotEqual(self.now_id(), before)
 
     def test_the_snapshot_of_a_thread_that_became_outdated_is_no_longer_kept(self):
@@ -384,13 +384,12 @@ class MovingThreadsWithTheirCode(ForRunningTheLoop):
 
         self.move()
 
-        self.assertEqual(self.code.kept, set())
+        self.assertEqual(self.code.asked_to_keep, set())
 
     def test_a_move_whose_snapshot_cant_be_kept_is_not_kept_until_it_can_be(self):
         self.code.files["long.py"] = "import os\n" + LONG
         kept = self.store.load()
-        cant = CodeThatCantKeep(self.code.files)
-        cant._kept = self.code._kept  # the snapshots self.code gave out
+        cant = CodeThatCantKeep(self.code.files, self.code)
 
         with self.assertRaises(CouldNotRead):
             self.move(cant)
@@ -399,13 +398,24 @@ class MovingThreadsWithTheirCode(ForRunningTheLoop):
         self.move()
         self.assertEqual(self.rebuilt().thread(self.tid).anchor.start_line, 13)
 
+    def test_a_move_the_store_cant_keep_leaves_the_snapshot_before_it_kept(self):
+        before = self.rebuilt().thread(self.tid).anchor.snapshot_id
+        self.code.files["long.py"] = "import os\n" + LONG
+        store = StoreThatCannotKeep()
+        store.append(self.store.load())
+
+        with self.assertRaises(CouldNotRead):
+            move_with_code(store, self.code, self.history)
+
+        self.assertIn(before, self.code.asked_to_keep, "the thread the store has still moves from it")
+
     def test_a_review_whose_snapshots_were_never_kept_has_them_kept_when_its_code_is_next_read(self):
         snapshot = self.rebuilt().thread(self.tid).anchor.snapshot_id
-        self.code.kept = None  # opened by a difftate that didn't keep snapshots
+        self.code.asked_to_keep = None  # opened by a difftate that didn't keep snapshots
 
         self.move()
 
-        self.assertEqual(self.code.kept, {snapshot})
+        self.assertEqual(self.code.asked_to_keep, {snapshot})
 
     def test_a_thread_written_before_snapshots_existed_starts_moving_from_the_file_now(self):
         old = "written-before-snapshots"

@@ -195,7 +195,7 @@ class TheFakeCodeReader(CodeReaderContract, unittest.TestCase):
         self.code.checked_out = False
 
     def collect_garbage(self):
-        self.code._kept = {i: text for i, text in self.code._kept.items() if i in (self.code.kept or ())}
+        self.code.collect_garbage()
 
 
 class InAGitRepository:
@@ -339,6 +339,15 @@ class TheGitAdapterKeepingSnapshots(InAGitRepository, unittest.TestCase):
         self.git("push", "-q", "--tags")
 
         self.assertEqual([r for r in self.git_out("ls-remote", remote) if "difftate" in r], [])
+
+    def test_a_ref_removed_by_someone_else_is_written_again(self):
+        long = self.code.snapshot("long.py", "new", "", 12, 12).id
+        self.code.keep([long])
+        self.git("update-ref", "-d", self.REF)
+
+        self.code.keep([long])
+
+        self.assertEqual(self.kept(), {long: "blob"})
 
     def test_the_refs_of_reviews_that_are_gone_are_dropped(self):
         other = GitCodeReader(self.repo, "main", "other-branch", "other-5e6f7a8b")

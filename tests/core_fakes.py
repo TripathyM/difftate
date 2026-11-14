@@ -40,7 +40,7 @@ class FakeCode:
         self.checked_out = on_branch
         self.reads = 0  # how many times the code was read
         self._kept = {}  # id: text, for every id given out
-        self.kept = None  # the ids it was last asked to keep
+        self.asked_to_keep = None  # the ids it was last asked to keep
 
     def _id(self, file, text):
         if text is None:
@@ -62,7 +62,11 @@ class FakeCode:
         return Snapshot(file_id, self.commit, self.code_on_lines(file_id, start_line, end_line))
 
     def keep(self, file_ids):
-        self.kept = set(file_ids)
+        self.asked_to_keep = set(file_ids)
+
+    def collect_garbage(self):
+        """What git gc --prune=now does: lose every file it wasn't asked to keep."""
+        self._kept = {i: text for i, text in self._kept.items() if i in (self.asked_to_keep or ())}
 
     def versions(self, files):
         self.reads += 1
@@ -109,7 +113,13 @@ class FakeCode:
 
 class CodeThatCantKeep(FakeCode):
     """A code reader that reads the code but can't keep a snapshot (git can't
-    write the ref, say)."""
+    write the ref, say). Given <code>, it reads its files and the snapshots it
+    gave out."""
+
+    def __init__(self, files, code=None):
+        super().__init__(files)
+        if code is not None:
+            self._kept = code._kept
 
     def keep(self, file_ids):
         raise CouldNotRead("could not keep the snapshots")

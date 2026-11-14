@@ -22,8 +22,8 @@ def move_with_code(store: ForKeepingTheReview, code: ForReadingTheCode,
     a thread whose code can't be read now stays as it is. The anchor keeps its
     view, so a thread on the old side of HEAD~1 moves with its code there.
 
-    The code reader keeps the snapshots the threads follow their code from,
-    and lets go of those no thread follows any more."""
+    The code reader keeps the snapshots the threads move with their code
+    from, and lets go of those no thread needs any more."""
     review = Review.from_events(store.load())
     anchored: Dict[str, Anchor] = {t.id: t.anchor for t in review.threads()
                                    if t.anchor is not None and not t.outdated}
@@ -52,12 +52,15 @@ def move_with_code(store: ForKeepingTheReview, code: ForReadingTheCode,
     # A checkout while the code was read: what it found may be the other branch's
     if found and not code.on_branch():
         return []
+    before = review.snapshots()
     events = review.move_with_code(found)
-    # The snapshots the threads follow now, before the moves are kept: a review
-    # from before snapshots were kept gets them kept on its first poll
-    code.keep(review.snapshots())
+    # Kept before the moves are, on every poll: a move whose snapshot can't be
+    # kept waits for the next poll, and a review from before snapshots were
+    # kept gets them kept. Those before the moves too, until the moves are kept.
+    code.keep(before | review.snapshots())
     if not events:
         return []
     store.append(lasting(events))
     history.record(lasting(events))
+    code.keep(review.snapshots())  # the snapshots no thread needs now can go
     return [e.thread_id for e in events if isinstance(e, ThreadOutdated)]

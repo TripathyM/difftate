@@ -43,7 +43,7 @@ from .core.review.use_cases.start_run import start_run
 STORE = LocalStore              # for keeping the review
 REVIEW_HISTORY = HistoryFiles   # for recording review history
 CODE_READER = GitCodeReader     # for reading the code
-REPOSITORY = git                # the repository: its difftate folder, base, branch and views (goes with CODE_READER)
+REPOSITORY = git                # the repository: its difftate folder, base, branch, views and kept snapshots (goes with CODE_READER)
 REPORTER = Terminal             # for reporting
 CODING_AGENTS = {a.name: a for a in (ClaudeCode, OpenCode)}  # for asking the coding agent: --tool picks one
 VIEWERS = {"browser": cli.open_browser, "herdr": cli.open_in_herdr}  # where the review opens: --open picks
