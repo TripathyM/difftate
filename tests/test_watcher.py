@@ -1024,7 +1024,10 @@ class WatcherTest(Harness, unittest.TestCase):
         # final note is stored, so wait for that, not for the replied state.
         def final_note():
             with open(self.events_file()) as f:
-                return any(line["type"] == "note" and line["thread"] == tid for line in map(json.loads, f))
+                try:
+                    return any(event["type"] == "note" and event["thread"] == tid for event in map(json.loads, f))
+                except ValueError:
+                    return False  # a line still being written: not yet
         wait_for("the run's final note stored", final_note)
         self.assertEqual(self.state(tid), "replied")
         self.assertIn("changed outside difftate", self.note(tid, "progress"))
