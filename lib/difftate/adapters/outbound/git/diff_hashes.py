@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 def _unquote(s: str) -> str:
@@ -113,3 +113,8 @@ def blob_ids(diff: str) -> Dict[str, Tuple[Optional[str], Optional[str]]]:
         return None if set(i) == {"0"} else i
     return {_shown_path(b): (blob(b["index"][0]), blob(b["index"][1])) for b in _files(diff)
             if b["index"] and not b.get("submodule")}
+
+
+def paths(diff: str) -> List[str]:
+    """Every path a unified <diff> names, both sides of a rename, in order."""
+    return list(dict.fromkeys(p for b in _files(diff) for p in (b["old"], b["new"]) if p))
