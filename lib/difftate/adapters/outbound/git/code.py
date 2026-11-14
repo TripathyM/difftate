@@ -11,7 +11,10 @@ is outdated (core/changes/model.py).
 The changeset names the versions a viewer shows: the blobs of its diff, each
 one written to the object database, so a thread written on a version the
 viewer showed moves with its code from there, even when the file changed
-after the viewer showed it.
+after the viewer showed it. A viewer polls the changeset, then the viewed
+files: their diff hashes come from the same diff of all changes, while it is
+the poll lasts and the files it names haven't changed, so a poll runs one git
+diff.
 
 Nothing in git refers to a blob written that way, so git gc prunes it in time
 (gc.pruneExpire, two weeks by default). The snapshots the core keeps stay
@@ -27,17 +30,29 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
 from dataclasses import replace
-from typing import Collection, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Collection, NamedTuple, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
 
 from ....core.changes.model import Changeset, FileInView, Hunk, Snapshot, Versions
 from ....core.review.model import CouldNotRead
 from . import repository
-from .diff_hashes import blob_ids, diff_hashes
+from .diff_hashes import blob_ids, diff_hashes, paths
 
 BLOB_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")  # a full object id (SHA-1 or SHA-256)
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
 SNAPSHOT_REFS = "refs/difftate/"  # + a review's id: the ref that keeps its snapshots
+# How long the diff of all changes read for a changeset serves its diff hashes
+# too: a viewer's poll asks for both within it (herdr/mods/difftate/main.js)
+ONE_POLL = 1.0  # seconds
+
+
+class DiffRead(NamedTuple):
+    """A diff of all changes as read: <at> the clock's time, with the index
+    and each file it names as they were on disk then (<on_disk>)."""
+    diff: str
+    at: float
+    on_disk: Tuple[Optional[tuple], ...]
 
 
 def forget_kept_snapshots(cwd: str, reviews: Iterable[str]) -> None:
@@ -55,8 +70,10 @@ class GitCodeReader:
     """Reads the code of the review <review_id> of <branch> against <base>,
     in the repository at <cwd>. It plugs into ForReadingTheCode."""
 
-    def __init__(self, cwd: str, base: str, branch: str, review_id: str) -> None:
+    def __init__(self, cwd: str, base: str, branch: str, review_id: str,
+                 clock: Callable[[], float] = time.monotonic) -> None:
         self.cwd = cwd
+        self.clock = clock
         self.base = base
         self.branch = branch
         self.top = repository.git(cwd, "rev-parse", "--show-toplevel") or cwd
@@ -65,6 +82,10 @@ class GitCodeReader:
         self._hashed: Dict[str, Tuple[tuple, str]] = {}  # path: (its stat, its blob)
         self._diffs: Dict[Tuple[str, str], Tuple[Hunk, ...]] = {}  # (blob, blob): hunks
         self._stored: Set[str] = set()  # blobs known to be in git's object database
+        git_dir = repository.git(cwd, "rev-parse", "--absolute-git-dir")
+        self._index_file = os.path.join(git_dir, "index") if git_dir else None
+        # The last diff of all changes read: when, and the index and the files it names then
+        self._all_changes: Optional[DiffRead] = None
 
     def _run(self, *args: str, stdin: Optional[str] = None) -> Tuple[int, str]:
         # Files in any encoding: only the line structure matters here
@@ -217,7 +238,10 @@ class GitCodeReader:
         return repository.review_branch(self.cwd, self.base)
 
     def changeset(self, view: str) -> Changeset:
+        started = time.time_ns()
         c = repository.changeset(self.cwd, self.base, view)
+        if not c.view:
+            self._remember(c.diff, started)
         return replace(c, versions=self._stored_versions(blob_ids(c.diff), on_disk=c.view != "staged"))
 
     def _stored_versions(self, blobs: Dict[str, Tuple[Optional[str], Optional[str]]],
@@ -244,4 +268,38 @@ class GitCodeReader:
         return {f: Versions(*(b if b in self._stored else None for b in pair)) for f, pair in blobs.items()}
 
     def diff_hashes(self) -> Dict[str, str]:
-        return diff_hashes(repository.changeset(self.cwd, self.base).diff)
+        return diff_hashes(self._all_changes_now())
+
+    def _all_changes_now(self) -> str:
+        """The diff of all changes: the one last read, in the same poll (ONE_POLL)
+        and while the index and every file it names are as they were then; else
+        a new one. A file it doesn't name may have changed since: the next poll
+        reads it."""
+        last = self._all_changes
+        if last is None or self.clock() - last.at >= ONE_POLL or self._as_on_disk(last.diff) != last.on_disk:
+            started = time.time_ns()
+            diff = repository.changeset(self.cwd, self.base).diff
+            self._remember(diff, started)
+            return diff
+        return last.diff
+
+    def _remember(self, diff: str, started: int) -> None:
+        """Keep <diff>, which git began to read at <started> (time.time_ns), for
+        the rest of the poll. Not when the index or a file it names was written
+        since: git may have read it before that, so the file on disk may not be
+        the one in <diff>."""
+        on_disk = self._as_on_disk(diff)
+        written_since = any(st is not None and st[2] >= started for st in on_disk)
+        self._all_changes = None if written_since else DiffRead(diff, self.clock(), on_disk)
+
+    def _as_on_disk(self, diff: str) -> Tuple[Optional[tuple], ...]:
+        """The index and each file <diff> names, as they are on disk now: what
+        os.stat says of them (None for no file)."""
+        def stat(path: str) -> Optional[tuple]:
+            try:
+                st = os.stat(path)
+            except OSError:
+                return None
+            return st.st_ino, st.st_size, st.st_mtime_ns, st.st_mode
+        files = [os.path.join(self.top, f) for f in paths(diff)]
+        return tuple(stat(p) for p in ([self._index_file] if self._index_file else []) + files)

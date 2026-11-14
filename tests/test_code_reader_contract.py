@@ -19,8 +19,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 sys.path.insert(0, os.path.join(ROOT, "tests"))
 
-from core_fakes import FakeCode  # noqa: E402
-from difftate.adapters.outbound.git import GitCodeReader, forget_kept_snapshots  # noqa: E402
+from core_fakes import FakeClock, FakeCode  # noqa: E402
+from difftate.adapters.outbound.git import GitCodeReader, repository, diff_hashes as diff_hashes_of, forget_kept_snapshots  # noqa: E402
 from difftate.core.changes.model import FileInView, Hunk  # noqa: E402
 from difftate.core.review.model import NotFound  # noqa: E402
 
@@ -30,6 +30,7 @@ NEW = FileInView("long.py", "new")
 # An id no code reader gave: a snapshot that is gone (git gc)
 LOST = "0123456789abcdef0123456789abcdef01234567"
 REVIEW = "feature-1a2b3c4d"  # the review's id
+POLL = 2.0  # seconds between two polls of a viewer (herdr/mods/difftate/main.js)
 
 
 class CodeReaderContract:
@@ -290,6 +291,63 @@ class TheGitAdapter(InAGitRepository, CodeReaderContract, unittest.TestCase):
 
         self.assertNotIn("sub", versions)
         self.assertEqual(self.code.code_on_lines(versions["long.py"].new, 20, 20), "line_20 = 20")
+
+
+class TheGitAdapterPolled(InAGitRepository, unittest.TestCase):
+    """A viewer polls the changeset, then the viewed files (their diff hashes):
+    the git adapter reads the changeset with one git diff for both."""
+
+    def diffs_run(self, *reads):
+        """How many times git diff compared the files with a commit or the index
+        while <reads> ran (the blob-to-blob diffs of hunks aren't counted)."""
+        run, runs = subprocess.run, []
+
+        def counting(args, *a, **k):
+            if "diff" in args and "-U0" not in args:
+                runs.append(args)
+            return run(args, *a, **k)
+        with mock.patch("subprocess.run", counting):
+            for read in reads:
+                read()
+        return len(runs)
+
+    def setUp(self):
+        super().setUp()
+        self.clock = FakeClock()
+        self.code = GitCodeReader(self.repo, "main", "feature", REVIEW, clock=self.clock)
+
+    def test_one_poll_reads_the_changeset_with_one_git_diff(self):
+        self.assertEqual(self.diffs_run(lambda: self.code.changeset(""), self.code.diff_hashes), 1)
+
+    def test_an_edit_to_a_file_of_the_changeset_right_after_the_poll_changes_its_hash(self):
+        hashes = diff_hashes_of(self.code.changeset("").diff)
+
+        self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'three'"))
+
+        self.assertNotEqual(self.code.diff_hashes()["long.py"], hashes["long.py"])
+
+    def test_a_file_saved_while_git_diff_reads_it_is_read_again_for_its_hash(self):
+        read = repository.changeset
+
+        def saved_meanwhile(*args, **kwargs):
+            changeset = read(*args, **kwargs)
+            self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'three'"))  # after git read it
+            return changeset
+        with mock.patch.object(repository, "changeset", saved_meanwhile):
+            hashes = diff_hashes_of(self.code.changeset("").diff)
+
+        self.assertNotEqual(self.code.diff_hashes()["long.py"], hashes["long.py"])
+
+    def test_a_file_changed_after_the_poll_is_in_the_hashes_by_the_next_one(self):
+        self.code.changeset("")
+        self.write("new.py", "x = 1\n")
+
+        self.clock.wait(POLL)
+
+        self.assertIn("new.py", self.code.diff_hashes())
+
+    def test_a_changeset_in_another_view_is_not_the_one_the_hashes_are_of(self):
+        self.assertEqual(self.diffs_run(lambda: self.code.changeset("HEAD"), self.code.diff_hashes), 2)
 
 
 class TheGitAdapterInEachView(InAGitRepository, unittest.TestCase):
