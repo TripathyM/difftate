@@ -62,7 +62,9 @@ class ForReadingTheCode(Protocol):
 
     # ── The changeset ────────────────────────────────────────────────────────
     def changeset(self, view: str) -> Changeset:
-        """The review's changeset in <view> ("" for all changes). Raises the
+        """The review's changeset in <view> ("" for all changes), with the
+        versions it shows of each file: each one it names can be read later
+        (code_on_lines, hunks), even once the file changed again. Raises the
         core's NotFound when <view> is no view (it names no commit), and
         CouldNotRead when the changeset can't be read."""
         ...

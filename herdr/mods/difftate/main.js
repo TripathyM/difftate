@@ -418,7 +418,8 @@ export default class Review extends View {
     }
     this.dirty = false;
     this.groupOpen = false;
-    this.view = { path, mode };
+    // The versions of the file these rows show: a comment says which it was written on
+    this.view = { path, mode, versions: f?.versions ?? null };
     this.rows = rows;
     this.lang = langOf(path);
     this.hlUpTo = 0;
@@ -851,7 +852,9 @@ export default class Review extends View {
     this.openPrompt({
       kind: "comment",
       label: `Comment on ${this.view.path}:${range}${side === "old" ? " (old)" : ""}`,
-      target: { filePath: this.view.path, side, startLine, endLine, code: mine.map((r) => r.raw).join("\n") },
+      // Unsaved edits aren't any version of the file
+      target: { filePath: this.view.path, side, startLine, endLine, code: mine.map((r) => r.raw).join("\n"),
+                version: this.dirty ? null : this.view.versions?.[side] ?? null },
     });
   }
 

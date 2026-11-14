@@ -304,6 +304,14 @@ class TheReviewApi(unittest.TestCase):
         self.git("checkout", "-q", "feature")
         call("GET", "/api/review")
 
+        # A thread on the version of the file the viewer showed: it moves with code that only moved since
+        shown = call("GET", "/api/changeset")["versions"]["app.py"]["new"]
+        self.write("app.py", "import os\n\ndef greet(name):\n    return f'hello {name}'\n")
+        call("POST", "/api/threads", {"anchor": dict(self.anchor("app.py", 4), startLine=2, endLine=2,
+                                                     version=shown), "body": "Shown before the import"})
+        for refused in (5, ""):
+            call("POST", "/api/threads", {"anchor": dict(self.anchor("app.py", 4), version=refused), "body": "Hi"})
+
         # What isn't a route, a method, a token or JSON
         call("GET", "/api/nope")
         call("POST", "/api/review", {})

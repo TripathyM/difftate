@@ -11,7 +11,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
-from difftate.core.changes.model import Changeset, Hunk, Snapshot  # noqa: E402
+from difftate.core.changes.model import Changeset, Hunk, Snapshot, Versions  # noqa: E402
 from difftate.core.dispatch.model import CouldNotStart, Exited  # noqa: E402
 from difftate.core.review.model import CouldNotRead, NotFound  # noqa: E402
 
@@ -100,7 +100,8 @@ class FakeCode:
         diff = "".join(f"diff --git a/{f} b/{f}\n" + "".join(difflib.unified_diff(
             (self.base.get(f) or "").splitlines(True), (self.files.get(f) or "").splitlines(True),
             f"a/{f}", f"b/{f}")) for f in self._changed())
-        return Changeset(view, "main", "base-commit", diff)
+        versions = {f: Versions(self._id(f, self.base.get(f)), self._id(f, self.files.get(f))) for f in self._changed()}
+        return Changeset(view, "main", "base-commit", diff, versions)
 
     def _changed(self):
         return sorted(f for f in set(self.base) | set(self.files) if self.base.get(f) != self.files.get(f))

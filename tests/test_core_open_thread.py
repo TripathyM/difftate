@@ -6,6 +6,7 @@ a fake history keeps what it was asked to record.
 import os
 import sys
 import unittest
+from dataclasses import replace
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
@@ -17,16 +18,18 @@ from difftate.core.changes.model import FileInView  # noqa: E402
 from difftate.core.review.model import Anchor, Conflict, CouldNotRead, NotAllowed, NotesInProgress, Review  # noqa: E402
 from difftate.core.review.use_cases.open_thread import open_thread  # noqa: E402
 
+BASE = "def greet(name):\n    return 'hi ' + name\n"
 APP = "def greet(name):\n    return f'hello {name}'\n"
 # Line 2 of app.py, as the viewer showed it: the same as the file, or changed since
 SHOWN = Anchor("app.py", "new", 2, 2, code="    return f'hello {name}'")
 CHANGED_SINCE = Anchor("app.py", "new", 2, 2, code="    return 'hello ' + name")
+NEW_APP = FileInView("app.py", "new")
 
 
 class OpeningAThread(unittest.TestCase):
     def setUp(self):
         self.store = MemoryStore()
-        self.code = FakeCode({"app.py": APP})
+        self.code = FakeCode({"app.py": APP}, base={"app.py": BASE})
         self.history = FakeHistory()
 
     def open_a_thread(self, *args):
@@ -76,6 +79,59 @@ class OpeningAThread(unittest.TestCase):
 
         self.assertTrue(thread.outdated)
         self.assertTrue(Review.from_events(self.store.load()).thread(thread.id).outdated)
+
+    # ── On the version the viewer showed ─────────────────────────────────────
+    def shown(self):
+        """The version of app.py the viewer shows now: its id, as the changeset names it."""
+        return self.code.changeset("").versions["app.py"].new
+
+    def test_a_thread_on_code_that_only_moved_since_the_viewer_showed_it_moves_with_its_code(self):
+        version = self.shown()
+        self.code.files["app.py"] = "import os\nimport sys\n" + APP
+
+        thread = self.open_a_thread("reviewer", "Why an f-string?", replace(SHOWN, snapshot_id=version))
+
+        self.assertFalse(thread.outdated)
+        self.assertEqual((thread.anchor.start_line, thread.anchor.end_line), (4, 4))
+        self.assertEqual(thread.anchor.code, SHOWN.code)
+        self.assertEqual(thread.anchor.snapshot_id, self.code.versions([NEW_APP])[NEW_APP], "the file now")
+        self.assertEqual(Review.from_events(self.store.load()).thread(thread.id), thread)
+        self.assertEqual(self.code.asked_to_keep, {version, thread.anchor.snapshot_id}, "both, for the history")
+
+    def test_a_thread_on_code_that_changed_since_the_viewer_showed_it_is_outdated_on_that_version(self):
+        version = self.shown()
+        self.code.files["app.py"] = APP.replace("hello", "hi")
+
+        thread = self.open_a_thread("reviewer", "Why an f-string?", replace(SHOWN, snapshot_id=version))
+
+        self.assertTrue(thread.outdated)
+        self.assertEqual((thread.anchor.start_line, thread.anchor.snapshot_id), (2, version),
+                         "it shows the code it was written on")
+
+    def test_a_change_below_the_code_leaves_the_thread_on_its_lines(self):
+        version = self.shown()
+        self.code.files["app.py"] = APP + "\nprint(greet('you'))\n"
+
+        thread = self.open_a_thread("reviewer", "Why an f-string?", replace(SHOWN, snapshot_id=version))
+
+        self.assertFalse(thread.outdated)
+        self.assertEqual((thread.anchor.start_line, thread.anchor.end_line), (2, 2))
+
+    def test_a_version_the_code_reader_doesnt_have_is_as_if_the_viewer_gave_none(self):
+        self.code.files["app.py"] = "import os\nimport sys\n" + APP
+
+        thread = self.open_a_thread("reviewer", "Why an f-string?", replace(SHOWN, snapshot_id="no-such-version"))
+
+        self.assertTrue(thread.outdated, "line 2 of the file now has other code")
+        self.assertEqual(thread.anchor.snapshot_id, self.code.versions([NEW_APP])[NEW_APP])
+
+    def test_a_version_without_the_viewers_code_on_those_lines_is_as_if_the_viewer_gave_none(self):
+        version = self.shown()
+
+        thread = self.open_a_thread("reviewer", "Why?", replace(CHANGED_SINCE, snapshot_id=version))
+
+        self.assertTrue(thread.outdated)
+        self.assertEqual(thread.anchor.code, CHANGED_SINCE.code)
 
     def test_a_general_thread_opens_with_no_anchor(self):
         thread = self.open_a_thread("reviewer", "Is this ready?")
