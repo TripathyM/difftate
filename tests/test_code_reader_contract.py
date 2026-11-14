@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(ROOT, "lib"))
 sys.path.insert(0, os.path.join(ROOT, "tests"))
 
 from core_fakes import FakeClock, FakeCode  # noqa: E402
-from difftate.adapters.outbound.git import GitCodeReader, diff_hashes as diff_hashes_of, forget_kept_snapshots  # noqa: E402
+from difftate.adapters.outbound.git import GitCodeReader, repository, diff_hashes as diff_hashes_of, forget_kept_snapshots  # noqa: E402
 from difftate.core.changes.model import FileInView, Hunk  # noqa: E402
 from difftate.core.review.model import NotFound  # noqa: E402
 
@@ -323,6 +323,18 @@ class TheGitAdapterPolled(InAGitRepository, unittest.TestCase):
         hashes = diff_hashes_of(self.code.changeset("").diff)
 
         self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'three'"))
+
+        self.assertNotEqual(self.code.diff_hashes()["long.py"], hashes["long.py"])
+
+    def test_a_file_saved_while_git_diff_reads_it_is_read_again_for_its_hash(self):
+        read = repository.changeset
+
+        def saved_meanwhile(*args, **kwargs):
+            changeset = read(*args, **kwargs)
+            self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'three'"))  # after git read it
+            return changeset
+        with mock.patch.object(repository, "changeset", saved_meanwhile):
+            hashes = diff_hashes_of(self.code.changeset("").diff)
 
         self.assertNotEqual(self.code.diff_hashes()["long.py"], hashes["long.py"])
 
