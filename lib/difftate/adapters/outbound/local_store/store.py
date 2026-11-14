@@ -75,6 +75,16 @@ class LocalStore:
                 f.write(json.dumps(info, indent=2) + "\n")
         return cls(folder, info, on_tamper)
 
+    @staticmethod
+    def review_ids(difftate_folder: str) -> List[str]:
+        """The ids of the reviews kept in <difftate_folder>/reviews/: one per
+        folder there."""
+        reviews = os.path.join(difftate_folder, "reviews")
+        try:
+            return [r for r in os.listdir(reviews) if os.path.isdir(os.path.join(reviews, r))]
+        except FileNotFoundError:
+            return []
+
     def review(self) -> Dict[str, Optional[str]]:
         """The review this store keeps: its id, branch and base."""
         return {k: self.info.get(k) for k in ("id", "branch", "base")}

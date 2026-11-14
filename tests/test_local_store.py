@@ -132,6 +132,15 @@ class TheLocalStore(unittest.TestCase):
         self.assertNotEqual(self.open_store(base="develop").review()["id"], review["id"],
                             "another base is another review")
 
+    def test_the_reviews_it_keeps_are_the_review_folders_there(self):
+        self.assertEqual(LocalStore.review_ids(self.folder), [], "none yet")
+        main, develop = self.open_store().review()["id"], self.open_store(base="develop").review()["id"]
+
+        self.assertEqual(sorted(LocalStore.review_ids(self.folder)), sorted([main, develop]))
+
+        shutil.rmtree(os.path.join(self.folder, "reviews", develop))
+        self.assertEqual(LocalStore.review_ids(self.folder), [main])
+
     def test_lines_are_only_appended(self):
         store = self.open_store()
         store.append([ThreadOpened("t1", None, TIME)])

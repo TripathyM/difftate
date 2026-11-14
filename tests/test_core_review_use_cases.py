@@ -13,7 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core_fakes import FakeCode, FakeHistory, UnreadableCode  # noqa: E402
+from core_fakes import CodeThatCantKeep, FakeCode, FakeHistory, UnreadableCode  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
 from difftate.core.changes.model import FileInView  # noqa: E402
 from difftate.core.review.model import (  # noqa: E402
@@ -369,6 +369,54 @@ class MovingThreadsWithTheirCode(ForRunningTheLoop):
         self.assertEqual(self.move(), [])
 
         self.assertEqual(self.store.load(), kept)
+
+    def test_the_code_reader_keeps_the_snapshot_a_thread_moved_to_and_the_one_before(self):
+        before = self.rebuilt().thread(self.tid).anchor.snapshot_id
+        self.code.files["long.py"] = "import os\n" + LONG
+
+        self.move()
+
+        self.assertEqual(self.code.asked_to_keep, {before, self.now_id()})
+        self.assertNotEqual(self.now_id(), before)
+
+    def test_the_snapshot_of_a_thread_that_became_outdated_is_still_kept(self):
+        snapshot = self.rebuilt().thread(self.tid).anchor.snapshot_id
+        self.code.files["long.py"] = LONG.replace("line_12 = 12", "line_12 = 1200")
+
+        self.move()
+
+        self.assertEqual(self.code.asked_to_keep, {snapshot}, "for the review history")
+
+    def test_a_move_whose_snapshot_cant_be_kept_is_not_kept_until_it_can_be(self):
+        self.code.files["long.py"] = "import os\n" + LONG
+        kept = self.store.load()
+        cant = CodeThatCantKeep(self.code.files, self.code)
+
+        with self.assertRaises(CouldNotRead):
+            self.move(cant)
+        self.assertEqual(self.store.load(), kept)
+
+        self.move()
+        self.assertEqual(self.rebuilt().thread(self.tid).anchor.start_line, 13)
+
+    def test_a_move_the_store_cant_keep_still_keeps_the_snapshot_before_it(self):
+        before = self.rebuilt().thread(self.tid).anchor.snapshot_id
+        self.code.files["long.py"] = "import os\n" + LONG
+        store = StoreThatCannotKeep()
+        store.append(self.store.load())
+
+        with self.assertRaises(CouldNotRead):
+            move_with_code(store, self.code, self.history)
+
+        self.assertIn(before, self.code.asked_to_keep, "the thread the store has still moves from it")
+
+    def test_a_review_whose_snapshots_were_never_kept_has_them_kept_when_its_code_is_next_read(self):
+        snapshot = self.rebuilt().thread(self.tid).anchor.snapshot_id
+        self.code.asked_to_keep = None  # opened by a difftate that didn't keep snapshots
+
+        self.move()
+
+        self.assertEqual(self.code.asked_to_keep, {snapshot})
 
     def test_a_thread_written_before_snapshots_existed_starts_moving_from_the_file_now(self):
         old = "written-before-snapshots"

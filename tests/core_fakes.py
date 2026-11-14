@@ -40,6 +40,8 @@ class FakeCode:
         self.checked_out = on_branch
         self.reads = 0  # how many times the code was read
         self._kept = {}  # id: text, for every id given out
+        self.asked_to_keep = None  # the ids it was last asked to keep
+        self._kept_for_good = set()  # every id it was ever asked to keep
 
     def _id(self, file, text):
         if text is None:
@@ -59,6 +61,14 @@ class FakeCode:
         if file_id is None:
             return Snapshot(None, self.commit, None)
         return Snapshot(file_id, self.commit, self.code_on_lines(file_id, start_line, end_line))
+
+    def keep(self, file_ids):
+        self.asked_to_keep = set(file_ids)
+        self._kept_for_good |= self.asked_to_keep
+
+    def collect_garbage(self):
+        """What git gc --prune=now does: lose every file it was never asked to keep."""
+        self._kept = {i: text for i, text in self._kept.items() if i in self._kept_for_good}
 
     def versions(self, files):
         self.reads += 1
@@ -103,11 +113,28 @@ class FakeCode:
                 for f in self._changed()}
 
 
+class CodeThatCantKeep(FakeCode):
+    """A code reader that reads the code but can't keep a snapshot (git can't
+    write the ref, say). Given <code>, it reads its files and the snapshots it
+    gave out."""
+
+    def __init__(self, files, code=None):
+        super().__init__(files)
+        if code is not None:
+            self._kept = code._kept
+
+    def keep(self, file_ids):
+        raise CouldNotRead("could not keep the snapshots")
+
+
 class UnreadableCode:
     """A code reader that can't read the code (git failed, say)."""
 
     def snapshot(self, file, side, view, start_line, end_line):
         raise CouldNotRead(f"could not read {file}")
+
+    def keep(self, file_ids):
+        pass
 
     def versions(self, files):
         return {}  # none can be read now
