@@ -251,6 +251,56 @@ class ChangingAThreadStatus(unittest.TestCase):
             Review().set_status("reviewer", "no-such-thread", "resolved")
 
 
+class TheReviewerName(unittest.TestCase):
+    """The reviewer is the role the rules check; the reviewer name says which
+    reviewer wrote a comment or changed a thread status."""
+
+    def test_each_reviewers_comment_keeps_the_name_they_gave(self):
+        review = Review()
+        tid = review.open_thread("reviewer", "Is this ready?", by="Ada")[0].thread_id
+
+        review.add_comment("reviewer", tid, "comment", "Check the tests.", by="security-bot")
+        review.add_comment("agent", tid, "reply", "Done.")
+
+        self.assertEqual([(c.author, c.by, c.body) for c in review.thread(tid).comments],
+                         [("reviewer", "Ada", "Is this ready?"), ("reviewer", "security-bot", "Check the tests."),
+                          ("agent", None, "Done.")])
+
+    def test_a_comment_with_no_name_has_none(self):
+        review, tid = a_review_with_a_thread()
+
+        self.assertIsNone(review.thread(tid).comments[0].by)
+
+    def test_a_thread_says_who_changed_its_status_last(self):
+        review, tid = a_review_with_a_thread()
+        self.assertIsNone(review.thread(tid).status_by)
+
+        [event] = review.set_status("reviewer", tid, "resolved", by="security-bot")
+
+        self.assertEqual(event.by, "security-bot")
+        self.assertEqual(review.thread(tid).status_by, "security-bot")
+        review.set_status("reviewer", tid, "open")
+        self.assertIsNone(review.thread(tid).status_by, "a change with no name names no one")
+
+    def test_only_a_reviewer_has_a_reviewer_name(self):
+        review, tid = a_review_with_a_thread()
+
+        for author, kind in (("agent", "reply"), ("difftate", "progress")):
+            with self.subTest(author=author):
+                with self.assertRaises(NotAllowed):
+                    review.add_comment(author, tid, kind, "Not a reviewer", by="security-bot")
+        self.assertEqual(len(review.thread(tid).comments), 1)
+
+    def test_a_review_rebuilt_from_its_events_keeps_the_names(self):
+        review = Review()
+        events = review.open_thread("reviewer", "Is this ready?", by="Ada")
+        tid = events[0].thread_id
+        events += review.add_comment("reviewer", tid, "comment", "And the docs?", by="docs-bot")
+        events += review.set_status("reviewer", tid, "dismissed", by="docs-bot")
+
+        self.assertEqual(Review.from_events(events).thread(tid), review.thread(tid))
+
+
 class TheThreadState(unittest.TestCase):
     """Rule 4: one rule gives the thread state, from the runs and the replies."""
 

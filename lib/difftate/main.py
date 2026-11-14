@@ -113,8 +113,10 @@ def coding_agent(tool, cmd, session, model, cwd, folder):
 
 
 def review_api(review, folder, root, view, check, on_switch):
+    """The review API. A reviewer who gives no reviewer name is the user: the
+    repository's git user.name, read at each request."""
     shown = ShownView(view, check, on_switch, open_in=cli.where_to_open(VIEWERS))
-    return ReviewApi(review, folder, root, shown)
+    return ReviewApi(review, folder, root, shown, default_reviewer=functools.partial(REPOSITORY.user_name, root))
 
 
 def loop(review, coding_agent):

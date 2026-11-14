@@ -37,8 +37,12 @@ _Avoid_: location, position, follow (that is what the Watcher does with the bran
 The version of a file that an anchor points into: old (before the change) or new (after it).
 
 **Reviewer**:
-Whoever writes comments that the coding agent must answer: the user, or a separate reviewing agent.
+Whoever writes comments that the coding agent must answer: the user, or a separate reviewing agent. It is the role the rules check.
 _Avoid_: user (as a role)
+
+**Reviewer name**:
+Which reviewer wrote a comment or changed a thread status, such as `security-bot`: the name the reviewer gives, or the user's git name when they give none. A comment written before reviewer names has none.
+_Avoid_: author (that is the role: reviewer, coding agent or difftate), user name
 
 **Comment**:
 A reviewer's message in a thread.

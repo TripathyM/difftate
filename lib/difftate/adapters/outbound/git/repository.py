@@ -58,6 +58,12 @@ def remote_url(cwd: str) -> Optional[str]:
     return git(cwd, "remote", "get-url", "origin")
 
 
+def user_name(cwd: str) -> Optional[str]:
+    """The repository's git user.name, the reviewer name of the user's own
+    comments; None without one."""
+    return git(cwd, "config", "user.name") or None
+
+
 def need_view(cwd: str, view: object) -> str:
     """<view> as given ("" for all changes), once it is known to be a view.
     Raises the core's NotFound when it isn't one."""

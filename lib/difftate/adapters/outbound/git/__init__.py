@@ -10,7 +10,7 @@ id>, so git gc can't prune them.
 """
 from .code import GitCodeReader, forget_kept_snapshots
 from .diff_hashes import diff_hashes
-from .repository import base, changeset, difftate_folder, git, head, need_view, remote_url, review_branch
+from .repository import base, changeset, difftate_folder, git, head, need_view, remote_url, review_branch, user_name
 
 __all__ = ["GitCodeReader", "base", "changeset", "diff_hashes", "difftate_folder", "forget_kept_snapshots", "git",
-           "head", "need_view", "remote_url", "review_branch"]
+           "head", "need_view", "remote_url", "review_branch", "user_name"]

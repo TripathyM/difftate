@@ -51,6 +51,12 @@ def as_stored(thread):
     return {k: v for k, v in thread.items() if k != "state"}
 
 
+def with_no_names(threads):
+    """Threads as the old LocalStore read them back, as difftate gives them
+    now: written before reviewer names, so with none ("by", "statusBy")."""
+    return [dict(t, statusBy=None, comments=[dict(c, by=None) for c in t["comments"]]) for t in threads]
+
+
 def run_as_today(run):
     return {"id": run.id, "threads": list(run.threads), "sent": list(run.sent),
             "repliesBefore": {tid: list(ids) for tid, ids in run.replies_before.items()}, "outcome": run.outcome}
@@ -66,7 +72,7 @@ class TodaysEventsThroughTheNewCore(unittest.TestCase):
     def test_the_same_threads_in_difftates_thread_format(self):
         listed = list_threads(self.store, NotesInProgress(), self.code)
 
-        self.assertEqual([as_stored(thread_json(t)) for t in listed], self.today["threads"])
+        self.assertEqual([as_stored(thread_json(t)) for t in listed], with_no_names(self.today["threads"]))
         moved = self.review.thread(self.today["thread_ids"]["moved"])
         self.assertEqual([c.kind for c in moved.comments], ["comment", "progress", "reply", "comment"])
         self.assertEqual(moved.comments[1].body, "✅ **Done** in 3s")

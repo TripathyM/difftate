@@ -5,6 +5,7 @@ An outdated thread says so, and shows the code it was written on: that code
 is no longer on its lines.
 
 Notes are left out: they cost tokens on every run and say nothing about the code.
+Each comment names its reviewer, by reviewer name when it has one.
 The coding agent answers with its reply command (the reply channel's dt-reply,
 ForAskingTheCodingAgent.reply_command), and nothing in the prompt names the
 store. Threads are the core's (core/review/model.py, Thread).
@@ -28,7 +29,7 @@ Rules:
   <thread> is the 8 characters after 'Thread'. Write only the answer: difftate marks it as your reply.
   For an answer with quotes or several lines, pass it on stdin: {dt_reply} <thread> <<'EOF' … EOF
 - 'Other open threads' are context only, to spot related comments. Reply there only if what you do in this run also addresses it.
-- Lines starting 'reviewer (new):' are the comments to answer now. Lines starting 'you:' are your earlier replies.
+- Lines starting 'reviewer' are reviewers' comments, with the reviewer's name when it has one ('reviewer security-bot:'). Those marked '(new)' are the comments to answer now. Lines starting 'you:' are your earlier replies.
 - Change code ONLY when the reviewer explicitly asks ('fix this', 'rename X to Y', 'add X'). Then reply with what you changed (file:line).
 - Questions: answer. Suggestions, 'should we…?', nits: give your take and ask before changing anything. Unclear: ask for clarification. Never skip a thread silently.
 - NEVER resolve or dismiss threads, and never edit or delete comments.
@@ -60,9 +61,12 @@ def _conversation(t: Thread) -> List[Comment]:
 
 
 def _speaker(c: Comment, new_ids: Collection[str] = ()) -> str:
+    """Who wrote <c>: you (the coding agent), or the reviewer, with their
+    reviewer name when it has one."""
     if c.kind == "reply":
         return "you"
-    return "reviewer (new)" if c.id in new_ids else "reviewer"
+    reviewer = "reviewer" if c.by is None else f"reviewer {c.by}"
+    return f"{reviewer} (new)" if c.id in new_ids else reviewer
 
 
 OUTDATED_MARK = " — outdated: its code changed after the thread was written"

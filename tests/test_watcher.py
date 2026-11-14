@@ -84,7 +84,8 @@ class Harness:
             f.write("#!/bin/sh\nexit 0\n")
         os.chmod(os.path.join(bin_dir, "open"), 0o755)
 
-        # Git reads its config from the test's HOME only: no signing, no hooks
+        # Git reads its config from the test's HOME only: no signing, no hooks.
+        # Its user.name, Test, is the reviewer name of the test's comments
         with open(os.path.join(self.home, ".gitconfig"), "w") as f:
             f.write("[user]\n\tname = Test\n\temail = test@example.com\n")
         self.env = {k: v for k, v in os.environ.items()
@@ -410,8 +411,8 @@ class WatcherTest(Harness, unittest.TestCase):
 
         wait_for("a second run", lambda: len(self.prompts()) == 2)
         self.assertNotIn("And why not str.format?", self.prompts()[0])
-        self.assertIn("reviewer (new): And why not str.format?", self.prompts()[1])
-        self.assertIn("reviewer: Why an f-string here?", self.prompts()[1])
+        self.assertIn("reviewer Test (new): And why not str.format?", self.prompts()[1])
+        self.assertIn("reviewer Test: Why an f-string here?", self.prompts()[1])
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertEqual([k for k, _ in self.comments(tid)],
                          ["comment", "progress", "comment", "reply", "progress", "reply"])
@@ -449,8 +450,8 @@ class WatcherTest(Harness, unittest.TestCase):
         self.api("POST", f"/api/threads/{tid}/comments", {"body": "Please try again."})
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertEqual(self.dispatches(), 2)
-        self.assertIn("reviewer (new): Please try again.", self.prompts()[1])
-        self.assertIn("reviewer: Why an f-string here?", self.prompts()[1])
+        self.assertIn("reviewer Test (new): Please try again.", self.prompts()[1])
+        self.assertIn("reviewer Test: Why an f-string here?", self.prompts()[1])
 
     def test_a_run_that_fails_keeps_the_coding_agents_error_and_says_no_reply(self):
         self.silence_agent()
@@ -1155,7 +1156,7 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertIn(f"### Thread {tid[:8]} — long.py:12 — outdated: its code changed after the thread was written",
                       thread)
         self.assertIn("Code when the thread was written:\n```\nline_12 = 12\n```", thread)
-        self.assertIn("reviewer (new): Is it better now?", thread)
+        self.assertIn("reviewer Test (new): Is it better now?", thread)
 
     def test_an_old_side_thread_follows_its_code_in_the_base(self):
         git(self.repo, self.env, "commit", "-q", "-am", "Say hello")

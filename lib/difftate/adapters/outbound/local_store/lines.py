@@ -12,7 +12,9 @@ line was ever written before the core.
 
 A line is written with its keys in the order local.py wrote them, so the
 same events give the same bytes as the old LocalStore
-(tests/fixtures/todays-review).
+(tests/fixtures/todays-review). A comment or status line with a reviewer
+name has "by" too, after "author" or "status"; a line with none has no "by",
+as no line had before reviewer names.
 """
 from __future__ import annotations
 
@@ -34,7 +36,8 @@ def _anchor(line: Optional[Dict[str, Any]]) -> Optional[Anchor]:
 
 
 def _comment(line: Dict[str, Any]) -> Comment:
-    return Comment(line["id"], line["author"], line["kind"], line["body"], line["time"], line["seq"])
+    return Comment(line["id"], line["author"], line["kind"], line["body"], line["time"], line["seq"],
+                   line.get("by"))
 
 
 def event_from_line(line: Dict[str, Any]) -> Event:
@@ -48,7 +51,7 @@ def event_from_line(line: Dict[str, Any]) -> Event:
     if kind == "note":
         return NoteWritten(line["thread"], _comment(line), final=line.get("final", True) is not False)
     if kind == "status":
-        return ThreadStatusChanged(line["thread"], line["status"], line["time"])
+        return ThreadStatusChanged(line["thread"], line["status"], line["time"], line.get("by"))
     if kind == "moved":
         return ThreadMoved(line["thread"], line["startLine"], line["endLine"], line["snapshot"], line["time"])
     if kind == "outdated":
@@ -82,9 +85,14 @@ def _anchor_line(anchor: Optional[Anchor]) -> Optional[Dict[str, Any]]:
             "code": anchor.code, "snapshot": anchor.snapshot_id, "view": anchor.view, "commit": anchor.commit}
 
 
+def _by(by: Optional[str]) -> Dict[str, Any]:
+    """The "by" key of a line with a reviewer name; none without one."""
+    return {} if by is None else {"by": by}
+
+
 def _comment_line(kind: str, thread_id: str, comment: Comment) -> Dict[str, Any]:
-    return {"id": comment.id, "author": comment.author, "kind": comment.kind, "body": comment.body,
-            "time": comment.time, "seq": comment.seq, "type": kind, "thread": thread_id}
+    return {"id": comment.id, "author": comment.author, **_by(comment.by), "kind": comment.kind,
+            "body": comment.body, "time": comment.time, "seq": comment.seq, "type": kind, "thread": thread_id}
 
 
 def line_from_event(event: Event) -> Dict[str, Any]:
@@ -98,7 +106,8 @@ def line_from_event(event: Event) -> Dict[str, Any]:
         line = _comment_line("note", event.thread_id, event.comment)
         return line if event.final else dict(line, final=False)
     if isinstance(event, ThreadStatusChanged):
-        return {"type": "status", "thread": event.thread_id, "status": event.status, "time": event.time}
+        return {"type": "status", "thread": event.thread_id, "status": event.status, **_by(event.by),
+                "time": event.time}
     if isinstance(event, ThreadMoved):
         return {"type": "moved", "thread": event.thread_id, "startLine": event.start_line,
                 "endLine": event.end_line, "snapshot": event.snapshot_id, "time": event.time}

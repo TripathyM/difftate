@@ -26,10 +26,11 @@ gets 401.
   GET   /api/threads[?status=open][&view=<view>]
                                         list threads; with a view, each anchor's lines
                                         are where its code is in that view
-  POST  /api/threads                    open a thread: {"anchor", "body", "author"?}
-  POST  /api/threads/<id>/comments      add a comment: {"kind"?, "body"}
+  POST  /api/threads                    open a thread: {"anchor", "body", "author"?, "reviewer"?}
+  POST  /api/threads/<id>/comments      add a comment: {"kind"?, "body", "reviewer"?}
   PATCH /api/notes/<id>                 edit a note: {"kind", "body"}
-  PATCH /api/threads/<id>/status        set thread status: {"status", "author"?}
+  PATCH /api/threads/<id>/status        set thread status: {"status", "author"?, "reviewer"?}:
+                                        {"id", "status", "statusBy"}
   GET   /api/viewed                     the files the reviewer marked viewed: {"files"}
   PUT   /api/viewed                     mark a file viewed, or not: {"file", "viewed"?: true|false
                                         (default true)}: {"files"}. 404 for a file
@@ -47,8 +48,10 @@ A thread (difftate's thread format):
                Until then the thread moves with its code (its lines change when
                only line numbers move); after, it keeps the lines and code it had,
    "status": "open"|"resolved"|"dismissed",
+   "statusBy": the reviewer name of the last thread status change (null for none),
    "state": "waiting"|"queued"|"working"|"replied"|"failed" (null unless open),
    "comments": [{"id", "author": "reviewer"|"agent"|"difftate",
+                 "by": the reviewer name (null for a reply, a note, or no name),
                  "kind": "comment"|"reply"|"queued"|"progress", "body", "time"}]}
 
 A view ("" for all changes, a commit such as HEAD~2 for the commits after it, HEAD
@@ -66,7 +69,12 @@ that view (its lines are then those of the view it was written in, its anchor's
 A comment's kind says who wrote it: a comment is the reviewer's (the default), a
 reply the coding agent's, and a queued or progress note difftate's. "author" says who
 opens a thread or sets its status, and must be "reviewer" (the default): anyone
-else gets 403. Only notes can be edited (403 otherwise). Errors are
+else gets 403. "reviewer" is the reviewer name: which reviewer writes a comment
+or sets a thread status (one line of text, at most 100 characters; 400
+otherwise). Without one, it is the repository's git user.name; a thread written
+before reviewer names has none. The name is what the caller says: any token
+holder can give any name. A reply or note has none (403 for one that gives
+it). Only notes can be edited (403 otherwise). Errors are
 {"error": <message>} with status 400, 403, 404, 409 or 502. While another branch is
 checked out and a run keeps the watcher on this review, opening a thread or
 marking a file viewed gets 409, and every thread with an anchor is listed with
@@ -103,9 +111,9 @@ import urllib.request
 from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from ....core.review.model import AUTHOR_OF, DIFFTATE, Conflict, CouldNotRead, NotAllowed, NotFound
+from ....core.review.model import AUTHOR_OF, DIFFTATE, REVIEWER, Conflict, CouldNotRead, NotAllowed, NotFound
 from .json_format import (NOTE_KINDS, BadRequest, anchor_from_json, changeset_json, comment_json, fields, need,
-                          need_bool, need_kind, need_status, need_text, thread_json)
+                          need_bool, need_kind, need_status, need_text, reviewer_name, thread_json)
 
 MAX_BODY = 1 << 20
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -262,10 +270,14 @@ class ReviewApi:
     """The review API on <review>: the use cases of one review, with its ports
     bound (main.bind_review): about ({"id", "branch", "base"}),
     list_threads, open_thread, add_comment, edit_note, set_status,
-    mark_viewed, list_viewed, changeset and checked_out."""
+    mark_viewed, list_viewed, changeset and checked_out.
 
-    def __init__(self, review, folder, root, shown):
+    <default_reviewer>() is the reviewer name of a reviewer's comment or
+    status change that names none (None for no name)."""
+
+    def __init__(self, review, folder, root, shown, default_reviewer=None):
         self.review = review
+        self.default_reviewer = default_reviewer or (lambda: None)
         self.shown = shown
         self.folder = folder
         self.root = root
@@ -289,7 +301,8 @@ class ReviewApi:
     def start(self):
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
         os.chmod(self.folder, 0o700)
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(lambda: self.review, self.token, self.shown, self.login))
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(lambda: self.review, self.token, self.shown, self.login,
+                                                                  self.default_reviewer))
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         _write_private(self.token_file, self.token + "\n")
@@ -316,9 +329,9 @@ class ReviewApi:
                     pass
 
 
-def _handler(current, token, shown, login):
+def _handler(current, token, shown, login, default_reviewer):
     """<current>() is the review the API serves now: the watcher follows the
-    checked-out branch."""
+    checked-out branch. <default_reviewer>(): see ReviewApi."""
     expected = f"Bearer {token}".encode()
 
     def a_view(given):
@@ -367,17 +380,24 @@ def _handler(current, token, shown, login):
             need_status(status)
         return [thread_json(t) for t in current().list_threads(status, view)]
 
+    def a_reviewer(p, has_name=True):
+        """The request's reviewer name; the default only for a reviewer's write."""
+        return reviewer_name(p, default_reviewer() if has_name else None)
+
     def post_thread(q, p):
         given, body = fields(p).get("anchor"), need(p, "body")
         author = fields(p).get("author", "reviewer")
         anchor = anchor_from_json(given, a_view(fields(p).get("view", "")))
-        return thread_json(current().open_thread(author, need_text(body), anchor))
+        by = a_reviewer(p, author == REVIEWER)
+        return thread_json(current().open_thread(author, need_text(body), anchor, by=by))
 
     def post_comment(q, p, thread_id):
         kind, body = fields(p).get("kind", "comment"), need(p, "body")
         need_kind(kind)
         # A comment's kind says who wrote it
-        return comment_json(current().add_comment(AUTHOR_OF[kind], thread_id, kind, need_text(body)))
+        author = AUTHOR_OF[kind]
+        by = a_reviewer(p, author == REVIEWER)
+        return comment_json(current().add_comment(author, thread_id, kind, need_text(body), by=by))
 
     def patch_note(q, p, note_id):
         kind, body = need(p, "kind"), need(p, "body")
@@ -386,8 +406,9 @@ def _handler(current, token, shown, login):
 
     def patch_status(q, p, thread_id):
         status, author = need(p, "status"), fields(p).get("author", "reviewer")
-        thread = current().set_status(author, thread_id, need_status(status))
-        return {"id": thread.id, "status": thread.status}
+        by = a_reviewer(p, author == REVIEWER)
+        thread = current().set_status(author, thread_id, need_status(status), by=by)
+        return {"id": thread.id, "status": thread.status, "statusBy": thread.status_by}
 
     def put_viewed(q, p):
         file, viewed = need(p, "file"), fields(p).get("viewed", True)

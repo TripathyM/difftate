@@ -12,9 +12,9 @@ from ..ports import ForKeepingTheReview, ForRecordingReviewHistory
 
 def open_thread(store: ForKeepingTheReview, notes: NotesInProgress, code: ForReadingTheCode,
                 history: ForRecordingReviewHistory, author: str, body: str,
-                anchor: Optional[Anchor] = None) -> ListedThread:
+                anchor: Optional[Anchor] = None, by: Optional[str] = None) -> ListedThread:
     """A thread on <anchor> (None: a general thread), with <author>'s comment
-    <body>, and its thread state now. Raises NotAllowed for anyone but a
+    <body> by the reviewer named <by>, and its thread state now. Raises NotAllowed for anyone but a
     reviewer, Conflict while another branch is checked out, and CouldNotRead
     when the code can't be read; nothing is kept then."""
     review = Review.from_events(store.load() + notes.events())  # notes too: a comment's seq comes after them
@@ -24,7 +24,7 @@ def open_thread(store: ForKeepingTheReview, notes: NotesInProgress, code: ForRea
         snapshot = code.snapshot(anchor.file, anchor.side, anchor.view, anchor.start_line, anchor.end_line)
         if anchor.snapshot_id is not None and anchor.snapshot_id != snapshot.id:
             shown, since = _since_shown(code, anchor, snapshot)
-    events = review.open_thread(author, body, anchor, snapshot, on_branch, shown, since)
+    events = review.open_thread(author, body, anchor, snapshot, on_branch, shown, since, by)
     store.append(lasting(events))
     history.record(lasting(events))
     if snapshot is not None:
