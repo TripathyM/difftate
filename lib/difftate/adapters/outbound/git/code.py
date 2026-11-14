@@ -7,13 +7,20 @@ the branch left the base for the old side). A file's id is its blob. Later,
 the core diffs the snapshot against that file now (hunks, with `git diff
 -U0` on the two blobs) and decides whether the thread moved with its code or
 is outdated (core/changes/model.py).
+
+Nothing in git refers to a blob written that way, so git gc prunes it in time
+(gc.pruneExpire, two weeks by default). The snapshots the core keeps stay
+reachable from a ref of difftate's own, refs/difftate/<review id>: a tree
+whose entries are the snapshot blobs, each named by its id. A tree, not a
+commit, so there is nothing to sign and `git log --all` doesn't show it. A
+plain `git push` sends only refs/heads and refs/tags, never this ref.
 """
 from __future__ import annotations
 
 import os
 import re
 import subprocess
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Collection, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple
 
 from ....core.changes.model import Changeset, FileInView, Hunk, Snapshot
 from ....core.review.model import CouldNotRead
@@ -21,23 +28,37 @@ from . import repository
 from .diff_hashes import diff_hashes
 
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
+KEPT = "refs/difftate/"  # + the review's id: the review's snapshots
+
+
+def forget_kept_snapshots(cwd: str, reviews: Iterable[str]) -> None:
+    """Drop the ref of every review that isn't one of <reviews> (their ids):
+    the snapshots of a review that is gone can go."""
+    names = repository.git(cwd, "for-each-ref", "--format=%(refname)", KEPT)
+    still = {KEPT + r for r in reviews}
+    for ref in (names or "").split():
+        if ref not in still:
+            repository.git(cwd, "update-ref", "-d", ref)
 
 
 class GitCodeReader:
-    """Reads the code of the review of <branch> against <base>, in the
-    repository at <cwd>. It plugs into ForReadingTheCode."""
+    """Reads the code of the review <review_id> of <branch> against <base>,
+    in the repository at <cwd>. It plugs into ForReadingTheCode."""
 
-    def __init__(self, cwd: str, base: str, branch: str) -> None:
+    def __init__(self, cwd: str, base: str, branch: str, review_id: str) -> None:
         self.cwd = cwd
         self.base = base
         self.branch = branch
         self.top = repository.git(cwd, "rev-parse", "--show-toplevel") or cwd
+        self.ref = KEPT + review_id
+        self._kept: Optional[FrozenSet[str]] = None  # what this reader last wrote to the ref
         self._hashed: Dict[str, Tuple[tuple, str]] = {}  # path: (its stat, its blob)
         self._diffs: Dict[Tuple[str, str], Tuple[Hunk, ...]] = {}  # (blob, blob): hunks
 
-    def _run(self, *args: str) -> Tuple[int, str]:
+    def _run(self, *args: str, given: Optional[str] = None) -> Tuple[int, str]:
         # Files in any encoding: only the line structure matters here
-        r = subprocess.run(["git", "-C", self.top, *args], capture_output=True, text=True, errors="replace")
+        r = subprocess.run(["git", "-C", self.top, *args], capture_output=True, text=True, errors="replace",
+                           input=given)
         return r.returncode, r.stdout
 
     # ── Where each version of a file is ──────────────────────────────────────
@@ -93,6 +114,26 @@ class GitCodeReader:
         if blob is None:
             return Snapshot(None, commit, None)
         return Snapshot(blob, commit, self.code_on_lines(blob, start_line, end_line))
+
+    def keep(self, file_ids: Collection[str]) -> None:
+        wanted = frozenset(file_ids)
+        if wanted == self._kept:
+            return  # every poll asks: git runs only when the snapshots change
+        code, out = self._run("cat-file", "--batch-check=%(objectname) %(objecttype)",
+                              given="".join(f"{i}\n" for i in sorted(wanted)))
+        if code != 0:
+            raise CouldNotRead("could not keep the snapshots")
+        # A snapshot already lost to git gc is left out: a tree may not name a missing blob
+        blobs = [row.split()[0] for row in out.splitlines() if row.endswith(" blob")]
+        if not blobs:
+            code, _ = self._run("update-ref", "-d", self.ref)
+        else:
+            code, tree = self._run("mktree", given="".join(f"100644 blob {b}\t{b}\n" for b in blobs))
+            if code == 0:
+                code, _ = self._run("update-ref", self.ref, tree.strip())
+        if code != 0:
+            raise CouldNotRead("could not keep the snapshots")
+        self._kept = wanted
 
     def versions(self, files: Sequence[FileInView]) -> Dict[FileInView, Optional[str]]:
         # Where the branch left the base, once for every file that needs it

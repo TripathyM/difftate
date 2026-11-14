@@ -300,6 +300,13 @@ class Review:
         """The threads, oldest first; with a <status>, only those with it."""
         return [t for t in self._threads.values() if status is None or t.status == status]
 
+    def snapshots(self) -> Set[str]:
+        """The ids of the snapshots that threads follow their code from: those of
+        every thread with an anchor that isn't outdated. An outdated thread never
+        moves again, so its snapshot isn't needed."""
+        return {t.anchor.snapshot_id for t in self._threads.values()
+                if t.anchor is not None and t.anchor.snapshot_id and not t.outdated}
+
     def runs(self) -> List[Run]:
         """The runs, oldest first."""
         return list(self._runs.values())

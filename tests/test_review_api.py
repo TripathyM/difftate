@@ -59,7 +59,7 @@ def serve(repo, folder, history):
     it, over the local store, the review history files and git."""
     store = LocalStore.open(folder, "feature", "main")
     about = store.review()
-    review = bind_review(store, git.GitCodeReader(repo, "main", "feature"),
+    review = bind_review(store, git.GitCodeReader(repo, "main", "feature", about["id"]),
                          HistoryFiles({"review": about["id"]}, history), about)
     shown = ShownView("", lambda view: git.need_view(repo, view), open_in=OPEN_IN)
     api = ReviewApi(review, folder, repo, shown)

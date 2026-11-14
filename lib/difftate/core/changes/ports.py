@@ -11,7 +11,7 @@ id, so a file that is its snapshot has the snapshot's id.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Protocol, Sequence
+from typing import Collection, Dict, List, Optional, Protocol, Sequence
 
 from .model import Changeset, FileInView, Hunk, Snapshot
 
@@ -23,6 +23,13 @@ class ForReadingTheCode(Protocol):
         is now, kept so a thread can move with its code later, and the code on
         lines <start_line>..<end_line> in it. Raises the core's CouldNotRead
         when the code can't be read."""
+        ...
+
+    def keep(self, file_ids: Collection[str]) -> None:
+        """Keep the files <file_ids> for as long as the review lasts: the
+        snapshots of its threads that follow their code. They replace the files
+        it was asked to keep before, which may go. Raises the core's
+        CouldNotRead when they can't be kept."""
         ...
 
     # ── For moving threads with their code ───────────────────────────────────

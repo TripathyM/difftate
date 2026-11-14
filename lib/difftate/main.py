@@ -99,7 +99,9 @@ def open_review(folder, cwd, branch, base, on_tamper):
     about = store.review()
     repo = {"path": os.path.realpath(cwd), "remote": REPOSITORY.remote_url(cwd)}
     history = REVIEW_HISTORY({"repo": repo, "branch": branch, "base": base, "review": about["id"]})
-    return bind_review(store, CODE_READER(cwd, base, branch), history, about)
+    # The snapshots of a review whose folder was removed can go
+    REPOSITORY.forget_kept_snapshots(cwd, STORE.review_ids(folder))
+    return bind_review(store, CODE_READER(cwd, base, branch, about["id"]), history, about)
 
 
 def coding_agent(tool, cmd, session, model, cwd, folder):

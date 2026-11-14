@@ -22,6 +22,8 @@ def open_thread(store: ForKeepingTheReview, notes: NotesInProgress, code: ForRea
     if anchor is not None and on_branch:  # off the branch, the files on disk aren't this review's
         snapshot = code.snapshot(anchor.file, anchor.side, anchor.view, anchor.start_line, anchor.end_line)
     events = review.open_thread(author, body, anchor, snapshot, on_branch)
+    if snapshot is not None:
+        code.keep(review.snapshots())  # so git gc can't take it
     store.append(lasting(events))
     history.record(lasting(events))
     thread_id = events[0].thread_id  # events[0] is the ThreadOpened

@@ -11,7 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core_fakes import FakeCode, FakeHistory, UnreadableCode  # noqa: E402
+from core_fakes import CodeThatCantKeep, FakeCode, FakeHistory, UnreadableCode  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
 from difftate.core.changes.model import FileInView  # noqa: E402
 from difftate.core.review.model import Anchor, Conflict, CouldNotRead, NotAllowed, NotesInProgress, Review  # noqa: E402
@@ -49,6 +49,28 @@ class OpeningAThread(unittest.TestCase):
 
         self.assertEqual(len(self.store.load()), 4)
         self.assertEqual(self.history.recorded, self.store.load())
+
+    def test_the_code_reader_keeps_the_snapshot_of_each_thread_that_follows_its_code(self):
+        first = self.open_a_thread("reviewer", "Why an f-string?", SHOWN)
+        self.code.files["app.py"] = "import os\n" + APP
+        second = self.open_a_thread("reviewer", "Why an f-string here?", Anchor("app.py", "new", 3, 3))
+        self.open_a_thread("reviewer", "Is this ready?")
+
+        self.assertEqual(self.code.kept, {first.anchor.snapshot_id, second.anchor.snapshot_id})
+        self.assertNotEqual(first.anchor.snapshot_id, second.anchor.snapshot_id)
+
+    def test_a_thread_whose_snapshot_cant_be_kept_is_not_opened(self):
+        self.code = CodeThatCantKeep({"app.py": APP})
+
+        with self.assertRaises(CouldNotRead):
+            self.open_a_thread("reviewer", "Why an f-string?", SHOWN)
+
+        self.assertEqual((self.store.load(), self.history.recorded), ([], []))
+
+    def test_an_outdated_threads_snapshot_is_not_kept(self):
+        self.open_a_thread("reviewer", "Why an f-string?", CHANGED_SINCE)
+
+        self.assertEqual(self.code.kept, set(), "it never follows its code again")
 
     def test_a_thread_whose_code_changed_since_the_viewer_showed_it_is_outdated_at_once(self):
         thread = self.open_a_thread("reviewer", "Why an f-string?", CHANGED_SINCE)

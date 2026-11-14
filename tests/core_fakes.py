@@ -40,6 +40,7 @@ class FakeCode:
         self.checked_out = on_branch
         self.reads = 0  # how many times the code was read
         self._kept = {}  # id: text, for every id given out
+        self.kept = None  # the ids it was last asked to keep
 
     def _id(self, file, text):
         if text is None:
@@ -59,6 +60,9 @@ class FakeCode:
         if file_id is None:
             return Snapshot(None, self.commit, None)
         return Snapshot(file_id, self.commit, self.code_on_lines(file_id, start_line, end_line))
+
+    def keep(self, file_ids):
+        self.kept = set(file_ids)
 
     def versions(self, files):
         self.reads += 1
@@ -103,11 +107,22 @@ class FakeCode:
                 for f in self._changed()}
 
 
+class CodeThatCantKeep(FakeCode):
+    """A code reader that reads the code but can't keep a snapshot (git can't
+    write the ref, say)."""
+
+    def keep(self, file_ids):
+        raise CouldNotRead("could not keep the snapshots")
+
+
 class UnreadableCode:
     """A code reader that can't read the code (git failed, say)."""
 
     def snapshot(self, file, side, view, start_line, end_line):
         raise CouldNotRead(f"could not read {file}")
+
+    def keep(self, file_ids):
+        pass
 
     def versions(self, files):
         return {}  # none can be read now

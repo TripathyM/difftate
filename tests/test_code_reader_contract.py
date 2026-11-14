@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(ROOT, "lib"))
 sys.path.insert(0, os.path.join(ROOT, "tests"))
 
 from core_fakes import FakeCode  # noqa: E402
-from difftate.adapters.outbound.git import GitCodeReader  # noqa: E402
+from difftate.adapters.outbound.git import GitCodeReader, forget_kept_snapshots  # noqa: E402
 from difftate.core.changes.model import FileInView, Hunk  # noqa: E402
 from difftate.core.review.model import NotFound  # noqa: E402
 
@@ -29,6 +29,7 @@ LONG = "".join(f"line_{n} = {n}\n" for n in range(1, 21))
 NEW = FileInView("long.py", "new")
 # An id no code reader gave: a snapshot that is gone (git gc)
 LOST = "0123456789abcdef0123456789abcdef01234567"
+REVIEW = "feature-1a2b3c4d"  # the review's id
 
 
 class CodeReaderContract:
@@ -47,6 +48,10 @@ class CodeReaderContract:
 
     def check_out_another_branch(self):
         """Check out "other", with the same files."""
+        raise NotImplementedError
+
+    def collect_garbage(self):
+        """What git gc --prune=now does: lose every file nothing keeps."""
         raise NotImplementedError
 
     def now(self, place=NEW):
@@ -71,6 +76,28 @@ class CodeReaderContract:
         no_file = self.code.snapshot("gone.py", "new", "", 1, 1)
         self.assertIsNone(no_file.id)
         self.assertIsNone(no_file.code)
+
+    # ── Keeping snapshots ────────────────────────────────────────────────────
+    def test_a_kept_snapshot_outlasts_garbage_collection(self):
+        snapshot = self.code.snapshot("long.py", "new", "", 12, 12).id
+        self.code.keep([snapshot])
+        self.write("long.py", "import os\n" + LONG)
+
+        self.collect_garbage()
+
+        self.assertEqual(self.code.hunks(snapshot, self.now()), [Hunk(0, 0, 1, 1)])
+
+    def test_a_snapshot_no_longer_kept_is_lost_to_garbage_collection(self):
+        before = self.code.snapshot("long.py", "new", "", 12, 12).id
+        self.code.keep([before])
+        self.write("long.py", "import os\n" + LONG)
+        after = self.code.snapshot("long.py", "new", "", 13, 13).id
+        self.code.keep([after])
+
+        self.collect_garbage()
+
+        self.assertIsNone(self.code.hunks(before, after))
+        self.assertEqual(self.code.hunks(after, self.now()), [])
 
     # ── The files now ────────────────────────────────────────────────────────
     def test_a_file_that_didnt_change_is_its_snapshot(self):
@@ -167,6 +194,9 @@ class TheFakeCodeReader(CodeReaderContract, unittest.TestCase):
     def check_out_another_branch(self):
         self.code.checked_out = False
 
+    def collect_garbage(self):
+        self.code._kept = {i: text for i, text in self.code._kept.items() if i in (self.code.kept or ())}
+
 
 class InAGitRepository:
     """The review in a temporary git repository, read by the git adapter."""
@@ -191,7 +221,7 @@ class InAGitRepository:
         patched = mock.patch.dict(os.environ, self.env, clear=True)
         patched.start()
         self.addCleanup(patched.stop)
-        self.code = GitCodeReader(self.repo, "main", "feature")
+        self.code = GitCodeReader(self.repo, "main", "feature", REVIEW)
 
     def git(self, *args):
         subprocess.run(["git", "-C", self.repo, *args], check=True, capture_output=True, env=self.env)
@@ -209,6 +239,13 @@ class InAGitRepository:
 
     def check_out_another_branch(self):
         self.git("checkout", "-q", "-b", "other")
+
+    def collect_garbage(self):
+        self.git("gc", "-q", "--prune=now")
+
+    def git_out(self, *args, cwd=None):
+        return subprocess.run(["git", "-C", cwd or self.repo, *args], check=True, capture_output=True, text=True,
+                              env=self.env).stdout.split()
 
 
 class TheGitAdapter(InAGitRepository, CodeReaderContract, unittest.TestCase):
@@ -251,10 +288,66 @@ class TheGitAdapterInEachView(InAGitRepository, unittest.TestCase):
         self.assertEqual(self.code.versions([old_side])[old_side], snapshot.id, "an edit on disk isn't in HEAD")
 
     def test_where_the_branch_left_the_base_unknown_leaves_out_the_old_side_of_all_changes(self):
-        code = GitCodeReader(self.repo, "no-such-base", "feature")
+        code = GitCodeReader(self.repo, "no-such-base", "feature", REVIEW)
         old, new, in_head = FileInView("app.py", "old"), FileInView("app.py", "new"), FileInView("app.py", "old", "HEAD")
 
         self.assertEqual(set(code.versions([old, new, in_head])), {new, in_head})
+
+
+class TheGitAdapterKeepingSnapshots(InAGitRepository, unittest.TestCase):
+    """git keeps the snapshots reachable from a ref of difftate's own,
+    refs/difftate/<review id>, so git gc can't prune them. The ref names a
+    tree, not a commit: nothing to sign, and git log --all doesn't show it."""
+    REF = f"refs/difftate/{REVIEW}"
+
+    def kept(self):
+        """{each object in the review's ref: its type}."""
+        rows = self.git_out("ls-tree", self.REF)  # <mode> <type> <id>\t<name>, one after the other
+        return {rows[i + 2]: rows[i + 1] for i in range(0, len(rows), 4)}
+
+    def test_the_reviews_ref_holds_only_the_snapshots_it_keeps(self):
+        app = self.code.snapshot("app.py", "new", "", 2, 2).id
+        long = self.code.snapshot("long.py", "new", "", 12, 12).id
+
+        self.code.keep([app, long])
+        self.assertEqual(self.kept(), {app: "blob", long: "blob"})
+
+        self.code.keep([long])
+        self.assertEqual(self.kept(), {long: "blob"})
+
+        self.code.keep([])
+        self.assertEqual(self.git_out("for-each-ref", "refs/difftate/"), [], "nothing to keep: no ref")
+
+    def test_a_snapshot_already_lost_is_left_out(self):
+        long = self.code.snapshot("long.py", "new", "", 12, 12).id
+
+        self.code.keep([LOST, long])
+
+        self.assertEqual(self.kept(), {long: "blob"})
+        self.git("fsck", "--strict")
+
+    def test_a_plain_git_push_doesnt_send_the_ref(self):
+        remote = os.path.join(os.path.dirname(self.repo), "remote.git")
+        subprocess.run(["git", "init", "-q", "--bare", remote], check=True, capture_output=True, env=self.env)
+        self.git("remote", "add", "origin", remote)
+        self.commit()
+        self.code.keep([self.code.snapshot("long.py", "new", "", 12, 12).id])
+
+        self.git("push", "-q", "-u", "origin", "feature")
+        self.git("push", "-q")
+        self.git("push", "-q", "--all")
+        self.git("push", "-q", "--tags")
+
+        self.assertEqual([r for r in self.git_out("ls-remote", remote) if "difftate" in r], [])
+
+    def test_the_refs_of_reviews_that_are_gone_are_dropped(self):
+        other = GitCodeReader(self.repo, "main", "other-branch", "other-5e6f7a8b")
+        self.code.keep([self.code.snapshot("long.py", "new", "", 12, 12).id])
+        other.keep([other.snapshot("app.py", "new", "", 2, 2).id])
+
+        forget_kept_snapshots(self.repo, reviews=[REVIEW])
+
+        self.assertEqual(self.git_out("for-each-ref", "--format=%(refname)", "refs/difftate/"), [self.REF])
 
 
 if __name__ == "__main__":

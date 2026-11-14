@@ -1044,6 +1044,19 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertEqual(thread["anchor"]["code"], "line_12 = 12")
         self.assertEqual(self.read("long.py").split("\n")[14], "line_12 = 12", "it sits next to its code")
 
+    def test_a_thread_follows_its_code_after_git_gc_prunes_every_unreachable_object(self):
+        self.write("long.py", self.LONG)
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why 12?", line=12, file="long.py")["id"]
+
+        git(self.repo, self.env, "gc", "-q", "--prune=now")
+        self.write("long.py", "import os\nimport re\nimport sys\n" + self.LONG)
+
+        wait_for("the thread to move", lambda: self.anchor(tid) == (15, 15) or self.thread(tid)["outdated"])
+        self.assertFalse(self.thread(tid)["outdated"], "its snapshot outlasted git gc")
+        self.assertEqual(self.anchor(tid), (15, 15))
+
     def test_changing_a_threads_line_makes_it_outdated_with_its_original_code(self):
         self.write("long.py", self.LONG)
         self.release_agent()
