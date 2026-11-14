@@ -1019,7 +1019,14 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertEqual(self.bodies(tid)[0], "Why an f-string here?")
 
         self.release_agent()
-        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        # The thread is replied once the run's end is kept; the progress note's
+        # final line, which carries the warning, is written just after. Only a
+        # final note is stored, so wait for that, not for the replied state.
+        def final_note():
+            with open(self.events_file()) as f:
+                return any(line["type"] == "note" and line["thread"] == tid for line in map(json.loads, f))
+        wait_for("the run's final note stored", final_note)
+        self.assertEqual(self.state(tid), "replied")
         self.assertIn("changed outside difftate", self.note(tid, "progress"))
         self.assertNotIn("Forged.", self.bodies(tid))
 
