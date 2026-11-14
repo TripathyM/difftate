@@ -852,9 +852,9 @@ export default class Review extends View {
     this.openPrompt({
       kind: "comment",
       label: `Comment on ${this.view.path}:${range}${side === "old" ? " (old)" : ""}`,
-      // Unsaved edits aren't any version of the file
+      // Only the diff's rows are the version it names: the full file is read from disk (and may be edited)
       target: { filePath: this.view.path, side, startLine, endLine, code: mine.map((r) => r.raw).join("\n"),
-                version: this.dirty ? null : this.view.versions?.[side] ?? null },
+                version: this.view.mode === "diff" ? this.view.versions?.[side] ?? null : null },
     });
   }
 

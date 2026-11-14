@@ -218,9 +218,9 @@ class GitCodeReader:
 
     def changeset(self, view: str) -> Changeset:
         c = repository.changeset(self.cwd, self.base, view)
-        return replace(c, versions=self._readable(blob_ids(c.diff), on_disk=c.view != "staged"))
+        return replace(c, versions=self._stored_versions(blob_ids(c.diff), on_disk=c.view != "staged"))
 
-    def _readable(self, blobs: Dict[str, Tuple[Optional[str], Optional[str]]],
+    def _stored_versions(self, blobs: Dict[str, Tuple[Optional[str], Optional[str]]],
                   on_disk: bool) -> Dict[str, Versions]:
         """The versions the diff names (<blobs>), each one in git's object
         database, so a thread written on it can be read later. git diff names
@@ -236,7 +236,9 @@ class GitCodeReader:
         unwritten = sorted(f for f, (_, new) in blobs.items() if on_disk and new and new not in self._stored)
         if unwritten:
             code, out = self._run("hash-object", "-w", "--stdin-paths", stdin="".join(f"{f}\n" for f in unwritten))
-            written = out.split() if code == 0 else []
+            # One file git can't write (removed since the diff, say) fails them all: then one by one
+            written = out.split() if code == 0 else [self._run("hash-object", "-w", "--", f)[1].strip()
+                                                       for f in unwritten]
             # The blob the file on disk is now: the diff's when it didn't change since
             self._stored |= {w for f, w in zip(unwritten, written) if w == blobs[f][1]}
         return {f: Versions(*(b if b in self._stored else None for b in pair)) for f, pair in blobs.items()}

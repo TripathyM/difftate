@@ -281,6 +281,16 @@ class TheGitAdapter(InAGitRepository, CodeReaderContract, unittest.TestCase):
                 self.assertIsNone(self.code.hunks(self.now(), sent))
         self.assertFalse(os.path.exists(out))
 
+    def test_a_submodule_in_the_changeset_has_no_version_and_leaves_the_others_theirs(self):
+        # A submodule's side is a commit, not a file: git can't write it from the folder on disk
+        os.makedirs(os.path.join(self.repo, "sub"))
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{self.output('rev-parse', 'HEAD')},sub")
+
+        versions = self.code.changeset("").versions
+
+        self.assertNotIn("sub", versions)
+        self.assertEqual(self.code.code_on_lines(versions["long.py"].new, 20, 20), "line_20 = 20")
+
 
 class TheGitAdapterInEachView(InAGitRepository, unittest.TestCase):
     """Only git has views: the fake shows all changes in every view. Each view

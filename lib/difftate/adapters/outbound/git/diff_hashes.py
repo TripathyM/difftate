@@ -51,11 +51,13 @@ def _git_paths(rest: str) -> Tuple[Optional[str], Optional[str]]:
 
 
 INDEX = re.compile(r"^index ([0-9a-f]+)\.\.([0-9a-f]+)")
+SUBMODULE = " 160000"  # a header line's mode for a side that is a commit, not a file
 
 
 def _files(diff: str) -> list:
-    """Each file's part of a unified <diff>: its paths, whether it was deleted,
-    its lines but the index line, and the blob ids on that line (None for none)."""
+    """Each file's part of a unified <diff>: its paths, whether it was deleted
+    or is a submodule, its lines but the index line, and the blob ids on that
+    line (None for none)."""
     blocks = []
     for line in diff.split("\n"):
         if line.startswith("diff --git "):
@@ -71,9 +73,11 @@ def _files(diff: str) -> list:
             b["lines"].append(line)
         if line.startswith("@@"):
             b["hunks"] = True  # headers end here: a deleted "-- x" reads "--- x"
-        elif b["hunks"]:
+        if b["hunks"]:
             continue
-        elif line.startswith("index "):
+        if line.endswith(SUBMODULE):  # "new file mode 160000", "index a..b 160000"
+            b["submodule"] = True
+        if line.startswith("index "):
             m = INDEX.match(line)
             b["index"] = (m[1], m[2]) if m else None
         elif line.startswith("deleted file mode"):
@@ -104,7 +108,8 @@ def blob_ids(diff: str) -> Dict[str, Tuple[Optional[str], Optional[str]]]:
     """{path: (old blob, new blob)} from the index lines of a unified <diff>
     (made with --full-index), by the path viewers show. None for a side with
     no file (all zeros); a file with no index line (a rename or mode change
-    alone) is left out."""
+    alone) or a submodule (its sides are commits) is left out."""
     def blob(i: str) -> Optional[str]:
         return None if set(i) == {"0"} else i
-    return {_shown_path(b): (blob(b["index"][0]), blob(b["index"][1])) for b in _files(diff) if b["index"]}
+    return {_shown_path(b): (blob(b["index"][0]), blob(b["index"][1])) for b in _files(diff)
+            if b["index"] and not b.get("submodule")}

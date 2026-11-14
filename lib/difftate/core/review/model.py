@@ -367,7 +367,7 @@ class Review:
             raise NotAllowed("only a reviewer opens a thread")
         _need_branch(on_branch)
         thread_id, time = _new_id(), _now()
-        outdated, moved = False, None
+        outdated, moved_since = False, None
         if anchor is not None:
             # The thread is written on the version the viewer showed, when it
             # has the viewer's code on those lines; else on the file now
@@ -379,7 +379,7 @@ class Review:
             anchor = replace(anchor, code=code, snapshot_id=written_on.id, commit=written_on.commit)
             if on_shown:
                 # Since the viewer showed it, the code moved (it moves with it) or changed
-                outdated, moved = isinstance(since, Outdated), since if isinstance(since, Moved) else None
+                moved_since = since
             else:
                 # A thread is written on the code the viewer showed. If the file no
                 # longer has that code there, it changed since: outdated at once
@@ -388,12 +388,12 @@ class Review:
             ThreadOpened(thread_id, anchor, time),
             CommentAdded(thread_id, Comment(_new_id(), author, "comment", body, time, self._seq + 1)),
         ]
-        if moved is not None:
-            events.append(ThreadMoved(thread_id, moved.start_line, moved.end_line, moved.snapshot_id, time))
         if outdated:
             events.append(ThreadOutdated(thread_id, time))
         for event in events:
             self.apply(event)
+        if moved_since is not None:
+            events += self.move_with_code({thread_id: moved_since})
         return events
 
     def add_comment(self, author: str, thread_id: str, kind: str, body: str) -> List[Event]:
