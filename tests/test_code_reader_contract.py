@@ -242,6 +242,24 @@ class TheGitAdapterInEachView(InAGitRepository, unittest.TestCase):
         self.assertNotIn("THREE", self.code.changeset("staged").diff)
         self.assertIn("+line_3 = 'THREE!'", self.code.changeset("unstaged").diff)
 
+    def test_a_same_size_edit_in_the_second_the_index_was_written_is_in_the_changeset(self):
+        # Git trusts an index entry whose file times and size match, unless the
+        # entry is as new as the index file itself (racily clean). A copy of the
+        # index must keep its times, or git trusts the stale entry.
+        self.git("config", "core.trustctime", "false")  # ctime can't be set; mtime stands for both
+        self.commit()
+        path = os.path.join(self.repo, "long.py")
+        second = 1_700_000_000
+        self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'a'"))
+        os.utime(path, (second, second))
+        self.git("add", "long.py")
+        os.utime(os.path.join(self.repo, ".git", "index"), (second, second))
+        self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'b'"))  # the same size, the same second
+        os.utime(path, (second, second))
+
+        self.assertIn("+line_3 = 'b'", self.code.changeset("").diff)
+        self.assertIn("+line_3 = 'b'", self.code.changeset("unstaged").diff)
+
     def test_a_thread_on_the_old_side_of_a_commit_view_has_its_file_in_that_view(self):
         self.commit()
         snapshot = self.code.snapshot("long.py", "old", "HEAD", 12, 12)
