@@ -42,7 +42,7 @@ or from Herdr's `keys.json` as `"difftate.<action>"`.
 | center | zz | Center the cursor line |
 | next_hunk / prev_hunk | ]h [h, ]c [c | Next change; past the last one, the next file |
 | next_file / prev_file | L H, ]b [b | Next changed file |
-| next_thread / prev_thread | ]d [d, ]t [t | Next open review thread, across files |
+| next_thread / prev_thread | ]d [d, ]t [t | Next open review thread: the general threads first, then across files |
 | visual_line | V v | Select lines |
 | comment | gc, Space c c (visual: gc c Enter) | Comment on the line or selection |
 | reply | r, Enter | Reply to the thread on this line |
@@ -53,7 +53,7 @@ or from Herdr's `keys.json` as `"difftate.<action>"`.
 | jump_back / jump_forward | C-o, Tab | Jump list |
 | find_files | Space Space, Space f f | Fuzzy open any file in the repo |
 | changed_files | Space f c | Fuzzy pick a changed file |
-| threads | Space s d | Fuzzy pick a review thread: every thread, outdated ones too. Picking one whose code isn't in this view switches to the view it was written in |
+| threads | Space s d | Fuzzy pick a review thread: every thread, outdated ones too, with the general threads (not on a file) in a group at the top. Picking one whose code isn't in this view switches to the view it was written in |
 | views | Space V | Pick a view of the review: all changes, uncommitted, staged, unstaged, or the last N commits. Threads belong to the review, whatever view they were written in |
 | toggle_view | Space v | Diff ↔ full file (full file marks added lines, red underline = deleted below) |
 | toggle_explorer | Space e | Show or hide the changed-files list |
@@ -65,6 +65,9 @@ or from Herdr's `keys.json` as `"difftate.<action>"`.
 
 In a comment, type `\n` for a line break.
 Shift-click a line to extend a selection.
+
+General threads (about the changeset as a whole, not on a file) are listed under **General threads**, above the changed files
+when the review has some. `r` replies to the one picked, `R` resolves it, as on a file.
 
 `Space Space` finds any file in the repo; changed files are marked:
 

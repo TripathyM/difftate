@@ -15,6 +15,7 @@ import { exec, readTextFile, theme, settings, props, run, closeOverlay, focused,
 import { findApi } from "./api.js";
 import { tokenize, langOf } from "./syntax.js";
 import { Editing } from "./edit.js";
+import { isGeneral, threadPlace, openThreads, pickerThreads, stepThread } from "./threads.js";
 
 const MOD = "difftate";
 const SEP = "\u0001";
@@ -401,6 +402,7 @@ export default class Review extends View {
   }
 
   async openFile(path, mode, target, record = true) {
+    if (mode === "general") return this.openGeneral(record);
     const f = this.fileOf(path);
     if (!f) mode = "file";
     if (this.dirty && this.view && (path !== this.view.path || mode !== this.view.mode)) {
@@ -438,8 +440,30 @@ export default class Review extends View {
     this.reveal("center");
   }
 
+  // The general threads (on the review, not on a file), listed as a file's threads are under its code.
+  // The view's path is "": no file is shown.
+  openGeneral(record = true) {
+    if (this.dirty && this.view) {
+      this.msg = `Unsaved changes in ${this.view.path}: :w saves them, :e! drops them`;
+      return false;
+    }
+    if (record && this.view?.mode !== "general") this.pushJump();
+    this.view = { path: "", mode: "general", versions: null };
+    this.rows = [{ kind: "meta", text: "General threads: about the changeset as a whole, not on a file" }];
+    this.lang = null;
+    this.hlUpTo = 0;
+    this.hlState = false;
+    this.indexRows();
+    this.cur = { row: 0, col: 0 };
+    this.mode = "normal";
+    this.rebuildItems();
+    this.reveal("center");
+    return true;
+  }
+
   async reopen() {
     const h = this.here();
+    if (h.mode === "general") { this.rebuildItems(); return; } // threads may have changed; the place stays
     const exists = this.fileOf(h.path) || h.mode === "file";
     if (!exists) { this.view = null; this.rows = []; this.rebuildItems(); if (this.files.length) await this.openFile(this.files[0].path, "diff", null, false); return; }
     await this.openFile(h.path, h.mode, { line: h.line, col: h.col, row: h.row }, false);
@@ -457,12 +481,13 @@ export default class Review extends View {
   // The row a thread sits under, or -1. An outdated thread's code is no longer on its
   // lines, so it never sits next to them: it is listed below the code, with the code it was written on.
   anchorRow(th) {
-    if (th.outdated || !th.inView) return -1;
+    if (isGeneral(th) || th.outdated || !th.inView) return -1;
     const m = th.side === "old" ? this.rowOfOld : this.rowOfNew;
     return m?.get(th.endLine) ?? -1;
   }
 
   threadsHere() {
+    if (this.view?.mode === "general") return this.threads.filter(isGeneral);
     const p = this.view?.path;
     return this.threads.filter((t) => t.filePath && t.filePath === p);
   }
@@ -479,7 +504,8 @@ export default class Review extends View {
     const cols = this.wrapCols();
     const state = stateOf(th);
     const range = th.startLine === th.endLine ? `${th.startLine}` : `${th.startLine}-${th.endLine}`;
-    const lines = [{ k: "head", text: `${state === "resolved" || state === "dismissed" ? "○" : "●"} ${stateLabel(th, state)}  ·  ${th.side === "old" ? "old " : ""}line ${range}${th.outdated ? "  ·  outdated" : ""}` }];
+    const where = isGeneral(th) ? "general" : `${th.side === "old" ? "old " : ""}line ${range}`;
+    const lines = [{ k: "head", text: `${state === "resolved" || state === "dismissed" ? "○" : "●"} ${stateLabel(th, state)}  ·  ${where}${th.outdated ? "  ·  outdated" : ""}` }];
     if (th.outdated && th.code) {
       const code = th.code.replace(/\n$/, "").split("\n");
       lines.push({ k: "author", text: "code when written (it changed since)" });
@@ -508,10 +534,11 @@ export default class Review extends View {
 
   rebuildItems() {
     const items = [], itemOfRow = [];
-    const byRow = new Map(), orphans = [], outdated = [];
+    const byRow = new Map(), orphans = [], outdated = [], general = [];
     for (const th of this.threadsHere()) {
       const i = this.anchorRow(th);
-      if (th.outdated) outdated.push(th);
+      if (isGeneral(th)) general.push(th);
+      else if (th.outdated) outdated.push(th);
       else if (i < 0) orphans.push(th);
       else byRow.set(i, [...(byRow.get(i) ?? []), th]);
     }
@@ -521,6 +548,11 @@ export default class Review extends View {
       items.push({ t: "row", i, h: RH, key: `r${i}` });
       for (const th of byRow.get(i) ?? []) items.push({ t: "thread", th, i, key: `t${th.id}`, ...this.layoutThread(th) });
     });
+    for (const th of general) items.push({ t: "thread", th, i: -1, key: `t${th.id}`, ...this.layoutThread(th) });
+    // In the general threads, one is always picked (and highlighted): the one r and R act on
+    if (this.view?.mode === "general" && !general.some((th) => th.id === this.curThread)) {
+      this.curThread = (general.find((th) => th.status === "open") ?? general[0])?.id ?? null;
+    }
     if (orphans.length) {
       items.push({ t: "note", h: RH + 8, key: "orphans", text: `${orphans.length} thread(s) on lines this view doesn't show. <leader>v switches diff / full file.` });
       for (const th of orphans) items.push({ t: "thread", th, i: -1, key: `t${th.id}`, ...this.layoutThread(th) });
@@ -764,26 +796,25 @@ export default class Review extends View {
     cx.spawn(async (cx) => { await this.openFile(next.path, "diff", null); cx.notify(); });
   }
 
-  // Open threads in review order: changed files first, then the rest, by line.
-  orderedThreads() {
-    const order = new Map(this.files.map((f, i) => [f.path, i]));
-    return this.threads.filter((t) => t.status === "open" && t.filePath)
-      .sort((a, b) => (order.get(a.filePath) ?? 1e6) - (order.get(b.filePath) ?? 1e6) || a.filePath.localeCompare(b.filePath) || a.endLine - b.endLine);
-  }
-
+  // Open threads in review order (threads.js): general ones first, then changed files, then the rest, by line.
   threadStep(d, cx) {
-    const list = this.orderedThreads();
+    const list = openThreads(this.threads, this.files);
     if (!list.length) { this.msg = "No open threads"; return; }
-    const order = new Map(this.files.map((f, i) => [f.path, i]));
-    const pos = (p, l) => [order.get(p) ?? 1e6, p, l];
-    const cmp = (a, b) => a[0] - b[0] || a[1].localeCompare(b[1]) || a[2] - b[2];
     const r = this.rows[this.cur.row];
-    const me = pos(this.view?.path ?? "", r?.new ?? r?.old ?? 0);
-    const pick = d > 0 ? list.find((t) => cmp(pos(t.filePath, t.endLine), me) > 0) ?? list[0] : [...list].reverse().find((t) => cmp(pos(t.filePath, t.endLine), me) < 0) ?? list.at(-1);
-    this.goToThread(pick, cx);
+    const here = this.view?.mode === "general"
+      ? { general: this.threads.some((t) => t.id === this.curThread && isGeneral(t)) ? this.curThread : null }
+      : { path: this.view?.path ?? "", line: r?.new ?? r?.old ?? 0 };
+    this.goToThread(stepThread(list, this.files, here, d), cx);
   }
 
   goToThread(th, cx) {
+    if (isGeneral(th)) {
+      if (this.view?.mode !== "general" && !this.openGeneral()) return;
+      this.curThread = th.id;
+      const idx = this.items.findIndex((x) => x.key === `t${th.id}`);
+      if (idx >= 0) this.scroll.scroll_to_item(idx);
+      return;
+    }
     cx.spawn(async (cx) => {
       // Its code isn't in this view: switch to the view it was written in, which showed it
       if (!th.inView && !th.outdated && th.writtenIn !== this.reviewView) {
@@ -862,6 +893,11 @@ export default class Review extends View {
   }
 
   threadAtCursor() {
+    // In the general threads: the one picked (clicked, ]d, the picker), else the first open one
+    if (this.view?.mode === "general") {
+      const general = this.threadsHere();
+      return general.find((t) => t.id === this.curThread) ?? general.find((t) => t.status === "open") ?? general[0] ?? null;
+    }
     const here = this.threadsHere().filter((t) => this.anchorRow(t) === this.cur.row);
     // A thread below the code (outdated, say) is picked by clicking it, ]d or the threads picker
     return here.find((t) => t.id === this.curThread) ?? here.find((t) => t.status === "open") ?? here[0]
@@ -872,7 +908,7 @@ export default class Review extends View {
     if (!this.api) { this.msg = "Start difftate (or dto) in this repo to reply."; return; }
     const th = this.threadAtCursor();
     if (!th) { this.msg = "No thread on this line (]d jumps to the next one)"; return; }
-    this.openPrompt({ kind: "reply", label: `Reply on ${th.filePath}:${th.endLine}`, thread: th });
+    this.openPrompt({ kind: "reply", label: `Reply on ${threadPlace(th)}${isGeneral(th) ? `: ${(th.comments[0]?.body ?? "").split("\n")[0].slice(0, 40)}` : ""}`, thread: th });
   }
 
   setThreadStatus(status, cx) {
@@ -998,10 +1034,11 @@ export default class Review extends View {
     });
   }
 
+  // General threads in a group at the top, then the files' threads; open ones first in each.
   threadPicker() {
-    const all = [...this.orderedThreads(), ...this.threads.filter((t) => t.status !== "open" && t.filePath)];
+    const all = pickerThreads(this.threads, this.files).flat();
     this.openPicker("Review threads", all.map((t) => ({
-      label: `${t.filePath}:${t.startLine === t.endLine ? t.startLine : `${t.startLine}-${t.endLine}`}`,
+      label: threadPlace(t),
       match: " " + (t.comments[0]?.body ?? ""),
       detail: `${stateLabel(t, stateOf(t))}${t.outdated ? " · outdated" : !t.inView ? " · not in this view" : ""} · ${(t.comments[0]?.body ?? "").split("\n")[0].slice(0, 60)}`,
       value: t,
@@ -1095,6 +1132,7 @@ export default class Review extends View {
 
   toggleView(cx) {
     if (!this.view) return;
+    if (this.view.mode === "general") { this.msg = "General threads aren't on a file"; return; }
     const h = this.here();
     const r = this.rows[this.cur.row];
     let line = r?.new;
@@ -1105,7 +1143,7 @@ export default class Review extends View {
   }
 
   openInEditor() {
-    if (!this.view) return;
+    if (!this.view || this.view.mode === "general") return;
     const line = this.rows[this.cur.row]?.new ?? 1;
     // $EDITOR from the login shell, else vi; opens beside the review.
     run("terminal.open", { argv: ["sh", "-lc", 'exec ${EDITOR:-vi} "+$1" "$2"', "sh", String(line), this.view.path], folder: this.root, place: "right" });
@@ -1199,13 +1237,22 @@ export default class Review extends View {
 
   explorerEl(t) {
     const open = new Map();
-    for (const th of this.threads) if (th.status === "open") open.set(th.filePath, (open.get(th.filePath) ?? 0) + 1);
+    for (const th of this.threads) if (th.status === "open" && !isGeneral(th)) open.set(th.filePath, (open.get(th.filePath) ?? 0) + 1);
+    const general = this.threads.filter(isGeneral);
+    const generalOpen = general.filter((th) => th.status === "open").length;
     const status = { added: "A", deleted: "D", renamed: "R", copied: "C" };
     return v_flex().w(EXPLORER_W).flex_none().h_full().min_h(0).bg(t.chrome).border_r(1).border_color(t.border)
       .child(h_flex().h(30).flex_none().px(12).items_center().text_size(11).text_color(t.dim)
         .child(div().flex_1().child(`Changed files · ${this.files.length}`))
         .child(div().child(`${this.files.filter((f) => this.viewed.has(f.path)).length} viewed`)))
       .child(v_flex().id("dt-files").flex_1().min_h(0).px(6).pb(8).overflow_y_scrollbar()
+        // General threads (not on a file), above the files; only when the review has some
+        .when(general.length > 0, (el) => el.child(h_flex().id("dt-general").h(26).flex_none().px(8).gap(6).rounded(6).items_center().cursor_pointer()
+          .when(this.view?.mode === "general", (el) => el.bg(t.selected)).hover((s) => s.bg(t.hover))
+          .on_click((_e, cx) => { this.openGeneral(); this.handle.focus(); cx.notify(); })
+          .child(div().w(10).flex_none().text_size(10.5).text_color(t.dim).child("#"))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child("General threads"))
+          .when(generalOpen > 0, (el) => el.child(div().px(5).h(16).flex().items_center().rounded(4).bg(t.blocked + "26").text_size(10).text_color(t.blocked).child(String(generalOpen))))))
         .children(this.files.map((f) => {
           const parts = f.path.split("/"), name = parts.pop();
           const on = f.path === this.view?.path;
@@ -1295,10 +1342,10 @@ export default class Review extends View {
       .when(Boolean(this.count || this.pending.length), (el) => el.child(div().font_family(mono).text_color(t.foreground).child(this.count + this.pending.join(""))))
       .child(div().flex_1().min_w(0).truncate().text_color(this.keymapError ? t.blocked : t.muted).child(this.keymapError ?? this.msg ?? ""))
       .when(Boolean(this.view), (el) => el
-        .child(div().text_color(t.dim).child(this.view.mode === "diff" ? "diff" : "file"))
+        .child(div().text_color(t.dim).child(this.view.mode))
         .when(this.viewed.has(this.view.path), (el) => el.child(div().text_color(t.ansi2).child("✓ viewed")))
         .when(this.dirty, (el) => el.child(div().text_color(t.ansi3).font_semibold().child("[+] unsaved")))
-        .child(div().max_w(420).truncate().text_color(t.muted).child(`${this.view.path}  ${r?.new ?? r?.old ?? "-"}:${this.cur.col + 1}`)));
+        .child(div().max_w(420).truncate().text_color(t.muted).child(this.view.mode === "general" ? "general threads" : `${this.view.path}  ${r?.new ?? r?.old ?? "-"}:${this.cur.col + 1}`)));
 
     const waitingBar = this.waitingFor
       ? h_flex().flex_none().px(14).h(26).items_center().bg(t.chrome).border_b(1).border_color(t.border).text_size(12).text_color(t.ansi3)
