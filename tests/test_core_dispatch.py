@@ -22,7 +22,7 @@ from difftate.core.dispatch.model import (  # noqa: E402
 from difftate.core.dispatch.use_cases.stop_run import stop_run  # noqa: E402
 from difftate.core.dispatch.use_cases.poll import poll  # noqa: E402
 from difftate.core.dispatch.use_cases.recover_runs import recover_runs  # noqa: E402
-from difftate.core.review.model import CouldNotRead, Review, RunEnded  # noqa: E402
+from difftate.core.review.model import Anchor, CouldNotRead, Review, RunEnded  # noqa: E402
 from difftate.main import bind_review  # noqa: E402
 
 
@@ -172,6 +172,43 @@ class ThePrompt(DispatchTest):
         self.assertIn("reviewer Ada: Why an f-string here?", second)
         self.assertIn("reviewer (new): Thanks.", second, "a comment with no name names no one")
         self.assertIn("  reviewer docs-bot: And the docs?", second, "the other open threads name them too")
+
+    COMMITS = ["Greet with an f-string\n\nChose an f-string over +: it reads better.", "Spell out three"]
+
+    def started_with(self, code):
+        """The prompt of a run on one thread, written in a view of one commit,
+        with <code> as the code reader."""
+        self.review = bind_review(self.store, code, FakeHistory(), {"id": "r", "branch": "feature", "base": "main"})
+        self.dispatch = Dispatch(self.review, clock=self.clock)
+        self.review.open_thread("reviewer", "Why an f-string here?", Anchor("app.py", "new", 2, 2, view=code.commit))
+        agent = FakeCodingAgent(FakeRun([[Finished(True), Exited(0)]]))
+        self.poll(agent)
+        return agent.started[0][0]
+
+    def test_it_has_every_commit_message_of_the_review_before_the_threads_even_in_a_view_of_one_commit(self):
+        text = self.started_with(FakeCode(self.code.files, messages=self.COMMITS))
+
+        decisions = text.index("## The decisions behind the code")
+        self.assertLess(decisions, text.index("## Reply to these threads"))
+        self.assertLess(text.index("Greet with an f-string\n\nChose an f-string over +: it reads better."),
+                        text.index("Spell out three"), "oldest first")
+        self.assertLess(text.index("Spell out three"), text.index("## Reply to these threads"))
+
+    def test_it_has_no_commit_section_when_the_review_has_no_commits(self):
+        text = self.started_with(FakeCode(self.code.files))
+
+        self.assertNotIn("decisions behind the code", text)
+        self.assertIn("## Reply to these threads", text)
+
+    def test_a_run_starts_without_the_commit_section_when_the_commits_cant_be_read(self):
+        class CommitsThatCantBeRead(FakeCode):
+            def commit_messages(self):
+                raise CouldNotRead("could not read the review's commits")
+
+        text = self.started_with(CommitsThatCantBeRead(self.code.files))
+
+        self.assertNotIn("decisions behind the code", text)
+        self.assertIn("reviewer (new): Why an f-string here?", text)
 
 
 class ARunWithNoReply(DispatchTest):

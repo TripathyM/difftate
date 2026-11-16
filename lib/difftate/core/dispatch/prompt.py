@@ -1,5 +1,10 @@
-"""The prompt for one run: the threads it answers in full, a summary of the other
-open threads, and the rules.
+"""The prompt for one run: the review's commit messages, the threads it answers
+in full, a summary of the other open threads, and the rules.
+
+The commit messages record the decisions behind the code: a run starts a
+fresh agent session (ADR 0005), so they are how it knows why code it didn't
+write is as it is. They are every commit from the base to the branch,
+whatever the view; no section when there are none.
 
 An outdated thread says so, and shows the code it was written on: that code
 is no longer on its lines.
@@ -22,7 +27,7 @@ SUMMARY_MAX = 200  # chars per comment in the "other open threads" section
 
 PROMPT = """New review comments. Everything you need is below.
 
-{threads}
+{commits}{threads}
 
 Rules:
 - Reply to EVERY thread under 'Reply to these threads', with: {dt_reply} <thread> "<answer>"
@@ -39,11 +44,26 @@ Rules:
 Summarize briefly what you handled."""
 
 
-def build(open_threads: Sequence[Thread], ids: Collection[str], new_ids: Collection[str], reply_command: str) -> str:
+def build(open_threads: Sequence[Thread], ids: Collection[str], new_ids: Collection[str], reply_command: str,
+          commit_messages: Sequence[str]) -> str:
     """The prompt for a run on the threads <ids>, among the <open_threads>.
     <new_ids> holds the ids of the comments the run is sent: no run had them.
-    <reply_command> is how the coding agent answers, ready for its shell."""
-    return PROMPT.format(threads=threads_part(open_threads, ids, new_ids), dt_reply=reply_command)
+    <reply_command> is how the coding agent answers, ready for its shell.
+    <commit_messages> are the review's, oldest first."""
+    return PROMPT.format(commits=commits_part(commit_messages), threads=threads_part(open_threads, ids, new_ids),
+                         dt_reply=reply_command)
+
+
+def commits_part(messages: Sequence[str]) -> str:
+    """The review's commit messages, each under a heading, and a blank line
+    after them; "" when there are none."""
+    if not messages:
+        return ""
+    out = [f"## The decisions behind the code: the review's commit messages ({len(messages)}), oldest first", "",
+           "Each commit from the base to the branch. Read them to know why the code is as it is.", ""]
+    for n, message in enumerate(messages, 1):
+        out += [f"### Commit {n}", message, ""]
+    return "\n".join(out) + "\n"
 
 
 def location(t: Thread) -> str:

@@ -20,6 +20,7 @@ from .adapters.outbound.local_store import LocalStore
 from .adapters.outbound.terminal import Terminal
 from .core.changes.use_cases.changeset import changeset
 from .core.changes.use_cases.checked_out import checked_out
+from .core.changes.use_cases.commit_messages import commit_messages
 from .core.dispatch.model import Dispatch
 from .core.dispatch.use_cases.poll import poll
 from .core.dispatch.use_cases.recover_runs import recover_runs as recover_interrupted_runs
@@ -58,8 +59,8 @@ def bind_review(store, code, history, about):
     The review API serves each request on its own thread while Dispatch runs,
     and a use case reads the store, decides and appends: so the use cases that
     keep something run one at a time on a review, or two could decide on the
-    same events. Reading the changeset or the checkout keeps nothing, so it
-    doesn't wait."""
+    same events. Reading the changeset, the checkout or the commit messages
+    keeps nothing, so it doesn't wait."""
     notes = NotesInProgress()  # the notes that aren't final yet, this review's
     lock = threading.Lock()
 
@@ -86,6 +87,7 @@ def bind_review(store, code, history, about):
         checked_out=functools.partial(checked_out, code),
         # For running the loop (Dispatch)
         move_with_code=one_at_a_time(move_with_code, store, code, history),
+        commit_messages=functools.partial(commit_messages, code),
         start_run=one_at_a_time(start_run, store, notes, history),
         end_run=one_at_a_time(end_run, store, notes, history),
         recover_runs=one_at_a_time(recover_runs, store, notes, history),

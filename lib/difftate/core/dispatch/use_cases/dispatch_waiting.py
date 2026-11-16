@@ -32,6 +32,15 @@ def open_threads(dispatch: Dispatch) -> List[ListedThread]:
         return []
 
 
+def commit_messages(dispatch: Dispatch) -> List[str]:
+    """The review's commit messages; none when they can't be read: they help
+    the run, it doesn't need them."""
+    try:
+        return dispatch.review.commit_messages()
+    except CouldNotRead:
+        return []
+
+
 def start_run(dispatch: Dispatch, agent: ForAskingTheCodingAgent, report: ForReporting,
               listed: Sequence[ListedThread]) -> None:
     sent = waiting(listed)
@@ -51,7 +60,8 @@ def start_run(dispatch: Dispatch, agent: ForAskingTheCodingAgent, report: ForRep
     report.dispatching(agent.name)
 
     threads = [t.thread for t in listed]
-    text = prompt.build(threads, [t.id for t in sent], list(recorded.sent), agent.reply_command)
+    text = prompt.build(threads, [t.id for t in sent], list(recorded.sent), agent.reply_command,
+                        commit_messages(dispatch))
     reply_to = frozenset(t.id for t in threads)
     run = dispatch.run = RunInProgress(handle=NotStarted(), reply_to=reply_to, started=dispatch.clock())
     # A thread that ends in its queued note gets that note back as its progress note

@@ -75,3 +75,13 @@ class ForReadingTheCode(Protocol):
         to the file does. Raises the core's CouldNotRead when the changeset
         can't be read."""
         ...
+
+    # ── The review's commits ─────────────────────────────────────────────────
+    def commit_messages(self) -> List[str]:
+        """The message (subject, then body, with no blank lines around it) of
+        each commit from the base to the review's branch, oldest first,
+        whatever the view; a commit with an empty message says nothing, so it
+        is left out. Empty when
+        there are none: no commit yet, or a review on the base branch itself.
+        Raises the core's CouldNotRead when they can't be read."""
+        ...

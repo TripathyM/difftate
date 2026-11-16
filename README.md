@@ -226,6 +226,18 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 `lib/difftate/core/dispatch/prompt.py` builds the prompt as plain text, without notes or JSON metadata, so the coding agent doesn't need to read the review itself:
 
 ```
+## The decisions behind the code: the review's commit messages (2), oldest first
+
+Each commit from the base to the branch. Read them to know why the code is as it is.
+
+### Commit 1
+Fetch users by id
+
+Chose one request per user over a batch endpoint: the API has none yet.
+
+### Commit 2
+Retry flaky gateway calls
+
 ## Reply to these threads (1)
 
 ### Thread 94beac30 — src/user.ts:42-44
@@ -241,7 +253,7 @@ reviewer (new): yes
   you: It handles flaky 502s from the gateway.
 ```
 
-followed by the rules (reply with `dt-reply`, change code only when asked, never resolve). "Other open threads" lets the coding agent see a related comment elsewhere ("this also fixes your comment on api.ts") at a fraction of the full JSON's size.
+followed by the rules (reply with `dt-reply`, change code only when asked, never resolve). Each run starts a fresh agent session, so the commit messages are how the coding agent knows why code it didn't write is as it is: every commit from the base to the branch (`git log <base>..<branch>`), whatever the view you look at. A review with no commits yet has no such section. "Other open threads" lets the coding agent see a related comment elsewhere ("this also fixes your comment on api.ts") at a fraction of the full JSON's size.
 
 Coding agent invocation:
 - Claude: `claude -p … [--model <model>] --settings <run sandbox> --output-format stream-json --verbose < /dev/null`
