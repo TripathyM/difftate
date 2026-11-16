@@ -1,6 +1,7 @@
 // A client for difftate's review API, served by the running watcher (`difftate`, `dtc`, `dto`).
-// The watcher writes where it runs to <git common dir>/difftate/api.json ({port, pid, root})
-// and its token to <git common dir>/difftate/token. See lib/difftate/adapters/inbound/review_api/server.py for the API.
+// One watcher runs per checked-out folder (the repository, or one of its worktrees). It writes where
+// it runs to <that folder's own git dir>/difftate/api.json ({port, pid, root}) and its token to
+// <that folder's own git dir>/difftate/token. See lib/difftate/adapters/inbound/review_api/server.py for the API.
 
 import { exec, readTextFile } from "herdr";
 import { parseDiff } from "./diff.js";
@@ -9,12 +10,11 @@ export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-// The review API for the repository at <root>, or null when no watcher serves it.
+// The review API of the watcher for the checked-out folder at <root>, or null when none serves it.
 export async function findApi(root) {
-  const r = await exec("git", ["rev-parse", "--git-common-dir"], { cwd: root }).catch(() => null);
+  const r = await exec("git", ["rev-parse", "--absolute-git-dir"], { cwd: root }).catch(() => null);
   if (!r || r.code !== 0) return null;
-  const common = r.stdout.trim();
-  const folder = `${common.startsWith("/") ? common : `${root}/${common}`}/difftate`;
+  const folder = `${r.stdout.trim()}/difftate`;
   let info, token;
   try {
     info = JSON.parse(await readTextFile(`${folder}/api.json`));

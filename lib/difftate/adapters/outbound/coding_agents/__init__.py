@@ -12,7 +12,8 @@ and finding the command).
 from __future__ import annotations
 
 from .claude_code import ClaudeCode
+from .coding_agent import OffLimits
 from .opencode import OpenCode
 from .processes import find_command
 
-__all__ = ["ClaudeCode", "OpenCode", "find_command"]
+__all__ = ["ClaudeCode", "OffLimits", "OpenCode", "find_command"]

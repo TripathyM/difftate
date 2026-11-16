@@ -4,9 +4,10 @@ core's errors become HTTP statuses.
 
 Viewers and scripts reach the review through it; Dispatch, inside the watcher,
 reaches it through the core (ADR 0003). Every
-request needs the token from the repository's difftate folder
-(`<git dir>/difftate/token`, readable only by the user); a request without it
-gets 401.
+request needs the token from the watcher's difftate folder, in the checked-out
+folder's own git folder (`<git dir>/difftate/token`, readable only by the
+user; for a worktree, its own git folder under the repository's); a request
+without it gets 401.
 
   GET   /api/review                     start or reuse the review of the checked-out
                                         branch: {"id", "branch", "base", "waitingForRun",
@@ -138,7 +139,7 @@ PAGE_HEADERS = {
 
 
 def token_file(folder):
-    """Where the review API keeps its token, in the review's <folder>."""
+    """Where the review API keeps its token, in the watcher's <folder>."""
     return os.path.join(folder, "token")
 
 
@@ -148,7 +149,8 @@ class ApiAddress(namedtuple("ApiAddress", "url token_file")):
 
 
 def running_watcher(folder):
-    """The pid of another live watcher serving this repository's review API, or None."""
+    """The pid of another live watcher serving the review API from <folder>
+    (a checked-out folder's own difftate folder), or None."""
     try:
         with open(os.path.join(folder, "api.json")) as f:
             info = json.load(f)
@@ -172,7 +174,7 @@ def running_watcher(folder):
 
 
 def ask_running_watcher(folder, method, path, payload=None):
-    """Call the review API of the watcher serving this repository, as a viewer
+    """Call the review API of the watcher serving from <folder>, as a viewer
     would: (status, the JSON answer)."""
     with open(os.path.join(folder, "api.json")) as f:
         port = int(json.load(f)["port"])
@@ -272,8 +274,10 @@ class ReviewApi:
     list_threads, open_thread, add_comment, edit_note, set_status,
     mark_viewed, list_viewed, changeset and checked_out.
 
-    <default_reviewer>() is the reviewer name of a reviewer's comment or
-    status change that names none (None for no name)."""
+    It writes its token and where it runs (api.json: port, pid, <root>) to
+    <folder>, the watcher's difftate folder in the checked-out folder's own
+    git folder. <default_reviewer>() is the reviewer name of a reviewer's
+    comment or status change that names none (None for no name)."""
 
     def __init__(self, review, folder, root, shown, default_reviewer=None):
         self.review = review

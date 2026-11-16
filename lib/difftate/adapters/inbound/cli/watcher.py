@@ -1,5 +1,6 @@
-"""The watcher: one per repository. It opens the review of the checked-out
-branch, serves the review API, and runs the loop every --interval until
+"""The watcher: one per checked-out folder of a repository (the repository
+itself, or one of its worktrees). It opens the review of the branch checked out
+there, serves the review API, and runs the loop every --interval until
 Ctrl+C. It follows the checked-out branch: between runs, it moves to that
 branch's review (started if new), and back again.
 
@@ -40,10 +41,12 @@ class Watcher:
         found = w.difftate_folder(o["cwd"])
         if found is None:
             raise Exit(1, f"Error: {o['cwd']} is not a git repository")
-        self.folder, self.root = found
-        self.lock = one_watcher.claim(self.folder, o["ref"], o["open"], w.running_watcher, w.ask_running_watcher)
+        self.folder, self.watcher_folder, self.root = found  # the reviews', the watcher's, the top
+        self.lock = one_watcher.claim(self.watcher_folder, o["ref"], o["open"], w.running_watcher,
+                                      w.ask_running_watcher)
         try:
-            self.coding_agent = w.coding_agent(o["tool"], o["cmd"], o["model"], o["cwd"], self.folder)
+            self.coding_agent = w.coding_agent(o["tool"], o["cmd"], o["model"], o["cwd"], self.folder,
+                                               self.watcher_folder)
         except CouldNotStart as e:
             raise Exit(1, f"Error: {e}")
 
@@ -62,7 +65,7 @@ class Watcher:
             review = self.open_review(self.branch)
         except (CouldNotRead, OSError) as e:
             raise Exit(1, f"Error: could not read the review ({e})")
-        self.api = w.review_api(review, self.folder, self.root, view,
+        self.api = w.review_api(review, self.watcher_folder, self.root, view,
                                 lambda view: w.need_view(o["cwd"], view), self.view_shown)
         self.api.start()
 
