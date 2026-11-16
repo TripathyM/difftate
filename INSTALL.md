@@ -66,11 +66,12 @@ Build one block of lines to add, back up once, confirm once.
 One line per setup, using the user's answers to question 2:
 
 ```zsh
-dtcw() { difftate --cmd ccw "$@"; }                                         # default config (~/.claude)
-dtcp() { CLAUDE_CONFIG_DIR=~/.claude-personal difftate --cmd ccp "$@"; }   # own config dir
+dtcw() { difftate --cmd ccw "$@"; }                                 # default config (~/.claude)
+dtcp() { difftate --cmd ccp "$@"; }                                 # a wrapper that sets its own config dir
+dtcx() { CLAUDE_CONFIG_DIR=~/.claude-other difftate "$@"; }         # plain claude, another config dir
 ```
 
-- Set `CLAUDE_CONFIG_DIR` only when the setup uses a non-default dir. Never set it to `~/.claude`: leave it unset for the default.
+- A shortcut picks the coding agent and account that replies. Set `CLAUDE_CONFIG_DIR` only for a plain `claude` on a non-default dir: the watcher passes it through to `claude`. Never set it to `~/.claude`: leave it unset for the default.
 - For each shortcut being added (not ones already defined), check its command with `zsh -ic 'type <cmd>'` (an alias or wrapper is fine here). If it prints "not found", tell the user and ask for the right command. Don't write that line until they answer.
 
 ## 4. Herdr (only if question 3 was yes)

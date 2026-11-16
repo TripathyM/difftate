@@ -102,15 +102,15 @@ class ReadingALine(unittest.TestCase):
 
 
 class TheCommandLine(unittest.TestCase):
-    """Every run starts a fresh agent session: no session is continued, and the
-    model is --model or the coding agent's default."""
+    """Every run starts a fresh agent session: none is continued, and the model
+    is --model or the coding agent's default."""
 
     def command(self, coding_agent):
         folder = RunFolder.create(["thread-1"])
         self.addCleanup(folder.remove)
         return coding_agent.command("The prompt.", folder)
 
-    def test_claude_code_starts_a_fresh_session_with_the_given_model(self):
+    def test_claude_code_starts_a_fresh_agent_session_with_the_given_model(self):
         argv, first = self.command(ClaudeCode("claude", "claude-opus-5-5"))
 
         self.assertEqual(argv[:3], ["claude", "-p", "The prompt."])
@@ -125,7 +125,7 @@ class TheCommandLine(unittest.TestCase):
         self.assertNotIn("--model", argv)
         self.assertEqual(first, [ModelChosen("")])
 
-    def test_opencode_starts_a_fresh_session_with_the_given_model(self):
+    def test_opencode_starts_a_fresh_agent_session_with_the_given_model(self):
         argv, _ = self.command(OpenCode("opencode", "anthropic/claude-opus-5-5"))
 
         self.assertEqual(argv[:3], ["opencode", "run", "The prompt."])
