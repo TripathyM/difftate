@@ -200,7 +200,6 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 | `REFRESH_S` | `lib/difftate/core/dispatch/model.py` | `3` | Seconds between progress note refreshes while the coding agent is quiet |
 | `TEXT_MAX` | `lib/difftate/adapters/outbound/terminal/__init__.py` | `300` | Max characters of coding agent text per terminal line |
 | `ANCHOR_MAX_LINES` | `lib/difftate/core/dispatch/prompt.py` | `20` | Lines of the commented code included per thread |
-| `SUMMARY_MAX` | `lib/difftate/core/dispatch/prompt.py` | `200` | Characters per comment in "Other open threads" |
 
 ### Watcher flags (`difftate-watch.py --help`)
 
@@ -214,7 +213,7 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 
 ## How it works
 
-1. Every `--interval` seconds the watcher lists open threads. A thread is **waiting** when it has a comment of yours (or another reviewer's) that no run has been sent yet (see [thread state](#review-api)).
+1. Every `--interval` seconds the watcher lists the review's threads. A thread is **waiting** when it has a comment of yours (or another reviewer's) that no run has been sent yet (see [thread state](#review-api)).
 2. Waiting threads → one run of the coding agent, in the background, with the prompt below. Runs go **one at a time**; comments that queue up during a run all go into the next one.
 3. While it runs, the watcher keeps polling; new threads get `🕒 Queued` within ~1s and go in the next run.
 4. Before the run starts, the watcher posts a progress note on each of its threads (or reuses the thread's queued note). The watcher reads the coding agent's event stream and edits them with its steps while the run works. When the run ends (done, failed, or stopped by Ctrl+C: "⏹ Stopped"), the watcher writes each note's final line.
@@ -247,13 +246,21 @@ reviewer: rename this to fetchUser
 you: Should I also rename the test?        ← the coding agent's earlier reply
 reviewer (new): yes
 
-## Other open threads (2) — context only
-- 824f35ef — src/api.ts:10
-  reviewer: why is this retry here?
-  you: It handles flaky 502s from the gateway.
+## Other threads (2) — context only
+
+### Thread 824f35ef — src/api.ts:10 — open
+Code:
+<the commented lines>
+reviewer: why is this retry here?
+you: It handles flaky 502s from the gateway.
+
+### Thread 5d1e07aa — general thread (not tied to a line) — dismissed
+reviewer: should we cache users?
+you: A cache would need invalidation on every write. Shall I add one?
+reviewer: no, keep it simple
 ```
 
-followed by the rules (reply with `dt-reply`, change code only when asked, never resolve). Each run starts a fresh agent session, so the commit messages are how the coding agent knows why code it didn't write is as it is: every commit from the base to the branch (`git log <base>..<branch>`), whatever the view you look at. A review with no commits yet has no such section. "Other open threads" lets the coding agent see a related comment elsewhere ("this also fixes your comment on api.ts") at a fraction of the full JSON's size.
+followed by the rules (reply with `dt-reply`, change code only when asked, never resolve). Each run starts a fresh agent session, so the commit messages are how the coding agent knows why code it didn't write is as it is: every commit from the base to the branch (`git log <base>..<branch>`), whatever the view you look at. A review with no commits yet has no such section. "Other threads" are every other thread of the review in full (every comment and reply, uncut, without notes): open, resolved and dismissed, each marked with its thread status, as context only. A question in one thread informs the answer in another ("this also fixes your comment on api.ts"), and a fix, preference or rejected suggestion in a resolved or dismissed thread is not undone or suggested again. The run is sent only the waiting threads. It replies to those, and to another open thread only when what it does in this run also addresses it.
 
 Coding agent invocation:
 - Claude: `claude -p … [--model <model>] --settings <run sandbox> --output-format stream-json --verbose < /dev/null`
