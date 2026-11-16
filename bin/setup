@@ -1,0 +1,82 @@
+#!/bin/sh
+# Set up this checkout (or worktree) of difftate for development.
+# Safe to run again: each step skips what is already done.
+#
+#   bin/setup                  run every setup step
+#   bin/setup --install-hook   also run bin/setup in every new worktree, via a
+#                              git post-checkout hook (once per clone)
+#
+# Add new setup steps (Python packages, generated files, ...) as functions
+# below and call them at the bottom.
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Pinned: `experimental_install` may change between releases.
+SKILLS_CLI=skills@1.7.6
+
+# Agent skills under .agents/skills and .claude/skills are gitignored, like
+# node_modules. skills-lock.json is the record of which ones this repo uses.
+restore_skills() {
+  if [ ! -f skills-lock.json ]; then
+    return
+  fi
+  if ! command -v npx >/dev/null 2>&1; then
+    echo "setup: npx not found, skipping agent skills (install Node.js, then run bin/setup)" >&2
+    return
+  fi
+  echo "setup: restoring agent skills from skills-lock.json"
+  npx --yes "$SKILLS_CLI" experimental_install --frozen-lockfile
+}
+
+# The restore fills only .agents/skills. Claude Code reads .claude/skills, so
+# link each skill there the way `skills add` does.
+link_claude_skills() {
+  [ -d .agents/skills ] || return 0
+  mkdir -p .claude/skills
+  for dir in .agents/skills/*/; do
+    name=$(basename "$dir")
+    if [ ! -e ".claude/skills/$name" ] && [ ! -L ".claude/skills/$name" ]; then
+      ln -s "../../.agents/skills/$name" ".claude/skills/$name"
+    fi
+  done
+}
+
+HOOK_MARK="installed by bin/setup --install-hook"
+
+install_hook() {
+  # --git-path resolves to the hooks folder shared by every worktree
+  # (and honours core.hooksPath).
+  hooks=$(git rev-parse --git-path hooks)
+  hook="$hooks/post-checkout"
+  if [ -e "$hook" ] && ! grep -q "$HOOK_MARK" "$hook"; then
+    echo "setup: $hook already exists and isn't ours; not replacing it." >&2
+    echo "setup: add a call to bin/setup to it yourself." >&2
+    return 1
+  fi
+  mkdir -p "$hooks"
+  cat >"$hook" <<EOF
+#!/bin/sh
+# $HOOK_MARK
+# Runs bin/setup when a new worktree is checked out. Git passes the previous
+# HEAD as \$1; it is all zeros only on that first checkout.
+case "\$1" in
+  *[!0]*) exit 0 ;;
+esac
+if [ -x bin/setup ]; then
+  bin/setup || echo "post-checkout: bin/setup failed; fix it, then run bin/setup" >&2
+fi
+exit 0
+EOF
+  chmod +x "$hook"
+  echo "setup: installed $hook"
+}
+
+if [ "${1:-}" = "--install-hook" ]; then
+  install_hook
+fi
+
+restore_skills
+link_claude_skills
+
+echo "setup: done"
