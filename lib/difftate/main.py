@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from .adapters.inbound import cli
 from .adapters.inbound.review_api import ReviewApi, ShownView, ask_running_watcher, running_watcher, token_file
 from .adapters.outbound import git
-from .adapters.outbound.coding_agents import ClaudeCode, OpenCode, find_command
+from .adapters.outbound.coding_agents import ClaudeCode, OffLimits, OpenCode, find_command
 from .adapters.outbound.git import GitCodeReader
 from .adapters.outbound.history_files import HistoryFiles
 from .adapters.outbound.local_store import LocalStore
@@ -107,15 +107,21 @@ def open_review(folder, cwd, branch, base, on_tamper):
 
 
 def coding_agent(tool, cmd, model, cwd, folder, watcher_folder):
-    """The coding agent <tool>: its runs work in <cwd>, may not write the
-    review's <folder> or the <watcher_folder> (the lock and the review API's
-    running files: one folder with <folder> in the repository itself), and may
-    not read the review API's token, nor that of the main checkout's watcher
-    (in <folder>)."""
+    """The coding agent <tool>: its runs work in <cwd>. A run may not write
+    the review's <folder>, this watcher's <watcher_folder> (its lock and the
+    review API's running files: one folder with <folder> in the repository
+    itself) or any other checked-out folder's watcher folder, and may not read
+    any of their review API tokens, this watcher's first. The checked-out
+    folders are listed again for each run, so a worktree added since is
+    covered."""
     chosen = CODING_AGENTS[tool]
-    keep_out = list(dict.fromkeys([folder, watcher_folder]))
-    secrets = list(dict.fromkeys([token_file(watcher_folder), token_file(folder)]))
-    return chosen(find_command(cmd or chosen.default_cmd), model, cwd=cwd, keep_out=keep_out, secrets=secrets)
+
+    def off_limits():
+        watchers = REPOSITORY.watcher_folders(cwd)
+        return OffLimits(keep_out=list(dict.fromkeys([folder, watcher_folder, *watchers])),
+                         secrets=list(dict.fromkeys(token_file(f) for f in [watcher_folder, *watchers])))
+
+    return chosen(find_command(cmd or chosen.default_cmd), model, cwd=cwd, off_limits=off_limits)
 
 
 def review_api(review, watcher_folder, root, view, check, on_switch):

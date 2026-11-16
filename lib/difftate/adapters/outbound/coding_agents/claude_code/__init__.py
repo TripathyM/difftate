@@ -35,7 +35,9 @@ class ClaudeCode(CodingAgent):
             "permissions": {"deny": deny}}, separators=(",", ":"))
 
     def command(self, prompt: str, folder: RunFolder) -> Tuple[List[str], List[News]]:
-        access = RunAccess(write=[folder.path], deny_write=self.keep_out, deny_read=self.secrets)
+        off_limits = self.off_limits()
+        access = RunAccess(write=[folder.path], deny_write=list(off_limits.keep_out),
+                           deny_read=list(off_limits.secrets))
         args = ["--allowedTools", "Edit", "Write", "Read", "Bash", "--settings", self.run_settings(access),
                 "--output-format", "stream-json", "--verbose"]
         if self.model:

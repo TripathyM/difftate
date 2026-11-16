@@ -3,7 +3,7 @@ work."""
 from __future__ import annotations
 
 import os
-from typing import Dict, List, Sequence, Tuple
+from typing import Callable, Dict, List, NamedTuple, Sequence, Tuple
 
 from ....core.dispatch.model import CouldNotStart, News
 from .events import ReadsEvents
@@ -11,25 +11,32 @@ from .reply_channel import REPLY_COMMAND, RunFolder
 from .run import ProcessRun, context_window
 
 
+class OffLimits(NamedTuple):
+    """What one run may not touch: write the folders in <keep_out> (difftate's
+    folders) or read the files in <secrets> (the review API tokens)."""
+    keep_out: Sequence[str] = ()
+    secrets: Sequence[str] = ()
+
+
 class CodingAgent:
     """A coding agent, and how this watcher runs it: the command and a model
     override (empty for the default). Each run starts a fresh agent session.
-    Its runs work in <cwd>; they may not write <keep_out> (the review's
-    folder) or read <secrets> (the review API's token)."""
+    Its runs work in <cwd>; <off_limits>() is what a run may not touch, read
+    again for each run (a worktree added since gets its watcher's folder)."""
     name = default_cmd = ""
     reply_command = REPLY_COMMAND
 
     def __init__(self, cmd: str, model: str = "", cwd: str = ".",
-                 keep_out: Sequence[str] = (), secrets: Sequence[str] = ()):
+                 off_limits: Callable[[], OffLimits] = OffLimits):
         self.cmd = cmd
         self.model = model
         self.cwd = cwd
-        self.keep_out = list(keep_out)
-        self.secrets = list(secrets)
+        self.off_limits = off_limits
 
     def command(self, prompt: str, folder: RunFolder) -> Tuple[List[str], List[News]]:
         """The command line for one run whose replies go to <folder>, and its
-        first news."""
+        first news. A coding agent with a sandbox keeps the run to
+        self.off_limits()."""
         raise NotImplementedError
 
     def events(self) -> ReadsEvents:

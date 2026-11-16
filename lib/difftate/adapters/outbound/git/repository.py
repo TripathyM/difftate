@@ -12,7 +12,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from typing import NamedTuple, Optional, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 
 from ....core.changes.model import NAMED_VIEWS, Changeset
 from ....core.review.model import CouldNotRead, NotFound
@@ -43,6 +43,24 @@ def difftate_folder(cwd: str) -> Optional[DifftateFolders]:
     top = git(cwd, "rev-parse", "--show-toplevel")
     return DifftateFolders(os.path.realpath(os.path.join(cwd, common, "difftate")),
                            os.path.realpath(os.path.join(own, "difftate")), os.path.realpath(top or cwd))
+
+
+def watcher_folders(cwd: str) -> List[str]:
+    """The own difftate folder of every checked-out folder of the repository
+    <cwd> is in, whether a watcher runs there or not: the repository's (its
+    shared one), then each worktree's, read now. A worktree's own git folder is
+    <git common dir>/worktrees/<id> (gitrepository-layout(5)). Empty outside a
+    git repository."""
+    common = git(cwd, "rev-parse", "--git-common-dir")
+    if common is None:
+        return []
+    common = os.path.realpath(os.path.join(cwd, common))
+    worktrees = os.path.join(common, "worktrees")
+    try:
+        ids = sorted(i for i in os.listdir(worktrees) if os.path.isdir(os.path.join(worktrees, i)))
+    except OSError:
+        ids = []
+    return [os.path.join(common, "difftate"), *(os.path.join(worktrees, i, "difftate") for i in ids)]
 
 
 def base(cwd: str, given: str = "") -> str:

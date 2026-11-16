@@ -155,6 +155,18 @@ class Harness:
             f.write("def greet(name):\n    return 'hey ' + name\n")
         return folder
 
+    def git_dir(self, folder):
+        """The checked-out <folder>'s own git folder."""
+        return subprocess.run(["git", "-C", folder, "rev-parse", "--absolute-git-dir"], check=True,
+                              capture_output=True, text=True, env=self.env).stdout.strip()
+
+    def run_settings(self):
+        """The latest run's Claude settings: (its sandbox's filesystem part, its
+        permission deny rules)."""
+        args = self.agent_args()
+        settings = json.loads(args[args.index("--settings") + 1])
+        return settings["sandbox"]["filesystem"], settings["permissions"]["deny"]
+
     def start_watcher_in(self, folder, *args):
         """A watcher started in <folder>, beside self.watcher: (its process, its
         port, its token, its checked-out folder's own git folder)."""
@@ -162,8 +174,7 @@ class Harness:
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.addCleanup(process.stdout.close)
         self.addCleanup(lambda: process.poll() is None and (process.send_signal(signal.SIGINT), process.wait(15)))
-        git_dir = subprocess.run(["git", "-C", folder, "rev-parse", "--absolute-git-dir"], check=True,
-                                 capture_output=True, text=True, env=self.env).stdout.strip()
+        git_dir = self.git_dir(folder)
 
         def served():
             try:
@@ -335,30 +346,45 @@ class WatcherTest(Harness, unittest.TestCase):
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertFalse(os.path.exists(run_dir), "the run's folder goes when the run ends")
 
-    def test_a_run_from_a_worktree_may_not_write_the_reviews_or_the_watchers_folder_or_read_a_token(self):
+    def test_a_run_from_a_worktree_may_not_write_any_difftate_folder_or_read_any_watchers_token(self):
         worktree = self.add_worktree("other")
         _, port, token, git_dir = self.start_watcher_in(worktree)
+        sibling = self.add_worktree("sibling")  # added after the watcher started
         thread = self.api_at(port, token, "POST", "/api/threads", {
             "anchor": {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2, "code": "    return 'hey ' + name"},
             "body": "Why concatenate?"})
         wait_for("the run", lambda: os.path.exists(os.path.join(self.agent_dir, "args")))
 
-        args = self.agent_args()
-        settings = json.loads(args[args.index("--settings") + 1])
-        sandbox = settings["sandbox"]["filesystem"]
+        sandbox, deny = self.run_settings()
         store = os.path.realpath(os.path.join(self.repo, ".git", "difftate"))
         own = os.path.realpath(os.path.join(git_dir, "difftate"))
+        theirs = os.path.realpath(os.path.join(self.git_dir(sibling), "difftate"))
         token_file = os.path.join(own, "token")
         self.assertTrue(os.path.isfile(token_file), "the token is in the worktree's own git folder")
-        self.assertEqual(sandbox["denyWrite"], [store, own])
-        # Nor the main checkout's token: with it, the run could resolve that watcher's threads
-        main_token = os.path.join(store, "token")
-        self.assertEqual(sandbox["denyRead"], [token_file, main_token])
-        self.assertEqual(settings["permissions"]["deny"],
-                         [f"Edit(/{store}/**)", f"Edit(/{own}/**)", f"Read(/{token_file})", f"Read(/{main_token})"])
+        # Nor the main checkout's or a sibling worktree's: with a token, the run could resolve that watcher's threads
+        tokens = [token_file, os.path.join(store, "token"), os.path.join(theirs, "token")]
+        self.assertEqual(sandbox["denyWrite"], [store, own, theirs])
+        self.assertEqual(sandbox["denyRead"], tokens)
+        self.assertEqual(deny, [f"Edit(/{f}/**)" for f in (store, own, theirs)] + [f"Read(/{t})" for t in tokens])
         self.release_agent()
         wait_for("the replied state", lambda: next(
             t for t in self.api_at(port, token, "GET", "/api/threads") if t["id"] == thread["id"])["state"] == "replied")
+
+    def test_a_run_from_the_main_checkout_may_not_write_a_worktrees_difftate_folder_or_read_its_token(self):
+        self.start_watcher()
+        worktree = self.add_worktree("other")  # added after the watcher started
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
+
+        sandbox, deny = self.run_settings()
+        store = os.path.realpath(os.path.join(self.repo, ".git", "difftate"))
+        theirs = os.path.realpath(os.path.join(self.git_dir(worktree), "difftate"))
+        tokens = [os.path.join(store, "token"), os.path.join(theirs, "token")]
+        self.assertEqual(sandbox["denyWrite"], [store, theirs])
+        self.assertEqual(sandbox["denyRead"], tokens)
+        self.assertEqual(deny, [f"Edit(/{f}/**)" for f in (store, theirs)] + [f"Read(/{t})" for t in tokens])
+        self.release_agent()
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
 
     def test_a_coding_agent_that_cant_start_fails_its_threads_and_the_watcher_keeps_going(self):
         self.agent_cmd = os.path.join(self.tmp, "agent.py")

@@ -264,7 +264,7 @@ followed by the rules (reply with `dt-reply`, change code only when asked, never
 
 Coding agent invocation:
 - Claude: `claude -p … [--model <model>] --settings <run sandbox> --output-format stream-json --verbose < /dev/null`
-  - `--settings` lets `dt-reply` write to the run's folder, and keeps the coding agent out of difftate's folders (`<repo>/.git/difftate`, and in a worktree also the watcher's own `<repo>/.git/worktrees/<worktree>/difftate`) and away from the API token, so it can't resolve threads or edit notes. Its `sandbox.filesystem` part (`allowWrite` the run's folder, `denyWrite` the folders, `denyRead` the watcher's token and, from a worktree, the main checkout's watcher's) binds the Bash tool when the sandbox is on; its `permissions.deny` rules (`Edit(//<folder>/**)`, `Read(//<token>)`) bind Claude's own file tools. It's added to your own settings for these runs only.
+  - `--settings` lets `dt-reply` write to the run's folder, and keeps the coding agent out of difftate's folders (`<repo>/.git/difftate`, and each worktree's watcher folder `<repo>/.git/worktrees/<worktree>/difftate`, listed again for each run) and away from every watcher's API token, so it can't resolve threads or edit notes. Its `sandbox.filesystem` part (`allowWrite` the run's folder, `denyWrite` the folders, `denyRead` every watcher's token, this watcher's first) binds the Bash tool when the sandbox is on; its `permissions.deny` rules (`Edit(//<folder>/**)`, `Read(//<token>)`) bind Claude's own file tools. It's added to your own settings for these runs only.
   - Dispatch posts replies only to threads that were open when the run started, whatever the coding agent writes into its folder.
 - OpenCode: `opencode run … [--model <model>] --auto --format json < /dev/null`
 
