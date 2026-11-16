@@ -32,9 +32,8 @@ class Wiring:
     coding_agents: the names --tool accepts.
     viewers: name -> open(url, root), whether it could be reached (--open).
     difftate_folder(cwd): (the repository's difftate folder, shared by its
-        worktrees: the reviews; the checked-out folder's own difftate folder:
-        its watcher's lock, running files and token; its top folder), or None
-        outside a git repository.
+        worktrees: the reviews; the checked-out folder's own one: its
+        watcher's; its top folder), or None outside a git repository.
     running_watcher(folder), ask_running_watcher(folder, method, path,
         payload): another watcher serving the review API of the checked-out
         folder whose own difftate folder is <folder>.
@@ -51,7 +50,7 @@ class Wiring:
     loop(review, coding_agent): the Loop on a new Dispatch of <review>."""
     coding_agents: Sequence[str]
     viewers: Mapping[str, Callable[[str, str], bool]]
-    difftate_folder: Callable[[str], Optional[Tuple[str, str]]]
+    difftate_folder: Callable[[str], Optional[Tuple[str, str, str]]]
     running_watcher: Callable[[str], Optional[int]]
     ask_running_watcher: Callable[..., Tuple[int, Any]]
     coding_agent: Callable[..., Any]

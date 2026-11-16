@@ -12,7 +12,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from typing import Optional, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 from ....core.changes.model import NAMED_VIEWS, Changeset
 from ....core.review.model import CouldNotRead, NotFound
@@ -24,20 +24,25 @@ def git(cwd: str, *args: str, env: Optional[dict] = None) -> Optional[str]:
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-def difftate_folder(cwd: str) -> Optional[Tuple[str, str, str]]:
-    """The difftate folders of the checked-out folder <cwd> is in (the
-    repository itself, or one of its worktrees), never committed, and its top
-    folder: (the repository's difftate folder, in its git folder and shared by
-    worktrees: the reviews; the checked-out folder's own one, in its own git
-    folder: its watcher's; the top folder). For the repository itself the two
-    are one folder. None when <cwd> is not in a git repository."""
+class DifftateFolders(NamedTuple):
+    """The difftate folders of one checked-out folder (the repository itself,
+    or one of its worktrees), never committed. For the repository itself,
+    <reviews> and <watcher> are one folder."""
+    reviews: str  # the repository's, in its git folder, shared by worktrees: the reviews
+    watcher: str  # the checked-out folder's own, in its own git folder: its watcher's lock, running files and token
+    root: str     # the checked-out folder's top folder
+
+
+def difftate_folder(cwd: str) -> Optional[DifftateFolders]:
+    """The difftate folders of the checked-out folder <cwd> is in. None when
+    <cwd> is not in a git repository."""
     common = git(cwd, "rev-parse", "--git-common-dir")
     own = git(cwd, "rev-parse", "--absolute-git-dir")
     if common is None or own is None:
         return None
     top = git(cwd, "rev-parse", "--show-toplevel")
-    return (os.path.realpath(os.path.join(cwd, common, "difftate")), os.path.realpath(os.path.join(own, "difftate")),
-            os.path.realpath(top or cwd))
+    return DifftateFolders(os.path.realpath(os.path.join(cwd, common, "difftate")),
+                           os.path.realpath(os.path.join(own, "difftate")), os.path.realpath(top or cwd))
 
 
 def base(cwd: str, given: str = "") -> str:

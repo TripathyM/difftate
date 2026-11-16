@@ -110,11 +110,12 @@ def coding_agent(tool, cmd, model, cwd, folder, watcher_folder):
     """The coding agent <tool>: its runs work in <cwd>, may not write the
     review's <folder> or the <watcher_folder> (the lock and the review API's
     running files: one folder with <folder> in the repository itself), and may
-    not read the review API's token."""
+    not read the review API's token, nor that of the main checkout's watcher
+    (in <folder>)."""
     chosen = CODING_AGENTS[tool]
     keep_out = list(dict.fromkeys([folder, watcher_folder]))
-    return chosen(find_command(cmd or chosen.default_cmd), model, cwd=cwd, keep_out=keep_out,
-                  secrets=[token_file(watcher_folder)])
+    secrets = list(dict.fromkeys([token_file(watcher_folder), token_file(folder)]))
+    return chosen(find_command(cmd or chosen.default_cmd), model, cwd=cwd, keep_out=keep_out, secrets=secrets)
 
 
 def review_api(review, watcher_folder, root, view, check, on_switch):

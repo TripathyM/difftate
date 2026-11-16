@@ -41,7 +41,7 @@ class Watcher:
         found = w.difftate_folder(o["cwd"])
         if found is None:
             raise Exit(1, f"Error: {o['cwd']} is not a git repository")
-        self.folder, self.watcher_folder, self.root = found
+        self.folder, self.watcher_folder, self.root = found  # the reviews', the watcher's, the top
         self.lock = one_watcher.claim(self.watcher_folder, o["ref"], o["open"], w.running_watcher,
                                       w.ask_running_watcher)
         try:

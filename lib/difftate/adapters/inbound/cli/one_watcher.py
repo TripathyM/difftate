@@ -16,10 +16,9 @@ STARTING_S = 60
 
 def claim(folder, view, open_in, running_watcher, ask_running_watcher):
     """Become the watcher of the checked-out folder whose own difftate folder
-    is <folder>:
-    the lock's file descriptor, held until the process exits. When another
-    watcher holds it, ask that one to show <view> (opened in <open_in>) once it
-    serves the review API, and raise Exit.
+    is <folder>: the lock's file descriptor, held until the process exits.
+    When another watcher holds it, ask that one to show <view> (opened in
+    <open_in>) once it serves the review API, and raise Exit.
 
     running_watcher(folder) is the pid of the watcher serving the review API,
     or None; ask_running_watcher(folder, method, path, payload) calls it."""

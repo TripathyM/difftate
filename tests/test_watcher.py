@@ -113,9 +113,9 @@ class Harness:
         with open(os.path.join(self.repo, path), "w") as f:
             f.write(text)
 
-    def watcher_command(self):
+    def watcher_command(self, folder=None):
         return [sys.executable, WATCHER, "--tool", "claude", "--cmd", self.agent_cmd,
-                "--cwd", self.repo, "--interval", "0.2", *self.extra_args]
+                "--cwd", folder or self.repo, "--interval", "0.2", *self.extra_args]
 
     def launch_watcher(self):
         self.watcher = subprocess.Popen(
@@ -158,9 +158,7 @@ class Harness:
     def start_watcher_in(self, folder, *args):
         """A watcher started in <folder>, beside self.watcher: (its process, its
         port, its token, its checked-out folder's own git folder)."""
-        command = self.watcher_command()
-        command[command.index("--cwd") + 1] = folder
-        process = subprocess.Popen(command + list(args), cwd=folder, env=self.env, stdin=subprocess.DEVNULL,
+        process = subprocess.Popen(self.watcher_command(folder) + list(args), cwd=folder, env=self.env, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.addCleanup(process.stdout.close)
         self.addCleanup(lambda: process.poll() is None and (process.send_signal(signal.SIGINT), process.wait(15)))
@@ -183,13 +181,14 @@ class Harness:
         return process, served()["port"], token, git_dir
 
     def api_at(self, port, token, method, path, payload=None):
-        """A call to the review API on <port> with <token>."""
-        mine = (getattr(self, "port", None), getattr(self, "token", None))
-        self.port, self.token = port, token
-        try:
-            return self.api(method, path, payload)
-        finally:
-            self.port, self.token = mine
+        """A call to the review API on <port>, with <token> (None: without one)."""
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", method=method, headers=headers,
+                                     data=None if payload is None else json.dumps(payload).encode())
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read() or b"null")
 
     def terminal(self):
         return "".join(self.output)
@@ -203,13 +202,7 @@ class Harness:
             raise
 
     def api(self, method, path, payload=None, token=True):
-        headers = {"Content-Type": "application/json"}
-        if token:
-            headers["Authorization"] = f"Bearer {self.token}"
-        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method=method, headers=headers,
-                                     data=None if payload is None else json.dumps(payload).encode())
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read() or b"null")
+        return self.api_at(self.port, self.token if token else None, method, path, payload)
 
     def read(self, path):
         with open(os.path.join(self.repo, path)) as f:
@@ -342,9 +335,9 @@ class WatcherTest(Harness, unittest.TestCase):
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertFalse(os.path.exists(run_dir), "the run's folder goes when the run ends")
 
-    def test_a_run_from_a_worktree_may_not_write_the_reviews_or_the_watchers_folder_or_read_its_token(self):
+    def test_a_run_from_a_worktree_may_not_write_the_reviews_or_the_watchers_folder_or_read_a_token(self):
         worktree = self.add_worktree("other")
-        other, port, token, git_dir = self.start_watcher_in(worktree)
+        _, port, token, git_dir = self.start_watcher_in(worktree)
         thread = self.api_at(port, token, "POST", "/api/threads", {
             "anchor": {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2, "code": "    return 'hey ' + name"},
             "body": "Why concatenate?"})
@@ -358,9 +351,11 @@ class WatcherTest(Harness, unittest.TestCase):
         token_file = os.path.join(own, "token")
         self.assertTrue(os.path.isfile(token_file), "the token is in the worktree's own git folder")
         self.assertEqual(sandbox["denyWrite"], [store, own])
-        self.assertEqual(sandbox["denyRead"], [token_file])
+        # Nor the main checkout's token: with it, the run could resolve that watcher's threads
+        main_token = os.path.join(store, "token")
+        self.assertEqual(sandbox["denyRead"], [token_file, main_token])
         self.assertEqual(settings["permissions"]["deny"],
-                         [f"Edit(/{store}/**)", f"Edit(/{own}/**)", f"Read(/{token_file})"])
+                         [f"Edit(/{store}/**)", f"Edit(/{own}/**)", f"Read(/{token_file})", f"Read(/{main_token})"])
         self.release_agent()
         wait_for("the replied state", lambda: next(
             t for t in self.api_at(port, token, "GET", "/api/threads") if t["id"] == thread["id"])["state"] == "replied")
@@ -629,9 +624,7 @@ class WatcherTest(Harness, unittest.TestCase):
         git(worktree, self.env, "commit", "-q", "-am", "Say hey")
         other, port, token, _ = self.start_watcher_in(worktree)
 
-        command = self.watcher_command()
-        command[command.index("--cwd") + 1] = worktree
-        second = subprocess.run(command + ["--ref", "HEAD"], cwd=worktree, env=self.env, stdin=subprocess.DEVNULL,
+        second = subprocess.run(self.watcher_command(worktree) + ["--ref", "HEAD"], cwd=worktree, env=self.env, stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, timeout=60)
 
         self.assertEqual(second.returncode, 0, second.stdout)
