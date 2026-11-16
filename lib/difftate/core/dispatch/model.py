@@ -46,7 +46,7 @@ def short(text: str, n: int) -> str:
 @dataclass(frozen=True)
 class ModelChosen:
     """The model the run uses, and where that came from (the watcher's
-    --model, or the agent session); model "" for the coding agent's default."""
+    --model); model "" for the coding agent's default."""
     model: str
     source: str = ""
 

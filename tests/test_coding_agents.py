@@ -14,13 +14,15 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
+from difftate.adapters.outbound.coding_agents import ClaudeCode, OpenCode  # noqa: E402
 from difftate.adapters.outbound.coding_agents.claude_code.events import ClaudeEvents  # noqa: E402
 from difftate.adapters.outbound.coding_agents.events import read_line  # noqa: E402
 from difftate.adapters.outbound.coding_agents.opencode.events import OpenCodeEvents  # noqa: E402
 from difftate.adapters.outbound.coding_agents.reply_channel import RunFolder  # noqa: E402
 from difftate.adapters.outbound.coding_agents.run import ProcessRun  # noqa: E402
 from difftate.core.dispatch.model import (  # noqa: E402
-    ContextUsed, CouldNotStart, Exited, Finished, Output, Reply, Said, AgentSessionStarted, Step, Unparsed,
+    ContextUsed, CouldNotStart, Exited, Finished, ModelChosen, Output, Reply, Said, AgentSessionStarted, Step,
+    Unparsed,
 )
 
 
@@ -97,6 +99,44 @@ class ReadingALine(unittest.TestCase):
     def test_an_event_the_reader_cant_read_is_unparsed(self):
         self.assertEqual(read_line('{"type": "assistant", "message": {"content": [1]}}', ClaudeEvents()),
                          [Unparsed("'int' object has no attribute 'get'")])
+
+
+class TheCommandLine(unittest.TestCase):
+    """Every run starts a fresh agent session: no session is continued, and the
+    model is --model or the coding agent's default."""
+
+    def command(self, coding_agent):
+        folder = RunFolder.create(["thread-1"])
+        self.addCleanup(folder.remove)
+        return coding_agent.command("The prompt.", folder)
+
+    def test_claude_code_starts_a_fresh_session_with_the_given_model(self):
+        argv, first = self.command(ClaudeCode("claude", "claude-opus-5-5"))
+
+        self.assertEqual(argv[:3], ["claude", "-p", "The prompt."])
+        self.assertNotIn("--resume", argv)
+        self.assertEqual(argv[argv.index("--model") + 1], "claude-opus-5-5")
+        self.assertEqual(first, [ModelChosen("claude-opus-5-5", "--model")])
+
+    def test_claude_code_with_no_model_given_uses_its_default(self):
+        argv, first = self.command(ClaudeCode("claude"))
+
+        self.assertNotIn("--resume", argv)
+        self.assertNotIn("--model", argv)
+        self.assertEqual(first, [ModelChosen("")])
+
+    def test_opencode_starts_a_fresh_session_with_the_given_model(self):
+        argv, _ = self.command(OpenCode("opencode", "anthropic/claude-opus-5-5"))
+
+        self.assertEqual(argv[:3], ["opencode", "run", "The prompt."])
+        self.assertNotIn("--session", argv)
+        self.assertEqual(argv[argv.index("--model") + 1], "anthropic/claude-opus-5-5")
+
+    def test_opencode_with_no_model_given_uses_its_default(self):
+        argv, _ = self.command(OpenCode("opencode"))
+
+        self.assertNotIn("--session", argv)
+        self.assertNotIn("--model", argv)
 
 
 class ARun(unittest.TestCase):

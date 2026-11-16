@@ -43,14 +43,9 @@ class Watcher:
         self.folder, self.root = found
         self.lock = one_watcher.claim(self.folder, o["ref"], o["open"], w.running_watcher, w.ask_running_watcher)
         try:
-            self.coding_agent = w.coding_agent(o["tool"], o["cmd"], o["session"], o["model"], o["cwd"], self.folder)
+            self.coding_agent = w.coding_agent(o["tool"], o["cmd"], o["model"], o["cwd"], self.folder)
         except CouldNotStart as e:
             raise Exit(1, f"Error: {e}")
-        if o["session"] and not self.coding_agent.session_exists():
-            raise Exit(1, "\n".join([
-                f"Error: session '{o['session']}' not found for {o['tool']}.",
-                f"  Make sure the {o['tool']} session is running in this project directory ({o['cwd']}).",
-                "  Available sessions:", *self.coding_agent.list_sessions()]))
 
     def start(self):
         o, w = self.opts, self.wiring
@@ -76,11 +71,8 @@ class Watcher:
         self.open_viewer(o["open"], url)
         print()
         print(f"Watching for comments every {o['interval']:g}s")
-        print(f"  Tool: {o['tool']} (cmd: {self.coding_agent.cmd})")
-        if o["session"]:
-            print(f"  Session: {o['session']} (resume mode)")
-        else:
-            print(f"  Headless mode (cwd: {o['cwd']})")
+        print(f"  Coding agent: {o['tool']} (cmd: {self.coding_agent.cmd})")
+        print(f"  In {o['cwd']}: each run starts a fresh agent session")
         print()
         print("Press Ctrl+C to stop")
         print()

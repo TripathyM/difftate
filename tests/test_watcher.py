@@ -549,6 +549,41 @@ class WatcherTest(Harness, unittest.TestCase):
                 self.assertIn(f"Error: --interval must be a number of seconds, not '{value}'",
                               run.stdout + run.stderr)
 
+    def test_session_options_are_unknown(self):
+        for args in (["--session", "3f1c9a20-aaaa"], ["--no-session"]):
+            with self.subTest(args=args):
+                run = subprocess.run(self.watcher_command() + args, cwd=self.repo, env=self.env,
+                                     stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+                self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+                self.assertIn(f"Unknown flag: {args[0]}", run.stdout + run.stderr)
+
+    def test_the_banner_names_the_coding_agent_and_each_run_starts_fresh_with_its_default_model(self):
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+        out = self.terminal()
+        self.assertIn(f"Coding agent: claude (cmd: {FAKE_AGENT})", out)
+        self.assertIn("each run starts a fresh agent session", out)
+        for gone in ("Session:", "resume mode", "Headless"):
+            self.assertNotIn(gone, out)
+        self.assertNotIn("--resume", self.agent_args())
+        self.assertNotIn("--model", self.agent_args())
+        self.assertIn("Model: CLI default", out)
+
+    def test_a_run_uses_the_model_given_with_model(self):
+        self.extra_args = ["--model", "claude-opus-5-5"]
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+        args = self.agent_args()
+        self.assertEqual(args[args.index("--model") + 1], "claude-opus-5-5")
+        self.assertNotIn("--resume", args)
+        self.assertIn("Model: claude-opus-5-5 (from --model)", self.terminal())
+
     def test_only_a_reviewer_opens_a_thread_or_changes_its_status(self):
         self.silence_agent()  # keep the coding agent out of the thread
         self.start_watcher()

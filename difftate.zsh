@@ -3,63 +3,37 @@
 
 # ── difftate ─────────────────────────────────────────────────────────────────
 # Starts the watcher (difftate-watch.py): it serves the review and dispatches
-# waiting threads to the coding agent, in its agent session when one is found.
+# waiting threads to the coding agent. Each run starts a fresh agent session,
+# whichever coding agent or account wrote the code.
 # Defaults: the base is the repository's default branch (origin/HEAD), --interval 1s.
-# Auto-attaches latest session. The review is kept in the repository's git folder.
+# The review is kept in the repository's git folder.
 #
 # Usage:
-#   difftate                       # Claude, the branch vs its base + auto-attach session
+#   difftate                       # Claude, the branch vs its base
 #   dtc                            # same as difftate
 #   difftate HEAD~1                # diff last commit
 #   difftate HEAD~3                # diff last 3 commits
 #   difftate HEAD / staged / unstaged  # uncommitted, staged or unstaged changes
 #   (run again while a watcher runs here: it switches that watcher's view and exits)
 #   difftate --base develop        # compare against another branch
-#   dto                            # opencode + auto-attach latest session
-#   difftate --session <uuid>      # use a specific session (skip auto-detect)
-#   difftate --no-session          # force headless (skip auto-detect)
-#   difftate --model <model>       # force the coding agent's model (default: session's model)
+#   dto                            # opencode
+#   difftate --model <model>       # the coding agent's model (default: its own default)
 #   difftate --cmd <binary>        # run the coding agent through another command or alias
 #   difftate --open herdr          # open the review in Herdr (browser|herdr|both; default $DT_OPEN, else browser)
 #
-# Claude sessions are looked up in $CLAUDE_CONFIG_DIR (default ~/.claude).
-# Your own shortcuts go in ~/.zshrc, e.g. for a wrapper with its own config:
+# Your own shortcuts go in ~/.zshrc, e.g. to reply with another account or wrapper:
 #   dtcw() { CLAUDE_CONFIG_DIR=~/.claude-work difftate --cmd my-claude-wrapper "$@"; }
-#
-# Helpers:
-#   _dt_latest_claude_session      # prints latest session UUID for cwd
-#   _dt_latest_opencode_session    # prints latest opencode session ID
 
 # Folder this file lives in, so the repo works from any clone location
 _DT_DIR="${${(%):-%x}:A:h}"
-
-_dt_latest_claude_session() {
-  local config_dir="${1:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
-  # Claude names the folder after the path with every non-alphanumeric char
-  # turned into "-" (so ~/.agents → -Users-me--agents)
-  local project_hash=$(pwd | sed 's|[^A-Za-z0-9]|-|g')
-  local latest=$(ls -t "${config_dir}/projects/${project_hash}/"*.jsonl 2>/dev/null | head -1)
-  [[ -n "$latest" ]] && basename "$latest" .jsonl
-}
-
-_dt_latest_opencode_session() {
-  opencode session list 2>/dev/null | awk 'NR>2 {print $1; exit}'
-}
 
 _dt_run() {
   local tool="$1" cmd="$2"
   shift 2
   local ref=""
-  local no_session=false
-  local has_explicit_session=false
   local extra_args=()
   while [[ $# -gt 0 ]]; do
-    if [[ "$1" == "--no-session" ]]; then
-      no_session=true; shift
-    elif [[ "$1" == "--session" ]]; then
-      has_explicit_session=true
-      extra_args+=("$1" "$2"); shift 2
-    elif [[ "$1" == "--model" || "$1" == "--open" || "$1" == "--base" ]]; then
+    if [[ "$1" == "--model" || "$1" == "--open" || "$1" == "--base" ]]; then
       extra_args+=("$1" "$2"); shift 2
     elif [[ "$1" == "--cmd" ]]; then
       cmd="$2"; shift 2
@@ -70,26 +44,9 @@ _dt_run() {
     fi
   done
 
-  local session_args=()
-  if [[ "$no_session" == "false" && "$has_explicit_session" == "false" ]]; then
-    local session_id=""
-    case "$tool" in
-      claude)
-        session_id=$(_dt_latest_claude_session)
-        ;;
-      opencode) session_id=$(_dt_latest_opencode_session) ;;
-    esac
-    if [[ -n "$session_id" ]]; then
-      echo "Auto-attached session: $session_id"
-      session_args=(--session "$session_id")
-    else
-      echo "No session found — running headless"
-    fi
-  fi
-
   local ref_args=()
   [[ -n "$ref" ]] && ref_args=(--ref "$ref")
-  "$_DT_DIR/difftate-watch.py" --tool "$tool" --cmd "$cmd" "${ref_args[@]}" --interval 1 "${session_args[@]}" "${extra_args[@]}"
+  "$_DT_DIR/difftate-watch.py" --tool "$tool" --cmd "$cmd" "${ref_args[@]}" --interval 1 "${extra_args[@]}"
 }
 
 difftate() { _dt_run claude claude "$@"; }
