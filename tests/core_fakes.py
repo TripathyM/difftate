@@ -28,11 +28,14 @@ class FakeCode:
 
     <diff_hashes> are each file's diff hash in the changeset (default: made
     from each file that differs from the base). <on_branch> is whether the
-    review's branch is checked out ("other" is, when it isn't).
+    review's branch is checked out ("other" is, when it isn't). <messages>
+    are the review's commit messages, oldest first.
     """
 
-    def __init__(self, files, commit="commit-1", diff_hashes=None, on_branch=True, base=None, views=None):
+    def __init__(self, files, commit="commit-1", diff_hashes=None, on_branch=True, base=None, views=None,
+                 messages=None):
         self.files = files
+        self.messages = list(messages or [])
         self.base = files if base is None else base
         self.views = views or {}
         self.commit = commit
@@ -94,6 +97,9 @@ class FakeCode:
     def checked_out_branch(self):
         return "feature" if self.checked_out else "other"
 
+    def commit_messages(self):
+        return list(self.messages)
+
     def changeset(self, view):
         if view not in ("", "staged", "unstaged", "HEAD", self.commit):
             raise NotFound(f"no view '{view}'")
@@ -151,6 +157,9 @@ class UnreadableCode:
 
     def checked_out_branch(self):
         return None
+
+    def commit_messages(self):
+        raise CouldNotRead("could not read the commits")
 
     def changeset(self, view):
         raise CouldNotRead("could not read the changeset")

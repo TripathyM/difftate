@@ -44,7 +44,7 @@ class CodeReaderContract:
     def remove(self, file):
         raise NotImplementedError
 
-    def commit(self):
+    def commit(self, message="a commit"):
         raise NotImplementedError
 
     def check_out_another_branch(self):
@@ -195,6 +195,20 @@ class CodeReaderContract:
         self.assertNotEqual(after["long.py"], hashes["long.py"])
         self.assertEqual(after["app.py"], hashes["app.py"])
 
+    # ── The review's commit messages ─────────────────────────────────────────
+    def test_a_branch_with_no_commits_yet_has_no_commit_messages(self):
+        self.assertEqual(self.code.commit_messages(), [])
+
+    def test_the_commit_messages_are_each_commit_from_the_base_to_the_branch_oldest_first(self):
+        self.commit("Greet with an f-string\n\nChose an f-string over +: it reads better.")
+        self.write("long.py", LONG.replace("line_3 = 3", "line_3 = 'three'"))
+        self.commit("Spell out three")
+
+        self.assertEqual(self.code.commit_messages(), [
+            "Greet with an f-string\n\nChose an f-string over +: it reads better.",
+            "Spell out three",
+        ])
+
 
 class TheFakeCodeReader(CodeReaderContract, unittest.TestCase):
     def setUp(self):
@@ -207,8 +221,9 @@ class TheFakeCodeReader(CodeReaderContract, unittest.TestCase):
     def remove(self, file):
         del self.code.files[file]
 
-    def commit(self):
+    def commit(self, message="a commit"):
         self.code.commit = self.code.commit + "+"
+        self.code.messages.append(message)
 
     def check_out_another_branch(self):
         self.code.checked_out = False
@@ -257,9 +272,9 @@ class InAGitRepository:
     def remove(self, file):
         os.remove(os.path.join(self.repo, file))
 
-    def commit(self):
+    def commit(self, message="a commit"):
         self.git("add", "-A")
-        self.git("commit", "-q", "-m", "a commit")
+        self.git("commit", "-q", "-m", message)
 
     def check_out_another_branch(self):
         self.git("checkout", "-q", "-b", "other")
@@ -273,6 +288,14 @@ class InAGitRepository:
 
 
 class TheGitAdapter(InAGitRepository, CodeReaderContract, unittest.TestCase):
+    def test_a_review_on_the_base_branch_itself_has_no_commit_messages(self):
+        self.commit()
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "--ff-only", "feature")
+        code = GitCodeReader(self.repo, "main", self.output("rev-parse", "HEAD"), REVIEW)
+
+        self.assertEqual(code.commit_messages(), [])
+
     def test_an_id_a_viewer_sent_that_is_no_blob_id_is_no_file_and_never_an_option_to_git(self):
         out = os.path.join(self.repo, "written")
         for sent in (f"--output={out}", "HEAD", "-p"):

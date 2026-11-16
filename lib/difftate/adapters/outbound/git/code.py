@@ -237,6 +237,14 @@ class GitCodeReader:
     def checked_out_branch(self) -> Optional[str]:
         return repository.review_branch(self.cwd, self.base)
 
+    # ── The review's commits ─────────────────────────────────────────────────
+    def commit_messages(self) -> List[str]:
+        # The branch's commits, not HEAD's: the same while another branch is checked out
+        code, out = self._run("log", "-z", "--reverse", "--format=%B", f"{self.base}..{self.branch}", "--")
+        if code != 0:
+            raise CouldNotRead("could not read the review's commits")
+        return [m.strip() for m in out.split("\0") if m.strip()]
+
     def changeset(self, view: str) -> Changeset:
         started = time.time_ns()
         c = repository.changeset(self.cwd, self.base, view)
