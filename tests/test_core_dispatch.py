@@ -172,11 +172,11 @@ class ThePrompt(DispatchTest):
         self.assertIn("reviewer docs-bot (new): And the docs?", first)
         self.assertIn("reviewer Ada: Why an f-string here?", second)
         self.assertIn("reviewer (new): Thanks.", second, "a comment with no name names no one")
-        self.assertIn("reviewer docs-bot: And the docs?", second.split("## Other threads")[1],
+        self.assertIn("reviewer docs-bot: And the docs?", self.other_threads(second),
                       "the other threads name them too")
 
     def other_threads(self, text):
-        """The prompt's "other threads" section, up to the rules."""
+        """The prompt's "other threads" section, its heading first, up to the rules."""
         return text.split("## Other threads")[1].split("\nRules:")[0]
 
     def test_it_shows_another_thread_in_full_with_a_long_middle_comment_uncut_and_no_notes(self):
@@ -219,7 +219,7 @@ class ThePrompt(DispatchTest):
         self.assertIn(f"### Thread {dismissed[:8]} — general thread (not tied to a line) — dismissed", others)
         self.assertIn(f"### Thread {replied[:8]} — general thread (not tied to a line) — open", others)
         self.assertIn("reviewer: Use a constant here.\nyou: Fixed.", others)
-        self.assertIn("context only", text.split("## Other threads")[1].split("\n")[0])
+        self.assertIn("context only", others.split("\n")[0], "in the section's heading")
         self.assertEqual(sorted(reply_to), sorted([tid, replied]), "a run may reply to the open threads only")
 
     COMMITS = ["Greet with an f-string\n\nChose an f-string over +: it reads better.", "Spell out three"]

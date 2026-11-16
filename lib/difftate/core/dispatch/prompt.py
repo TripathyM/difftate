@@ -96,11 +96,11 @@ def _speaker(c: Comment, new_ids: Collection[str] = ()) -> str:
 OUTDATED_MARK = " — outdated: its code changed after the thread was written"
 
 
-def render_full(t: Thread, new_ids: Collection[str], status: bool = False) -> str:
-    """<t> with its code and every comment and reply; with <status>, its
+def render_full(t: Thread, new_ids: Collection[str], with_status: bool = False) -> str:
+    """<t> with its code and every comment and reply; <with_status> adds its
     thread status in the heading."""
     outdated = t.outdated
-    lines = [f"### Thread {t.id[:8]} — {location(t)}{f' — {t.status}' if status else ''}"
+    lines = [f"### Thread {t.id[:8]} — {location(t)}{f' — {t.status}' if with_status else ''}"
              f"{OUTDATED_MARK if outdated else ''}"]
     code = ((t.anchor and t.anchor.code) or "").rstrip("\n")
     if code:
@@ -115,7 +115,7 @@ def render_full(t: Thread, new_ids: Collection[str], status: bool = False) -> st
 def threads_part(threads: Sequence[Thread], ids: Collection[str], new_ids: Collection[str]) -> str:
     ids, new_ids = set(ids), set(new_ids)
     mine = [t for t in threads if t.id in ids]
-    others = [render_full(t, (), status=True) for t in threads if t.id not in ids and _conversation(t)]
+    others = [render_full(t, new_ids=(), with_status=True) for t in threads if t.id not in ids and _conversation(t)]
     out = [f"## Reply to these threads ({len(mine)})", ""]
     out += ["\n\n".join(render_full(t, new_ids) for t in mine)]
     if others:
