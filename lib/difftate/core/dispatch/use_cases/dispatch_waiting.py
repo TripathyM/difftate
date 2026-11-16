@@ -18,16 +18,18 @@ def dispatch_waiting(dispatch: Dispatch, agent: ForAskingTheCodingAgent, report:
     """The waiting threads go to the coding agent as one run. While a run is
     in progress, runs stay one at a time: each thread that became waiting
     gets a queued note instead."""
-    listed = open_threads(dispatch)
+    listed = every_thread(dispatch)
     if dispatch.run is not None:
         post_queued_notes(dispatch, report, listed)
     else:
         start_run(dispatch, agent, report, listed)
 
 
-def open_threads(dispatch: Dispatch) -> List[ListedThread]:
+def every_thread(dispatch: Dispatch) -> List[ListedThread]:
+    """Every thread of the review, open, resolved and dismissed: the prompt
+    shows them all, and only the waiting ones are sent."""
     try:
-        return dispatch.review.list_threads("open")
+        return dispatch.review.list_threads()
     except CouldNotRead:
         return []
 
@@ -62,7 +64,7 @@ def start_run(dispatch: Dispatch, agent: ForAskingTheCodingAgent, report: ForRep
     threads = [t.thread for t in listed]
     text = prompt.build(threads, [t.id for t in sent], list(recorded.sent), agent.reply_command,
                         commit_messages(dispatch))
-    reply_to = frozenset(t.id for t in threads)
+    reply_to = frozenset(t.id for t in threads if t.status == "open")
     run = dispatch.run = RunInProgress(handle=NotStarted(), reply_to=reply_to, started=dispatch.clock())
     # A thread that ends in its queued note gets that note back as its progress note
     picked_up = {t.id: dispatch.queued.pop(t.id) for t in sent if t.id in dispatch.queued}

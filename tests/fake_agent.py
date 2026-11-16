@@ -72,7 +72,7 @@ def main():
     if crash and os.path.exists(crash) and this_run(folder) in runs_listed(crash):
         sys.exit(1)
 
-    mine = prompt.split("## Other open threads")[0]
+    mine = prompt.split("## Other threads")[0]
     ids = re.findall(r"^### Thread ([0-9a-f]{8})", mine, re.M)
 
     emit({"type": "system", "subtype": "init", "session_id": "fake-session", "model": "fake-model"})

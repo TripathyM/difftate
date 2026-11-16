@@ -1,10 +1,16 @@
-"""The prompt for one run: the review's commit messages, the threads it answers
-in full, a summary of the other open threads, and the rules.
+"""The prompt for one run: the review's commit messages, the threads it answers,
+every other thread of the review, and the rules.
 
 The commit messages record the decisions behind the code: a run starts a
 fresh agent session (ADR 0005), so they are how it knows why code it didn't
 write is as it is. They are every commit from the base to the branch,
 whatever the view; no section when there are none.
+
+The other threads are context only, each with its thread status: a question
+in one informs the answer in another, and a resolved or dismissed one holds a
+fix, a preference or a rejected suggestion the run must not undo or make again.
+They are shown in full, as the threads the run answers are: a link in the middle
+of a long comment is not lost.
 
 An outdated thread says so, and shows the code it was written on: that code
 is no longer on its lines.
@@ -17,13 +23,11 @@ store. Threads are the core's (core/review/model.py, Thread).
 """
 from __future__ import annotations
 
-from typing import Collection, List, Optional, Sequence
+from typing import Collection, List, Sequence
 
 from ..review.model import Comment, Thread
-from .model import short
 
 ANCHOR_MAX_LINES = 20
-SUMMARY_MAX = 200  # chars per comment in the "other open threads" section
 
 PROMPT = """New review comments. Everything you need is below.
 
@@ -33,7 +37,7 @@ Rules:
 - Reply to EVERY thread under 'Reply to these threads', with: {dt_reply} <thread> "<answer>"
   <thread> is the 8 characters after 'Thread'. Write only the answer: difftate marks it as your reply.
   For an answer with quotes or several lines, pass it on stdin: {dt_reply} <thread> <<'EOF' … EOF
-- 'Other open threads' are context only, to spot related comments. Reply there only if what you do in this run also addresses it.
+- 'Other threads' are context only, each marked with its thread status. Read them for related comments, and do not undo a fix or make again a suggestion that a resolved or dismissed thread holds. Reply to an open one only if what you do in this run also addresses it; never reply to a resolved or dismissed one.
 - Lines starting 'reviewer' are reviewers' comments, with the reviewer's name when it has one ('reviewer security-bot:'). Those marked '(new)' are the comments to answer now. Lines starting 'you:' are your earlier replies.
 - Change code ONLY when the reviewer explicitly asks ('fix this', 'rename X to Y', 'add X'). Then reply with what you changed (file:line).
 - Questions: answer. Suggestions, 'should we…?', nits: give your take and ask before changing anything. Unclear: ask for clarification. Never skip a thread silently.
@@ -44,13 +48,13 @@ Rules:
 Summarize briefly what you handled."""
 
 
-def build(open_threads: Sequence[Thread], ids: Collection[str], new_ids: Collection[str], reply_command: str,
+def build(threads: Sequence[Thread], ids: Collection[str], new_ids: Collection[str], reply_command: str,
           commit_messages: Sequence[str]) -> str:
-    """The prompt for a run on the threads <ids>, among the <open_threads>.
+    """The prompt for a run on the threads <ids>, among all the review's <threads>.
     <new_ids> holds the ids of the comments the run is sent: no run had them.
     <reply_command> is how the coding agent answers, ready for its shell.
     <commit_messages> are the review's, oldest first."""
-    return PROMPT.format(commits=commits_part(commit_messages), threads=threads_part(open_threads, ids, new_ids),
+    return PROMPT.format(commits=commits_part(commit_messages), threads=threads_part(threads, ids, new_ids),
                          dt_reply=reply_command)
 
 
@@ -92,9 +96,12 @@ def _speaker(c: Comment, new_ids: Collection[str] = ()) -> str:
 OUTDATED_MARK = " — outdated: its code changed after the thread was written"
 
 
-def render_full(t: Thread, new_ids: Collection[str]) -> str:
+def render_full(t: Thread, new_ids: Collection[str], status: bool = False) -> str:
+    """<t> with its code and every comment and reply; with <status>, its
+    thread status in the heading."""
     outdated = t.outdated
-    lines = [f"### Thread {t.id[:8]} — {location(t)}{OUTDATED_MARK if outdated else ''}"]
+    lines = [f"### Thread {t.id[:8]} — {location(t)}{f' — {t.status}' if status else ''}"
+             f"{OUTDATED_MARK if outdated else ''}"]
     code = ((t.anchor and t.anchor.code) or "").rstrip("\n")
     if code:
         code_lines = code.split("\n")
@@ -105,25 +112,12 @@ def render_full(t: Thread, new_ids: Collection[str]) -> str:
     return "\n".join(lines)
 
 
-def render_summary(t: Thread) -> Optional[str]:
-    comments = _conversation(t)
-    if not comments:
-        return None
-    shown = [comments[0]] + ([comments[-1]] if len(comments) > 1 else [])
-    parts = []
-    for i, c in enumerate(shown):
-        if i == 1 and len(comments) > 2:
-            parts.append(f"  … {len(comments) - 2} more")
-        parts.append(f"  {_speaker(c)}: {short(c.body, SUMMARY_MAX)}")
-    return "\n".join([f"- {t.id[:8]} — {location(t)}{' (outdated)' if t.outdated else ''}", *parts])
-
-
 def threads_part(threads: Sequence[Thread], ids: Collection[str], new_ids: Collection[str]) -> str:
     ids, new_ids = set(ids), set(new_ids)
     mine = [t for t in threads if t.id in ids]
-    others = [s for s in (render_summary(t) for t in threads if t.id not in ids) if s]
+    others = [render_full(t, (), status=True) for t in threads if t.id not in ids and _conversation(t)]
     out = [f"## Reply to these threads ({len(mine)})", ""]
     out += ["\n\n".join(render_full(t, new_ids) for t in mine)]
     if others:
-        out += ["", f"## Other open threads ({len(others)}) — context only", "", *others]
+        out += ["", f"## Other threads ({len(others)}) — context only", "", "\n\n".join(others)]
     return "\n".join(out)

@@ -7,6 +7,7 @@ list of news, a fake reporter keeps what Dispatch reports, and a fake clock
 gives the time. No process runs.
 """
 import os
+import re
 import sys
 import unittest
 
@@ -171,7 +172,55 @@ class ThePrompt(DispatchTest):
         self.assertIn("reviewer docs-bot (new): And the docs?", first)
         self.assertIn("reviewer Ada: Why an f-string here?", second)
         self.assertIn("reviewer (new): Thanks.", second, "a comment with no name names no one")
-        self.assertIn("  reviewer docs-bot: And the docs?", second, "the other open threads name them too")
+        self.assertIn("reviewer docs-bot: And the docs?", second.split("## Other threads")[1],
+                      "the other threads name them too")
+
+    def other_threads(self, text):
+        """The prompt's "other threads" section, up to the rules."""
+        return text.split("## Other threads")[1].split("\nRules:")[0]
+
+    def test_it_shows_another_thread_in_full_with_a_long_middle_comment_uncut_and_no_notes(self):
+        other = self.a_thread("And the docs?")
+        long_middle = "See " + "why " * 100 + "https://example.com/a-link-at-the-end"
+        self.review.add_comment("reviewer", other, "comment", long_middle)
+        self.review.add_comment("reviewer", other, "comment", "Last word.")
+        agent = FakeCodingAgent(FakeRun([[Reply(other, "Done."), Finished(True), Exited(0)]]),
+                                FakeRun([[Finished(True), Exited(0)]]))
+        self.poll(agent, times=2)
+        tid = self.a_thread()
+        self.poll(agent, times=2)
+
+        others = self.other_threads(agent.started[1][0])
+        self.assertIn(f"### Thread {other[:8]}", others)
+        self.assertLess(others.index("reviewer: And the docs?"), others.index(long_middle))
+        self.assertLess(others.index(long_middle), others.index("reviewer: Last word."))
+        self.assertIn("you: Done.", others)
+        self.assertNotIn("**", others, "its run's progress note is left out")
+        self.assertNotIn(tid[:8], others)
+
+    def test_it_shows_resolved_and_dismissed_threads_with_their_status_and_sends_only_the_waiting_one(self):
+        resolved = self.a_thread("Use a constant here.")
+        dismissed = self.a_thread("Rename it to hi?")
+        replied = self.a_thread("Is this tested?")
+        agent = FakeCodingAgent(FakeRun([[Reply(resolved, "Fixed."), Reply(dismissed, "Shall I?"),
+                                          Reply(replied, "Yes."), Finished(True), Exited(0)]]),
+                                FakeRun([[Finished(True), Exited(0)]]))
+        self.poll(agent, times=2)
+        self.review.set_status("reviewer", resolved, "resolved")
+        self.review.set_status("reviewer", dismissed, "dismissed")
+        tid = self.a_thread()
+        self.poll(agent, times=2)
+
+        text, reply_to = agent.started[1]
+        mine = text.split("## Reply to these threads")[1].split("## Other threads")[0]
+        self.assertEqual(re.findall(r"^### Thread (\w{8})", mine, re.M), [tid[:8]])
+        others = self.other_threads(text)
+        self.assertIn(f"### Thread {resolved[:8]} — general thread (not tied to a line) — resolved", others)
+        self.assertIn(f"### Thread {dismissed[:8]} — general thread (not tied to a line) — dismissed", others)
+        self.assertIn(f"### Thread {replied[:8]} — general thread (not tied to a line) — open", others)
+        self.assertIn("reviewer: Use a constant here.\nyou: Fixed.", others)
+        self.assertIn("context only", text.split("## Other threads")[1].split("\n")[0])
+        self.assertEqual(sorted(reply_to), sorted([tid, replied]), "a run may reply to the open threads only")
 
     COMMITS = ["Greet with an f-string\n\nChose an f-string over +: it reads better.", "Spell out three"]
 
