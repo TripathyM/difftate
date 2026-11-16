@@ -52,7 +52,7 @@ difftate --open herdr       # review in a Herdr tab instead of the browser (see 
 
 Every run starts a fresh agent session of the coding agent the watcher was started with (`difftate`/`dtc` for Claude Code, `dto` for OpenCode, or your own shortcuts below). No earlier agent session is found or continued ([ADR 0005](docs/adr/0005-runs-start-fresh.md)), so it doesn't matter which coding agent or account wrote the code, or from which folder.
 
-**Always run from the branch's checkout.** The coding agent edits files in the current directory. There is deliberately no "source branch" option: it would let the coding agent write fixes onto the wrong branch. To review another branch without switching, use a worktree (`git worktree add ../repo-x feature-x`, `cd` there, run `difftate`).
+**Always run from the branch's checkout.** The coding agent edits files in the current directory. There is deliberately no "source branch" option: it would let the coding agent write fixes onto the wrong branch. To review another branch without switching, use a worktree (`git worktree add ../repo-x feature-x`, `cd` there, run `difftate`). Each worktree runs its own watcher, with its own review page, beside the others; `difftate` run again in the same folder switches that folder's watcher.
 
 **The base** is the repository's default branch (`origin/HEAD`; without one, a local `main` or `master`), unless `--base` gives another. It used to be `master`. A review is one branch against its base, like a pull request; with a detached HEAD, or on the base branch itself, the current commit stands in for the branch.
 
@@ -126,7 +126,7 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 | `bin/dt-reply` | How the coding agent answers a thread: `dt-reply <thread> "<answer>"` |
 | `lib/difftate/main.py` | The composition root: picks the adapters (which store, coding agent and viewers, in one marked block), binds them to the core's use cases, and runs the command line |
 | `lib/difftate/core/` | The core: the Review, the changes and Dispatch, with no technology ([ADR 0003](docs/adr/0003-the-core-knows-no-technology.md)). It reaches the rest only through its ports |
-| `lib/difftate/adapters/inbound/cli/` | The command line: options and help, one watcher per repository (`watcher.lock`), switching a running watcher's view, opening a viewer, the timer, following the checked-out branch |
+| `lib/difftate/adapters/inbound/cli/` | The command line: options and help, one watcher per checked-out folder (`watcher.lock`), switching a running watcher's view, opening a viewer, the timer, following the checked-out branch |
 | `lib/difftate/core/dispatch/` | Dispatch: the loop, one run at a time, the queued and progress notes, the prompt (`prompt.py`) |
 | `lib/difftate/adapters/outbound/coding_agents/` | Claude Code and OpenCode: command line, model, sandbox settings, and the reader of each one's JSON event stream. `reply_channel/` is the run's folder that `dt-reply` writes to |
 | `lib/difftate/adapters/outbound/terminal/` | The watcher terminal's lines for Dispatch |
@@ -264,7 +264,7 @@ followed by the rules (reply with `dt-reply`, change code only when asked, never
 
 Coding agent invocation:
 - Claude: `claude -p … [--model <model>] --settings <run sandbox> --output-format stream-json --verbose < /dev/null`
-  - `--settings` lets `dt-reply` write to the run's folder, and keeps the coding agent out of difftate's folder (`<repo>/.git/difftate`) and away from the API token, so it can't resolve threads or edit notes. Its `sandbox.filesystem` part (`allowWrite` the run's folder, `denyWrite` the folder, `denyRead` the token) binds the Bash tool when the sandbox is on; its `permissions.deny` rules (`Edit(//<folder>/**)`, `Read(//<token>)`) bind Claude's own file tools. It's added to your own settings for these runs only.
+  - `--settings` lets `dt-reply` write to the run's folder, and keeps the coding agent out of difftate's folders (`<repo>/.git/difftate`, and in a worktree also the watcher's own `<repo>/.git/worktrees/<worktree>/difftate`) and away from the API token, so it can't resolve threads or edit notes. Its `sandbox.filesystem` part (`allowWrite` the run's folder, `denyWrite` the folders, `denyRead` the token) binds the Bash tool when the sandbox is on; its `permissions.deny` rules (`Edit(//<folder>/**)`, `Read(//<token>)`) bind Claude's own file tools. It's added to your own settings for these runs only.
   - Dispatch posts replies only to threads that were open when the run started, whatever the coding agent writes into its folder.
 - OpenCode: `opencode run … [--model <model>] --auto --format json < /dev/null`
 
@@ -272,7 +272,7 @@ Coding agent invocation:
 
 ## Review API
 
-The watcher (Python 3.9 or later, nothing else) serves the **review API** on `127.0.0.1`, for viewers and the progress notes. Every API request needs the header `Authorization: Bearer <token>`, with the token from `.git/difftate/token` (readable only by you; a new one each start). `.git/difftate/api.json` gives the port. The same server serves the browser viewer: `/?launch=<code>` trades a single-use launch code for its cookie, and the page, its scripts and its API calls use that cookie instead of the token (API calls only with the header `X-Difftate: page`, from the page's own origin).
+The watcher (Python 3.9 or later, nothing else) serves the **review API** on `127.0.0.1`, for viewers and the progress notes. Every API request needs the header `Authorization: Bearer <token>`, with the token from `.git/difftate/token` (readable only by you; a new one each start). `.git/difftate/api.json` gives the port. One watcher runs per checked-out folder: a watcher started in a worktree keeps its `token` and `api.json` (and its `watcher.lock`) in that worktree's own git folder (`git rev-parse --absolute-git-dir`, under `.git/worktrees/`), so each worktree's review has its own port and token; the reviews themselves stay in the shared `.git/difftate/reviews/`. The same server serves the browser viewer: `/?launch=<code>` trades a single-use launch code for its cookie, and the page, its scripts and its API calls use that cookie instead of the token (API calls only with the header `X-Difftate: page`, from the page's own origin).
 
 | Request | What it does |
 |---|---|

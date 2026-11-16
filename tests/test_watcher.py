@@ -146,6 +146,51 @@ class Harness:
         for line in self.watcher.stdout:
             self.output.append(line)
 
+    def add_worktree(self, branch):
+        """A worktree of the repository on a new <branch> from main, with a change
+        to app.py; its folder."""
+        folder = os.path.join(self.tmp, f"wt-{branch}")
+        git(self.repo, self.env, "worktree", "add", "-q", "-b", branch, folder, "main")
+        with open(os.path.join(folder, "app.py"), "w") as f:
+            f.write("def greet(name):\n    return 'hey ' + name\n")
+        return folder
+
+    def start_watcher_in(self, folder, *args):
+        """A watcher started in <folder>, beside self.watcher: (its process, its
+        port, its token, its checked-out folder's own git folder)."""
+        command = self.watcher_command()
+        command[command.index("--cwd") + 1] = folder
+        process = subprocess.Popen(command + list(args), cwd=folder, env=self.env, stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.addCleanup(process.stdout.close)
+        self.addCleanup(lambda: process.poll() is None and (process.send_signal(signal.SIGINT), process.wait(15)))
+        git_dir = subprocess.run(["git", "-C", folder, "rev-parse", "--absolute-git-dir"], check=True,
+                                 capture_output=True, text=True, env=self.env).stdout.strip()
+
+        def served():
+            try:
+                with open(os.path.join(git_dir, "difftate", "api.json")) as f:
+                    info = json.load(f)
+            except (OSError, ValueError):
+                return None
+            return info if info.get("pid") == process.pid else None
+
+        wait_for("the worktree's review API", lambda: served() or process.poll() is not None)
+        if process.poll() is not None:
+            self.fail("watcher exited:\n" + process.stdout.read())
+        with open(os.path.join(git_dir, "difftate", "token")) as f:
+            token = f.read().strip()
+        return process, served()["port"], token, git_dir
+
+    def api_at(self, port, token, method, path, payload=None):
+        """A call to the review API on <port> with <token>."""
+        mine = (getattr(self, "port", None), getattr(self, "token", None))
+        self.port, self.token = port, token
+        try:
+            return self.api(method, path, payload)
+        finally:
+            self.port, self.token = mine
+
     def terminal(self):
         return "".join(self.output)
 
@@ -296,6 +341,29 @@ class WatcherTest(Harness, unittest.TestCase):
         self.release_agent()
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertFalse(os.path.exists(run_dir), "the run's folder goes when the run ends")
+
+    def test_a_run_from_a_worktree_may_not_write_the_reviews_or_the_watchers_folder_or_read_its_token(self):
+        worktree = self.add_worktree("other")
+        other, port, token, git_dir = self.start_watcher_in(worktree)
+        thread = self.api_at(port, token, "POST", "/api/threads", {
+            "anchor": {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2, "code": "    return 'hey ' + name"},
+            "body": "Why concatenate?"})
+        wait_for("the run", lambda: os.path.exists(os.path.join(self.agent_dir, "args")))
+
+        args = self.agent_args()
+        settings = json.loads(args[args.index("--settings") + 1])
+        sandbox = settings["sandbox"]["filesystem"]
+        store = os.path.realpath(os.path.join(self.repo, ".git", "difftate"))
+        own = os.path.realpath(os.path.join(git_dir, "difftate"))
+        token_file = os.path.join(own, "token")
+        self.assertTrue(os.path.isfile(token_file), "the token is in the worktree's own git folder")
+        self.assertEqual(sandbox["denyWrite"], [store, own])
+        self.assertEqual(sandbox["denyRead"], [token_file])
+        self.assertEqual(settings["permissions"]["deny"],
+                         [f"Edit(/{store}/**)", f"Edit(/{own}/**)", f"Read(/{token_file})"])
+        self.release_agent()
+        wait_for("the replied state", lambda: next(
+            t for t in self.api_at(port, token, "GET", "/api/threads") if t["id"] == thread["id"])["state"] == "replied")
 
     def test_a_coding_agent_that_cant_start_fails_its_threads_and_the_watcher_keeps_going(self):
         self.agent_cmd = os.path.join(self.tmp, "agent.py")
@@ -518,7 +586,7 @@ class WatcherTest(Harness, unittest.TestCase):
         second = self.second_watcher("--ref", "HEAD~1")
 
         self.assertEqual(second.returncode, 0, second.stdout)
-        self.assertIn(f"difftate is already running for this repository (pid {self.watcher.pid})", second.stdout)
+        self.assertIn(f"difftate is already running for this checked-out folder (pid {self.watcher.pid})", second.stdout)
         self.assertIn("switched it to the commits after HEAD~1", second.stdout)
         self.assertEqual(self.api("GET", "/api/view"), {"view": "HEAD~1"})
         self.assertEqual(self.api("GET", "/api/changeset")["view"], "HEAD~1")
@@ -537,6 +605,41 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertEqual(bad.returncode, 1, bad.stdout)
         self.assertIn("no view 'nope'", bad.stdout)
         self.assertEqual(self.api("GET", "/api/view"), started)
+
+    def test_a_watcher_started_in_a_worktree_runs_beside_the_main_checkouts_with_its_own_port_and_token(self):
+        self.start_watcher()
+        worktree = self.add_worktree("other")
+
+        other, port, token, git_dir = self.start_watcher_in(worktree)
+
+        self.assertNotEqual(port, self.port)
+        self.assertNotEqual(token, self.token)
+        self.assertIsNone(self.watcher.poll(), "the main checkout's watcher keeps going")
+        self.assertEqual(self.api("GET", "/api/review")["branch"], "feature")
+        self.assertEqual(self.api_at(port, token, "GET", "/api/review")["branch"], "other")
+        self.assertIn("hey", self.api_at(port, token, "GET", "/api/changeset")["diff"])
+        # The lock and the running files are the worktree's; its review is in the shared folder
+        self.assertEqual(sorted(os.listdir(os.path.join(git_dir, "difftate"))), ["api.json", "token", "watcher.lock"])
+        shared = os.path.join(self.repo, ".git", "difftate")
+        self.assertEqual(len(os.listdir(os.path.join(shared, "reviews"))), 2, "both reviews are kept in the shared folder")
+
+    def test_a_second_watcher_start_in_a_worktree_switches_that_worktrees_watcher_and_exits(self):
+        self.start_watcher()
+        worktree = self.add_worktree("other")
+        git(worktree, self.env, "commit", "-q", "-am", "Say hey")
+        other, port, token, _ = self.start_watcher_in(worktree)
+
+        command = self.watcher_command()
+        command[command.index("--cwd") + 1] = worktree
+        second = subprocess.run(command + ["--ref", "HEAD"], cwd=worktree, env=self.env, stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, timeout=60)
+
+        self.assertEqual(second.returncode, 0, second.stdout)
+        self.assertIn(f"difftate is already running for this checked-out folder (pid {other.pid})", second.stdout)
+        self.assertEqual(self.api_at(port, token, "GET", "/api/view"), {"view": "HEAD"})
+        self.assertEqual(self.api("GET", "/api/view"), {"view": ""}, "the main checkout's watcher is not switched")
+        self.assertIsNone(other.poll())
+        self.assertIsNone(self.watcher.poll())
 
     def test_an_interval_that_is_not_a_positive_finite_number_is_refused(self):
         for value in ["-1", "0", "inf", "nan"]:
@@ -1003,7 +1106,7 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertEqual(len(ended), 1, "exactly one exits")
         [running] = [w for w in watchers if w.poll() is None]
         self.assertEqual(ended[0].returncode, 0)
-        self.assertIn(f"already running for this repository (pid {running.pid})", ended[0].stdout.read())
+        self.assertIn(f"already running for this checked-out folder (pid {running.pid})", ended[0].stdout.read())
         with open(os.path.join(self.repo, ".git", "difftate", "api.json")) as f:
             self.assertEqual(json.load(f)["pid"], running.pid)
         running.send_signal(signal.SIGINT)

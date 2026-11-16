@@ -1,4 +1,4 @@
-"""git on the repository: its difftate folder, the base, the checked-out
+"""git on the repository: its difftate folders, the base, the checked-out
 branch, the views and the changeset.
 
 The changeset is every change from where the branch left the base (their merge
@@ -24,15 +24,20 @@ def git(cwd: str, *args: str, env: Optional[dict] = None) -> Optional[str]:
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-def difftate_folder(cwd: str) -> Optional[Tuple[str, str]]:
-    """The repository's difftate folder, inside its git folder (shared by
-    worktrees, never committed), and the repository's top folder. None when
-    <cwd> is not in a git repository."""
+def difftate_folder(cwd: str) -> Optional[Tuple[str, str, str]]:
+    """The difftate folders of the checked-out folder <cwd> is in (the
+    repository itself, or one of its worktrees), never committed, and its top
+    folder: (the repository's difftate folder, in its git folder and shared by
+    worktrees: the reviews; the checked-out folder's own one, in its own git
+    folder: its watcher's; the top folder). For the repository itself the two
+    are one folder. None when <cwd> is not in a git repository."""
     common = git(cwd, "rev-parse", "--git-common-dir")
-    if common is None:
+    own = git(cwd, "rev-parse", "--absolute-git-dir")
+    if common is None or own is None:
         return None
     top = git(cwd, "rev-parse", "--show-toplevel")
-    return (os.path.realpath(os.path.join(cwd, common, "difftate")), os.path.realpath(top or cwd))
+    return (os.path.realpath(os.path.join(cwd, common, "difftate")), os.path.realpath(os.path.join(own, "difftate")),
+            os.path.realpath(top or cwd))
 
 
 def base(cwd: str, given: str = "") -> str:

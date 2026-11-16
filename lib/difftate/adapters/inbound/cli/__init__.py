@@ -2,7 +2,7 @@
 the loop (the port for running the loop), ADR 0003.
 
 options.py is the flags, the help and their errors. one_watcher.py keeps one
-watcher per repository (watcher.lock), and asks a running one to switch the
+watcher per checked-out folder (watcher.lock), and asks a running one to switch the
 view. viewers.py opens the review in the browser or a Herdr Review tab.
 timer.py runs the loop every --interval. watcher.py is the watcher: its
 start, following the checked-out branch, and its stop. command.py runs it,

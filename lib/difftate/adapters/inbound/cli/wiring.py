@@ -31,19 +31,23 @@ class Wiring:
 
     coding_agents: the names --tool accepts.
     viewers: name -> open(url, root), whether it could be reached (--open).
-    difftate_folder(cwd): (the repository's difftate folder, its top folder),
-        or None outside a git repository.
+    difftate_folder(cwd): (the repository's difftate folder, shared by its
+        worktrees: the reviews; the checked-out folder's own difftate folder:
+        its watcher's lock, running files and token; its top folder), or None
+        outside a git repository.
     running_watcher(folder), ask_running_watcher(folder, method, path,
-        payload): another watcher serving this repository's review API.
-    coding_agent(tool, cmd, model, cwd, folder): the coding agent;
-        raises the core's CouldNotStart when its command isn't found.
+        payload): another watcher serving the review API of the checked-out
+        folder whose own difftate folder is <folder>.
+    coding_agent(tool, cmd, model, cwd, folder, watcher_folder): the coding
+        agent; raises the core's CouldNotStart when its command isn't found.
     base(cwd, given): the review's base; raises the core's NotFound.
     need_view(cwd, view): <view>, once it is a view; raises NotFound.
     review_branch(cwd, base): what the review is of, or None with no commit.
     open_review(folder, cwd, branch, base, on_tamper): one review, its use
         cases bound; raises the core's CouldNotRead, or OSError.
-    review_api(review, folder, root, view, check, on_switch): the review API
-        (not started), showing <view>.
+    review_api(review, watcher_folder, root, view, check, on_switch): the
+        review API (not started), showing <view>, with its running files and
+        token in <watcher_folder>.
     loop(review, coding_agent): the Loop on a new Dispatch of <review>."""
     coding_agents: Sequence[str]
     viewers: Mapping[str, Callable[[str, str], bool]]

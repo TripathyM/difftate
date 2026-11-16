@@ -44,7 +44,7 @@ from .core.review.use_cases.start_run import start_run
 STORE = LocalStore              # for keeping the review
 REVIEW_HISTORY = HistoryFiles   # for recording review history
 CODE_READER = GitCodeReader     # for reading the code
-REPOSITORY = git                # the repository: its difftate folder, base, branch, views and kept snapshots (goes with CODE_READER)
+REPOSITORY = git                # the repository: its difftate folders, base, branch, views and kept snapshots (goes with CODE_READER)
 REPORTER = Terminal             # for reporting
 CODING_AGENTS = {a.name: a for a in (ClaudeCode, OpenCode)}  # for asking the coding agent: --tool picks one
 VIEWERS = {"browser": cli.open_browser, "herdr": cli.open_in_herdr}  # where the review opens: --open picks
@@ -106,19 +106,23 @@ def open_review(folder, cwd, branch, base, on_tamper):
     return bind_review(store, CODE_READER(cwd, base, branch, about["id"]), history, about)
 
 
-def coding_agent(tool, cmd, model, cwd, folder):
+def coding_agent(tool, cmd, model, cwd, folder, watcher_folder):
     """The coding agent <tool>: its runs work in <cwd>, may not write the
-    review's <folder>, and may not read the review API's token."""
+    review's <folder> or the <watcher_folder> (the lock and the review API's
+    running files: one folder with <folder> in the repository itself), and may
+    not read the review API's token."""
     chosen = CODING_AGENTS[tool]
-    return chosen(find_command(cmd or chosen.default_cmd), model, cwd=cwd, keep_out=[folder],
-                  secrets=[token_file(folder)])
+    keep_out = list(dict.fromkeys([folder, watcher_folder]))
+    return chosen(find_command(cmd or chosen.default_cmd), model, cwd=cwd, keep_out=keep_out,
+                  secrets=[token_file(watcher_folder)])
 
 
-def review_api(review, folder, root, view, check, on_switch):
-    """The review API. A reviewer who gives no reviewer name is the user: the
-    repository's git user.name, read at each request."""
+def review_api(review, watcher_folder, root, view, check, on_switch):
+    """The review API, with its running files and token in <watcher_folder>. A
+    reviewer who gives no reviewer name is the user: the repository's git
+    user.name, read at each request."""
     shown = ShownView(view, check, on_switch, open_in=cli.where_to_open(VIEWERS))
-    return ReviewApi(review, folder, root, shown, default_reviewer=functools.partial(REPOSITORY.user_name, root))
+    return ReviewApi(review, watcher_folder, root, shown, default_reviewer=functools.partial(REPOSITORY.user_name, root))
 
 
 def loop(review, coding_agent):
