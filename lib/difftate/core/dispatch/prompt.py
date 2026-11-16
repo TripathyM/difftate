@@ -45,7 +45,7 @@ Summarize briefly what you handled."""
 
 
 def build(open_threads: Sequence[Thread], ids: Collection[str], new_ids: Collection[str], reply_command: str,
-          commit_messages: Sequence[str] = ()) -> str:
+          commit_messages: Sequence[str]) -> str:
     """The prompt for a run on the threads <ids>, among the <open_threads>.
     <new_ids> holds the ids of the comments the run is sent: no run had them.
     <reply_command> is how the coding agent answers, ready for its shell.
@@ -62,7 +62,7 @@ def commits_part(messages: Sequence[str]) -> str:
     out = [f"## The decisions behind the code: the review's commit messages ({len(messages)}), oldest first", "",
            "Each commit from the base to the branch. Read them to know why the code is as it is.", ""]
     for n, message in enumerate(messages, 1):
-        out += [f"### Commit {n}", message.strip(), ""]
+        out += [f"### Commit {n}", message, ""]
     return "\n".join(out) + "\n"
 
 
