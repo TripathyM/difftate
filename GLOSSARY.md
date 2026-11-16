@@ -1,6 +1,6 @@
 # difftate
 
-A review loop: a reviewer comments on lines of a changeset, and the coding agent that wrote the code replies in the same thread, with the context of the agent session where it wrote that code.
+A review loop: a reviewer comments on lines of a changeset, and a coding agent replies in the same thread, with the decisions recorded in the review's commits.
 
 ## Language
 
@@ -95,20 +95,17 @@ The note a run keeps on each of its threads: its steps while it works, then one 
 _Avoid_: status comment, checklist
 
 **Watcher**:
-The difftate process for one repository: it opens the review of the checked-out branch, watches its threads, and dispatches runs until it is stopped. It follows the checked-out branch: between runs, it moves to that branch's review.
+The difftate process for one checked-out folder of a repository: the repository itself, or one of its worktrees. It opens the review of the branch checked out there, watches its threads, and dispatches runs until it is stopped. It follows that branch: between runs, it moves to that branch's review.
 
 ### Coding agent
 
 **Coding agent**:
-The agent that wrote the code and replies to threads, such as Claude Code or OpenCode.
-_Avoid_: agent (alone: a reviewing agent is an agent too), tool, bot, AI, model
+The agent that difftate runs to reply to threads and change the code, such as Claude Code or OpenCode. It need not be the agent that wrote the code: it learns the decisions behind the code from the review's commit messages.
+_Avoid_: agent (alone: a reviewing agent is an agent too), implementer, tool, bot, AI, model
 
 **Agent session**:
-The coding agent's conversation that each run continues, so replies have the context in which the code was written.
+The coding agent's conversation during one run. It starts fresh, with the review's threads and commit messages, and ends with the run.
 _Avoid_: session (alone), conversation
-
-**Headless**:
-Runs with no agent session: the coding agent starts each run with no earlier context.
 
 ### Viewing
 

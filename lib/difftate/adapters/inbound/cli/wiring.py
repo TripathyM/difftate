@@ -35,7 +35,7 @@ class Wiring:
         or None outside a git repository.
     running_watcher(folder), ask_running_watcher(folder, method, path,
         payload): another watcher serving this repository's review API.
-    coding_agent(tool, cmd, session, model, cwd, folder): the coding agent;
+    coding_agent(tool, cmd, model, cwd, folder): the coding agent;
         raises the core's CouldNotStart when its command isn't found.
     base(cwd, given): the review's base; raises the core's NotFound.
     need_view(cwd, view): <view>, once it is a view; raises NotFound.

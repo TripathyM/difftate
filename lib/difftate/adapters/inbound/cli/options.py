@@ -17,31 +17,29 @@ Optional:
   --ref <view>           The starting view of the review (default: all changes). HEAD~2: the
                          commits after it; HEAD: uncommitted; staged; unstaged. Viewers
                          switch views
-  --session <id>         Resume an existing session (full conversation context)
-  --cwd <path>           Repo path for headless mode (default: current directory)
+  --cwd <path>           The repository's folder the coding agent works in (default: current
+                         directory)
   --interval <seconds>   Polling interval in seconds (default: 1)
   --cmd <binary>         Override the CLI binary or shell alias (e.g. a wrapper around claude)
-  --model <model>        Model for the coding agent (default: Claude with --session matches the
-                         session's latest interactive model)
+  --model <model>        Model for the coding agent (default: the coding agent's own default)
   --open <where>         browser, herdr or both (default: $DT_OPEN, else browser).
                          herdr opens a Review tab in the Herdr app, or switches to it;
                          if Herdr can't be reached it falls back to the browser
   --help                 Show this help
 
+Each run starts a fresh agent session of the coding agent.
+
 Examples:
-  # Claude Code — headless (no session context)
+  # Claude Code
   difftate-watch.py --tool claude --interval 1
 
-  # Claude Code — resume mode (full session context), against the develop branch
-  difftate-watch.py --base develop --tool claude --session <full-uuid> --interval 1
+  # Claude Code on Opus, against the develop branch
+  difftate-watch.py --base develop --tool claude --model claude-opus-5-5 --interval 1
 
-  # OpenCode — headless, the last 3 commits
-  difftate-watch.py --ref HEAD~3 --tool opencode --interval 1
+  # OpenCode, the last 3 commits
+  difftate-watch.py --ref HEAD~3 --tool opencode --interval 1"""
 
-  # OpenCode — resume mode
-  difftate-watch.py --tool opencode --session <session-id> --interval 1"""
-
-FLAGS = {"--ref": "ref", "--base": "base", "--tool": "tool", "--session": "session", "--model": "model", "--cwd": "cwd",
+FLAGS = {"--ref": "ref", "--base": "base", "--tool": "tool", "--model": "model", "--cwd": "cwd",
          "--interval": "interval", "--cmd": "cmd", "--open": "open"}
 
 
@@ -63,7 +61,7 @@ def one_of(names):
 def parse(argv, coding_agents, open_in):
     """The options in <argv>. --tool names one of <coding_agents>, and --open
     one of <open_in>. Raises Exit for --help and for a wrong option."""
-    opts = {"ref": "", "base": "", "tool": "", "session": "", "model": "", "cwd": "", "interval": "1", "cmd": "",
+    opts = {"ref": "", "base": "", "tool": "", "model": "", "cwd": "", "interval": "1", "cmd": "",
             "open": os.environ.get("DT_OPEN") or "browser"}
     i = 0
     while i < len(argv):

@@ -2,7 +2,7 @@
 
 Annotate a coding agent's diff, and the coding agent answers or fixes the code.
 
-Review a diff in the browser (or a [Herdr](#review-in-herdr-optional) tab), comment on any line, and Claude Code or OpenCode replies or edits the code, with the session's full context. Progress shows live in the viewer and in the terminal.
+Review a diff in the browser (or a [Herdr](#review-in-herdr-optional) tab), comment on any line, and Claude Code or OpenCode replies or edits the code. Each run starts a fresh agent session, so any coding agent can answer any branch, whoever wrote it. Progress shows live in the viewer and in the terminal.
 
 ## Requirements
 
@@ -45,14 +45,12 @@ difftate unstaged           # only unstaged changes
 difftate staged             # only staged changes
 dto                         # OpenCode, same arguments
 difftate HEAD~1             # again, while it runs: switches the running watcher to that view and exits
-difftate --session <uuid>   # attach a specific session
-difftate --no-session       # headless, no session context
-difftate --model <model>    # force the coding agent's model (default: the session's model)
+difftate --model <model>    # the coding agent's model (default: its own default)
 difftate --cmd <command>    # run Claude through another command or alias
 difftate --open herdr       # review in a Herdr tab instead of the browser (see "Review in Herdr")
 ```
 
-Without `--session`, it attaches the latest agent session for the current folder, so comments are answered with that session's full context.
+Every run starts a fresh agent session of the coding agent the watcher was started with (`difftate`/`dtc` for Claude Code, `dto` for OpenCode, or your own shortcuts below). No earlier agent session is found or continued ([ADR 0005](docs/adr/0005-runs-start-fresh.md)), so it doesn't matter which coding agent or account wrote the code, or from which folder.
 
 **Always run from the branch's checkout.** The coding agent edits files in the current directory. There is deliberately no "source branch" option: it would let the coding agent write fixes onto the wrong branch. To review another branch without switching, use a worktree (`git worktree add ../repo-x feature-x`, `cd` there, run `difftate`).
 
@@ -77,14 +75,15 @@ difftate keeps the review itself: commits don't end a review, so threads survive
 
 ## Example: several Claude setups
 
-Shortcuts go in `~/.zshrc`, after the `source` line. Say `ccw` runs Claude with the default config and `ccp` is a wrapper that sets its own config dir:
+Shortcuts go in `~/.zshrc`, after the `source` line. They pick the coding agent and account that replies, say the one with credits left. Say `ccw` runs Claude with the default config and `ccp` is a wrapper that sets its own config dir:
 
 ```zsh
-dtcw() { difftate --cmd ccw "$@"; }                                         # uses ~/.claude, the default
-dtcp() { CLAUDE_CONFIG_DIR=~/.claude-personal difftate --cmd ccp "$@"; }   # same dir the wrapper uses
+dtcw() { difftate --cmd ccw "$@"; }
+dtcp() { difftate --cmd ccp "$@"; }
+dtcx() { CLAUDE_CONFIG_DIR=~/.claude-other difftate "$@"; }   # plain claude, another config dir
 ```
 
-Sessions are found in `$CLAUDE_CONFIG_DIR` (default `~/.claude`), the same rule `claude` itself follows. If a wrapper sets a different config dir internally, set `CLAUDE_CONFIG_DIR` in its shortcut as above, or the watcher looks in the wrong place. Don't set it to `~/.claude` explicitly: leave it unset for the default.
+The watcher passes its environment to the coding agent, so `CLAUDE_CONFIG_DIR` set in a shortcut reaches `claude`.
 
 ## Review in Herdr (optional)
 
@@ -122,14 +121,14 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 
 | File | What it does |
 |---|---|
-| `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the session, then start `difftate-watch.py` |
+| `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the coding agent, then start `difftate-watch.py` |
 | `difftate-watch.py`, `lib/difftate/` | The watcher: opens the [review](#the-review), serves the [review API](#review-api) and the browser viewer, dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
 | `bin/dt-reply` | How the coding agent answers a thread: `dt-reply <thread> "<answer>"` |
 | `lib/difftate/main.py` | The composition root: picks the adapters (which store, coding agent and viewers, in one marked block), binds them to the core's use cases, and runs the command line |
 | `lib/difftate/core/` | The core: the Review, the changes and Dispatch, with no technology ([ADR 0003](docs/adr/0003-the-core-knows-no-technology.md)). It reaches the rest only through its ports |
 | `lib/difftate/adapters/inbound/cli/` | The command line: options and help, one watcher per repository (`watcher.lock`), switching a running watcher's view, opening a viewer, the timer, following the checked-out branch |
 | `lib/difftate/core/dispatch/` | Dispatch: the loop, one run at a time, the queued and progress notes, the prompt (`prompt.py`) |
-| `lib/difftate/adapters/outbound/coding_agents/` | Claude Code and OpenCode: command line, agent session, model, sandbox settings, and the reader of each one's JSON event stream. `reply_channel/` is the run's folder that `dt-reply` writes to |
+| `lib/difftate/adapters/outbound/coding_agents/` | Claude Code and OpenCode: command line, model, sandbox settings, and the reader of each one's JSON event stream. `reply_channel/` is the run's folder that `dt-reply` writes to |
 | `lib/difftate/adapters/outbound/terminal/` | The watcher terminal's lines for Dispatch |
 | `lib/difftate/adapters/inbound/review_api/` | The [review API](#review-api) (`server.py`, the thread format in `json_format.py`) and, in `web/`, difftate's own browser viewer, which reads and writes the review through it |
 | `lib/difftate/adapters/outbound/` | The other driven adapters: `local_store/` and `memory_store/` keep the review, `history_files/` records the review history, `git/` reads the code |
@@ -158,7 +157,7 @@ The coding agent's reply follows as a separate entry in the thread (kind `reply`
 
 ```
 [07:40:23] New/changed threads detected — dispatching to claude
-  Model: claude-opus-5-5 (from session)
+  Model: claude-opus-5-5 (from --model)
 [07:40:24] 🚀 session 3f1c9a20 started · model claude-opus-5-5
 [07:40:25] 🔧 Read  src/app.ts
 [07:40:26] 💬 <agent text>
@@ -168,27 +167,19 @@ The coding agent's reply follows as a separate entry in the thread (kind `reply`
 
 ## Context size and when to compact
 
-`🧠 context` is the token count of the coding agent's latest model call. In session mode that includes the resumed session's full history, so it is the session's current size.
+`🧠 context` is the token count of the coding agent's latest model call: the size of the run's own agent session, which starts fresh with the prompt.
 
 - Claude reports its window, so you get a percentage.
 - OpenCode shows tokens only, unless you set `DT_CONTEXT_WINDOW`.
-- With the same model as your session (see below), it should be close to `/context` in that session (not exact: `-p` may load a slightly different system prompt and tool set). A big gap usually means a different model answered.
-- At **70%+** it adds `⚠️ consider /compact`. The coding agent can't compact itself: run `/compact` in your own Claude session.
+- At **70%+** it adds `⚠️ consider /compact`.
 
 ## Which model answers
 
-A Claude session doesn't store its model. Each `claude -p` the watcher starts uses the **current default**, and running `/model` in *any* session changes that default. Without a fix, your Opus session could get its comments answered by Sonnet, which also drops Opus's thinking blocks (its unstated reasoning) and makes 🧠 context disagree with `/context`.
+The model is `--model` when you give one, else the coding agent's own default. A Claude Code default is the current one, which running `/model` in *any* Claude session changes; to keep replies on one model, give `--model`.
 
-| Tool | Model used |
-|---|---|
-| `difftate` with a session | Read from the session file: the model of your latest interactive turn (e.g. `claude-opus-5-5`), passed as `--model` |
-| `difftate --no-session` | CLI default |
-| `dto` (OpenCode) | OpenCode keeps the session's own model on resume, so no detection is needed |
-| Any, with `--model` | `--model` always wins |
+The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on every dispatch, and the 🚀 line shows the model the coding agent actually ran.
 
-The watcher prints `Model: <name> (from session)` on every dispatch, and the 🚀 line shows the model the coding agent actually ran.
-
-**Cost note:** prompt caches are per model and expire after ~1h idle. The first comment after a model switch or a long break re-caches the whole session (roughly $1 for a ~120k-token Opus session at list price; cloud providers' pricing differs). Later comments within the hour are cents. Switching models back and forth costs more than staying on one.
+**Cost note:** each run starts a fresh agent session, so a run's cost grows with its prompt, not with earlier runs.
 
 ## Settings you can change
 
@@ -196,7 +187,6 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 
 | Variable | Default | Effect |
 |---|---|---|
-| `CLAUDE_CONFIG_DIR` | unset (`~/.claude`) | Where Claude sessions are looked up; also read by `claude` itself |
 | `DT_CONTEXT_WINDOW` | unset (Claude auto-detects) | Context window in tokens, for the % when the tool doesn't report it. E.g. `export DT_CONTEXT_WINDOW=200000` for OpenCode |
 | `DT_OPEN` | `browser` | Where the review opens: `browser`, `herdr` or `both`. `--open` overrides it for one run. See [Review in Herdr](#review-in-herdr-optional) |
 | `DT_HERDR` | unset (`herdr-app` on `PATH`) | Path to the Herdr app's binary, for `DT_OPEN=herdr` when `herdr-app` isn't on `PATH` |
@@ -214,7 +204,7 @@ The watcher prints `Model: <name> (from session)` on every dispatch, and the �
 
 ### Watcher flags (`difftate-watch.py --help`)
 
-`--base` (default: `origin/HEAD`), `--ref` (the starting view; default: all changes), `--tool`, `--session`, `--model`, `--cwd`, `--interval` (poll seconds, default 1), `--cmd`, `--open` (browser, herdr, both).
+`--base` (default: `origin/HEAD`), `--ref` (the starting view; default: all changes), `--tool`, `--model`, `--cwd`, `--interval` (poll seconds, default 1), `--cmd`, `--open` (browser, herdr, both).
 
 ### Internal env vars (set by the watcher, don't set yourself)
 
@@ -254,10 +244,10 @@ reviewer (new): yes
 followed by the rules (reply with `dt-reply`, change code only when asked, never resolve). "Other open threads" lets the coding agent see a related comment elsewhere ("this also fixes your comment on api.ts") at a fraction of the full JSON's size.
 
 Coding agent invocation:
-- Claude: `claude -p … --resume <session> --model <model> --settings <run sandbox> --output-format stream-json --verbose < /dev/null`
+- Claude: `claude -p … [--model <model>] --settings <run sandbox> --output-format stream-json --verbose < /dev/null`
   - `--settings` lets `dt-reply` write to the run's folder, and keeps the coding agent out of difftate's folder (`<repo>/.git/difftate`) and away from the API token, so it can't resolve threads or edit notes. Its `sandbox.filesystem` part (`allowWrite` the run's folder, `denyWrite` the folder, `denyRead` the token) binds the Bash tool when the sandbox is on; its `permissions.deny` rules (`Edit(//<folder>/**)`, `Read(//<token>)`) bind Claude's own file tools. It's added to your own settings for these runs only.
   - Dispatch posts replies only to threads that were open when the run started, whatever the coding agent writes into its folder.
-- OpenCode: `opencode run … --session <session> [--model <model>] --auto --format json < /dev/null`
+- OpenCode: `opencode run … [--model <model>] --auto --format json < /dev/null`
 
 `< /dev/null` matters: `opencode run` hangs waiting on stdin otherwise.
 
@@ -312,10 +302,6 @@ python3 -m unittest discover -s tests -v
 
 `tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_review_api.py` runs a scripted review through every review API route and compares each answer with `tests/fixtures/review_api_script.json`. The core's tests (`tests/test_core_*.py`) need no repository and no process. `tests/test_core_boundary.py` checks that the core imports no technology, and that only `main.py` wires adapters to the core: an adapter imports the core and itself, never another adapter (one named exception: the history files share the local store's event line format). `tests/test_stores.py` runs one test suite against every store (memory and local). CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
 
-## Known limitations
-
-- An open Claude/OpenCode terminal on the same session doesn't live-refresh with the watcher's turns.
-
 ## Troubleshooting
 
 | Symptom | Check |
@@ -323,7 +309,7 @@ python3 -m unittest discover -s tests -v
 | No progress note appears | Watcher terminal for `could not post the progress note on thread …`; is the watcher still running? |
 | Coding agent never finishes | Run the coding agent's command by hand with `< /dev/null`; look for auth or stdin hangs |
 | Wrong diff shown | Check the view (the browser's **View** menu, `GET /api/view`); rerun `difftate <view>` |
-| Answer from the wrong model / 🧠 far from `/context` | Check the `Model:` line; force it with `difftate --model <model>` |
+| Answer from the wrong model | Check the `Model:` line; force it with `difftate --model <model>` |
 | Thread ignored | Its thread state is `replied` or `failed` (`GET /api/threads`): comment again to re-trigger |
 | Browser opens instead of the Herdr tab | The watcher prints a `Herdr:` line saying why: `herdr-app` not found (set `DT_HERDR`), Herdr not running, or the mod missing (`herdr-app check ~/.config/herdr-app/mods/difftate`) |
 | Herdr tab misses a change after an update | Close the Review tab and open it again: an open tab keeps the code it started with |

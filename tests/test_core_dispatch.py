@@ -104,7 +104,7 @@ class AWholeRun(DispatchTest):
     def test_the_coding_agents_own_lines_are_reported_as_they_come(self):
         tid = self.a_thread()
         agent = FakeCodingAgent(FakeRun([
-            [ModelChosen("opus", "session"), AgentSessionStarted("fake-session", "fake-model"), Output("not json"),
+            [ModelChosen("opus", "--model"), AgentSessionStarted("fake-session", "fake-model"), Output("not json"),
              Unparsed("bad event"), Step("Bash  false", failed=True)],
             [Reply(tid, "Done."), ContextUsed(tokens=150_000), ContextUsed(window=200_000),
              Finished(True, cost=None), Exited(0)],
@@ -114,7 +114,7 @@ class AWholeRun(DispatchTest):
 
         self.assertEqual(self.report.reported, [
             ("dispatching", "fake"),
-            ("model_chosen", "opus", "session"),
+            ("model_chosen", "opus", "--model"),
             ("agent_session_started", "fake-session", "fake-model"),
             ("output", "not json"),
             ("unparsed", "bad event"),

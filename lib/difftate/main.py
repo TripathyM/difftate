@@ -104,11 +104,11 @@ def open_review(folder, cwd, branch, base, on_tamper):
     return bind_review(store, CODE_READER(cwd, base, branch, about["id"]), history, about)
 
 
-def coding_agent(tool, cmd, session, model, cwd, folder):
+def coding_agent(tool, cmd, model, cwd, folder):
     """The coding agent <tool>: its runs work in <cwd>, may not write the
     review's <folder>, and may not read the review API's token."""
     chosen = CODING_AGENTS[tool]
-    return chosen(find_command(cmd or chosen.default_cmd), session, model, cwd=cwd, keep_out=[folder],
+    return chosen(find_command(cmd or chosen.default_cmd), model, cwd=cwd, keep_out=[folder],
                   secrets=[token_file(folder)])
 
 
