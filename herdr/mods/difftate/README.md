@@ -48,6 +48,7 @@ or from Herdr's `keys.json` as `"difftate.<action>"`.
 | reply | r, Enter | Reply to the thread on this line |
 | resolve / reopen | R, Space c R | Resolve or reopen that thread |
 | toggle_viewed | Space m | Mark this file viewed, or not. A viewed file has a ✓ in the changed-files list; the mark stays across reloads and commits, and clears when the file's diff changes |
+| toggle_done | Space d | Mark the review Done at the commit the branch is at, or undo it (press again). Open threads, and runs still working, are warned about first: Enter marks it anyway, Esc leaves it. A Done review shows **✓ Done at ‹commit›** in the header; a new commit on the branch clears it, a new thread doesn't. Marks are kept in the review history. A script reads it with `difftate status --json` |
 | goto_definition | gd | Jump to the definition (ripgrep patterns; a picker if several) |
 | references | gr | Every use of the word under the cursor |
 | jump_back / jump_forward | C-o, Tab | Jump list |

@@ -44,13 +44,14 @@ def _now() -> str:
 
 class LocalStore:
     def __init__(self, folder: str, info: Optional[Dict[str, str]] = None,
-                 on_tamper: Optional[Callable[[List[str]], None]] = None) -> None:
+                 on_tamper: Optional[Callable[[List[str]], None]] = None, read_only: bool = False) -> None:
         """The store over the review folder <folder>, which exists. <info> is
         its review.json; <on_tamper>: (the ids of the threads the changed
         lines name) -> None."""
         self.folder = folder
         self.info = dict(info or {})
         self.on_tamper = on_tamper or (lambda ids: None)
+        self.read_only = read_only  # looks only: never restores the file, which a watcher may be writing
         self.events_file = os.path.join(folder, EVENTS_FILE)
         self._lock = threading.Lock()
         self._expected = self._read() or b""  # the events file as this store wrote it
@@ -75,6 +76,21 @@ class LocalStore:
                 f.write(json.dumps(info, indent=2) + "\n")
         return cls(folder, info, on_tamper)
 
+    @classmethod
+    def find(cls, difftate_folder: str, branch: str, base: str) -> Optional[LocalStore]:
+        """The store of the review of <branch> against <base> if it was started,
+        else None: a look that starts nothing and writes nothing."""
+        rid = review_id(branch, base)
+        folder = os.path.join(difftate_folder, "reviews", rid)
+        if not os.path.isdir(folder):
+            return None
+        try:
+            with open(os.path.join(folder, REVIEW_FILE), encoding="utf-8") as f:
+                info = json.load(f)
+        except (OSError, ValueError):
+            info = {"id": rid, "branch": branch, "base": base}
+        return cls(folder, info, read_only=True)
+
     @staticmethod
     def review_ids(difftate_folder: str) -> List[str]:
         """The ids of the reviews kept in <difftate_folder>/reviews/: one per
@@ -91,6 +107,8 @@ class LocalStore:
 
     # ── The port for keeping the review ──────────────────────────────────────
     def load(self) -> List[Event]:
+        if self.read_only:
+            return read_events((self._read() or b"").decode("utf-8", errors="replace"))
         with self._lock:
             self._restore_if_changed()
             return list(self._events)

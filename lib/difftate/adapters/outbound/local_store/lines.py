@@ -5,6 +5,7 @@ existing reviews hold):
   opened → ThreadOpened      comment → CommentAdded     note → NoteWritten (final)
   status → ThreadStatusChanged   moved → ThreadMoved    outdated → ThreadOutdated
   run → RunStarted           run-ended → RunEnded       viewed → FileViewed
+  done → DoneMarked          undone → DoneUndone        done-cleared → DoneCleared
 A "note" line is a note's final body: notes are stored only once final. A
 note given to the store before it is final (the core gives none: lasting)
 keeps "final": false in its line, so it reads back as it was given; no such
@@ -22,8 +23,8 @@ import json
 from typing import Any, Dict, List, Optional
 
 from ....core.review.model import (
-    Anchor, Comment, CommentAdded, Event, FileViewed, NoteWritten, RunEnded, RunStarted, ThreadMoved,
-    ThreadOpened, ThreadOutdated, ThreadStatusChanged,
+    Anchor, Comment, CommentAdded, DoneCleared, DoneMarked, DoneUndone, Event, FileViewed, NoteWritten, RunEnded,
+    RunStarted, ThreadMoved, ThreadOpened, ThreadOutdated, ThreadStatusChanged,
 )
 
 
@@ -63,6 +64,12 @@ def event_from_line(line: Dict[str, Any]) -> Event:
         return RunEnded(line["run"], line["outcome"], line["time"])
     if kind == "viewed":
         return FileViewed(line["file"], line["diffHash"], line["time"])
+    if kind == "done":
+        return DoneMarked(line["commit"], line["time"])
+    if kind == "undone":
+        return DoneUndone(line["commit"], line["time"])
+    if kind == "done-cleared":
+        return DoneCleared(line["commit"], line["time"])
     raise KeyError(f"no event in a {kind!r} line")
 
 
@@ -121,6 +128,12 @@ def line_from_event(event: Event) -> Dict[str, Any]:
         return {"type": "run-ended", "run": event.run_id, "outcome": event.outcome, "time": event.time}
     if isinstance(event, FileViewed):
         return {"type": "viewed", "file": event.file, "diffHash": event.diff_hash, "time": event.time}
+    if isinstance(event, DoneMarked):
+        return {"type": "done", "commit": event.commit, "time": event.time}
+    if isinstance(event, DoneUndone):
+        return {"type": "undone", "commit": event.commit, "time": event.time}
+    if isinstance(event, DoneCleared):
+        return {"type": "done-cleared", "commit": event.commit, "time": event.time}
     raise TypeError(f"no line for {event!r}")
 
 

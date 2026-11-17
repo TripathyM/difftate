@@ -60,6 +60,12 @@ class ForReadingTheCode(Protocol):
         branch, or the commit standing in for it. None when it can't be said."""
         ...
 
+    def head_commit(self) -> Optional[str]:
+        """The commit the review's branch is at now, whichever branch is checked
+        out (a review of the base branch itself is of one commit). None when the
+        repository has no such branch: after a merge and a delete, say."""
+        ...
+
     # ── The changeset ────────────────────────────────────────────────────────
     def changeset(self, view: str) -> Changeset:
         """The review's changeset in <view> ("" for all changes), with the

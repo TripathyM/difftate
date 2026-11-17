@@ -24,7 +24,8 @@ from difftate.adapters.outbound.local_store import LocalStore  # noqa: E402
 from difftate.adapters.outbound.local_store.lines import read_events  # noqa: E402
 from difftate.adapters.inbound.review_api.json_format import thread_json  # noqa: E402
 from difftate.core.review.model import (  # noqa: E402
-    Anchor, Comment, CommentAdded, CouldNotRead, ListedThread, NotesInProgress, Review, ThreadOpened,
+    Anchor, Comment, CommentAdded, CouldNotRead, DoneCleared, DoneMarked, DoneUndone, ListedThread,
+    NotesInProgress, Review, ThreadOpened,
 )
 from difftate.core.review.use_cases.add_comment import add_comment  # noqa: E402
 from difftate.core.review.use_cases.list_threads import list_threads  # noqa: E402
@@ -94,6 +95,30 @@ class TheLocalStore(unittest.TestCase):
         with open(os.path.join(history_folder, month)) as f:
             self.assertEqual([json.loads(line) for line in f], [dict(line, review="r") for line in stored])
         self.assertEqual([line["type"] for line in stored], ["opened", "comment", "comment", "status", "viewed"])
+
+    def test_the_done_marks_are_lines_of_their_own_and_load_back_as_they_were(self):
+        marks = [DoneMarked("a" * 40, TIME), DoneUndone("a" * 40, TIME), DoneCleared("b" * 40, TIME)]
+        store = self.open_store()
+
+        store.append(marks)
+
+        self.assertEqual([json.loads(line) for line in read(self.events_file(store)).splitlines()], [
+            {"type": "done", "commit": "a" * 40, "time": TIME},
+            {"type": "undone", "commit": "a" * 40, "time": TIME},
+            {"type": "done-cleared", "commit": "b" * 40, "time": TIME}])
+        self.assertEqual(LocalStore(store.folder).load(), marks)
+
+    def test_a_review_that_was_never_started_is_not_found_and_looking_for_it_starts_nothing(self):
+        self.assertIsNone(LocalStore.find(self.folder, "feature", "main"))
+        self.assertFalse(os.path.exists(self.folder))
+
+        started = self.open_store()
+        started.append([DoneMarked("a" * 40, TIME)])
+
+        found = LocalStore.find(self.folder, "feature", "main")
+        self.assertEqual(found.load(), [DoneMarked("a" * 40, TIME)])
+        self.assertEqual(found.review(), started.review())
+        self.assertIsNone(LocalStore.find(self.folder, "other", "main"))
 
     # ── Existing reviews load ────────────────────────────────────────────────
     def test_an_events_file_written_today_loads(self):

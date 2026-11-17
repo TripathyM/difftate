@@ -47,7 +47,11 @@ class Wiring:
     review_api(review, watcher_folder, root, view, check, on_switch): the
         review API (not started), showing <view>, with its running files and
         token in <watcher_folder>.
-    loop(review, coding_agent): the Loop on a new Dispatch of <review>."""
+    loop(review, coding_agent): the Loop on a new Dispatch of <review>.
+    done_status(folder, cwd, branch, base): whether the review of <branch>
+        against <base> kept in <folder> is Done (a core DoneStatus), read
+        without starting or changing anything; raises the core's NotFound
+        for a branch with no commit and no review, or CouldNotRead."""
     coding_agents: Sequence[str]
     viewers: Mapping[str, Callable[[str, str], bool]]
     difftate_folder: Callable[[str], Optional[Tuple[str, str, str]]]
@@ -60,3 +64,4 @@ class Wiring:
     open_review: Callable[..., Any]
     review_api: Callable[..., Any]
     loop: Callable[[Any, Any], Loop]
+    done_status: Callable[[str, str, str, str], Any]

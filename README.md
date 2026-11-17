@@ -66,8 +66,23 @@ difftate keeps the review itself: commits don't end a review, so threads survive
 
 ![The browser viewer: an outdated thread with the code it was written on](docs/screenshots/browser-viewer-outdated.jpg)
 
+**Done.** When you finish a review, mark it **Done** in the Review tab (`Space d`; press again to undo). It is Done at one commit, shown as **Done at ‹commit›**, whether you went through the code or skipped it (write a general thread saying why, resolve it, and mark Done). Open threads, and runs still working, are warned about first, and you can mark Done anyway. A new commit on the branch clears Done; a new thread doesn't. Only the reviewer marks it: the coding agent can't. Every mark (done, undone, cleared by a commit) is kept in the review history with its time and commit.
 
-- Each review is stored in `.git/difftate/reviews/<review>/` (shared by worktrees, never committed): `review.json` (branch, base, start) and `events.jsonl`, plain JSON lines that are only ever appended (threads opened, comments, replies, final notes, status changes, and runs: which comments each run was sent, and how it ended). The current state comes from reading them in order.
+Read it from outside difftate, in any folder of the repository, with or without a watcher running (it only reads):
+
+```sh
+difftate status --json --branch my-branch
+```
+
+```json
+{"branch": "my-branch", "base": "main", "head": "9f2c…", "done": true, "time": "2026-11-17T10:00:00.000Z",
+ "commit": "9f2c…", "lastMark": {"kind": "done", "time": "2026-11-17T10:00:00.000Z", "commit": "9f2c…"},
+ "openThreads": 0, "runsInFlight": 0}
+```
+
+`done` says whether the review is Done now; `time` and `commit` are its mark (null when it isn't); `lastMark` is the last mark of any kind, `"done"`, `"undone"` or `"cleared"` (by a new commit: `commit` is the new one); `head` is where the branch is now. A review whose branch got a new commit since shows as cleared at once; the watcher keeps the clearing in the review history within a poll. Without `--branch` it reads the checked-out branch's review. Without `--json` it prints one line.
+
+- Each review is stored in `.git/difftate/reviews/<review>/` (shared by worktrees, never committed): `review.json` (branch, base, start) and `events.jsonl`, plain JSON lines that are only ever appended (threads opened, comments, replies, final notes, status changes, Done marks, and runs: which comments each run was sent, and how it ended). The current state comes from reading them in order.
 - Progress notes show a run's steps live from the watcher's memory. Only their final line is stored, when the run ends.
 - A watcher killed during a run (not Ctrl+C) loses nothing: the next one sees the run that never ended, doesn't send its threads again, and marks those with no reply as failed ("no reply (the watcher stopped)").
 - Every stored line also goes to the **review history**, `~/.difftate/history/<year>-<month>.jsonl`, with the repository (path and remote), branch and base added, so deleting a clone doesn't lose it.

@@ -20,8 +20,8 @@ sys.path.insert(0, os.path.join(ROOT, "lib"))
 from difftate.adapters.outbound.local_store import LocalStore  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
 from difftate.core.review.model import (  # noqa: E402
-    Anchor, Comment, CommentAdded, FileViewed, NoteWritten, RunEnded, RunStarted, ThreadMoved, ThreadOpened,
-    ThreadOutdated, ThreadStatusChanged,
+    Anchor, Comment, CommentAdded, DoneCleared, DoneMarked, DoneUndone, FileViewed, NoteWritten, RunEnded,
+    RunStarted, ThreadMoved, ThreadOpened, ThreadOutdated, ThreadStatusChanged,
 )
 
 T1, T2 = "thread-1", "thread-2"
@@ -37,7 +37,9 @@ OPENING = [ThreadOpened(T1, ANCHOR, TIME), CommentAdded(T1, COMMENT),
 WORK = [RunStarted("run-1", (T1, T2), ("c1", "c2"), {T1: (), T2: ("r0",)}, TIME),
         NoteWritten(T1, NOTE, final=True), CommentAdded(T1, REPLY), RunEnded("run-1", "done", TIME),
         ThreadStatusChanged(T2, "resolved", TIME), ThreadMoved(T1, 5, 6, "b" * 40, TIME),
-        ThreadOutdated(T1, TIME), FileViewed("app.py", "c" * 40, TIME), FileViewed("app.py", None, TIME)]
+        ThreadOutdated(T1, TIME), FileViewed("app.py", "c" * 40, TIME), FileViewed("app.py", None, TIME),
+        DoneMarked("d" * 40, TIME), DoneUndone("d" * 40, TIME), DoneMarked("d" * 40, TIME),
+        DoneCleared("e" * 40, TIME)]
 # A reviewer name on comments and status changes, beside ones with none
 NAMED = [ThreadOpened(T1, None, TIME), CommentAdded(T1, Comment("c1", "reviewer", "comment", "Ready?", TIME, 1, "Ada")),
          CommentAdded(T1, Comment("c2", "reviewer", "comment", "Tests? ✨", TIME, 2, "security-bot")),

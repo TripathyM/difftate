@@ -6,6 +6,7 @@ from typing import Callable
 
 from ..model import Dispatch
 from ..ports import ForAskingTheCodingAgent, ForReporting
+from .clear_done import clear_done
 from .dispatch_waiting import dispatch_waiting
 from .edit_progress_note import edit_progress_note
 from .end_run import end_run
@@ -17,11 +18,12 @@ from .read_news import read_news
 def poll(dispatch: Dispatch, agent: ForAskingTheCodingAgent, report: ForReporting,
          between_runs: Callable[[], None] = lambda: None) -> None:
     """While a run is in progress: its news, its replies, threads moved with
-    their code, queued notes and its progress notes; once it is over, its end.
-    Between runs: <between_runs> first (the watcher may switch dispatch.review
-    there), then the threads move with their code, and the waiting ones are
-    dispatched. A run whose end the store couldn't keep is kept before
-    anything else."""
+    their code, a review Done cleared by a new commit (the coding agent
+    commits during a run), queued notes and its progress notes; once it is
+    over, its end. Between runs: <between_runs> first (the watcher may switch
+    dispatch.review there), then the threads move with their code, Done is
+    cleared by a new commit, and the waiting threads are dispatched. A run
+    whose end the store couldn't keep is kept before anything else."""
     run = dispatch.run
     if run is not None:
         exited = read_news(dispatch, report)
@@ -32,6 +34,7 @@ def poll(dispatch: Dispatch, agent: ForAskingTheCodingAgent, report: ForReportin
             end_run(dispatch, report, "failed" if exited else "done")
             return
         move_with_code(dispatch.review, report)
+        clear_done(dispatch.review, report)
         dispatch_waiting(dispatch, agent, report)
         edit_progress_note(dispatch)
         return
@@ -39,4 +42,5 @@ def poll(dispatch: Dispatch, agent: ForAskingTheCodingAgent, report: ForReportin
         return  # the last run is still in progress until its end is kept
     between_runs()
     move_with_code(dispatch.review, report)
+    clear_done(dispatch.review, report)
     dispatch_waiting(dispatch, agent, report)

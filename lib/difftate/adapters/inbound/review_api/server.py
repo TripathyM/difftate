@@ -36,6 +36,15 @@ without it gets 401.
   PUT   /api/viewed                     mark a file viewed, or not: {"file", "viewed"?: true|false
                                         (default true)}: {"files"}. 404 for a file
                                         that isn't in the changeset
+  GET   /api/done                       whether the review is Done: {"done", "time", "commit" (the
+                                        mark that made it Done: null when it isn't), "lastMark":
+                                        {"kind": "done"|"undone"|"cleared", "time", "commit"} or
+                                        null, "head" (the commit the branch is at), "openThreads",
+                                        "runsInFlight" (open threads with a run queued or working)}
+  PUT   /api/done                       mark the review Done at the commit its branch is at, or
+                                        undo it: {"done": true|false, "author"?}: the same answer.
+                                        "author" must be "reviewer" (the default): anyone else gets
+                                        403. 409 while another branch is checked out
 
 A thread (difftate's thread format):
   {"id",
@@ -82,6 +91,11 @@ marking a file viewed gets 409, and every thread with an anchor is listed with
 "inView": false and its own lines (the code on disk is the other branch's): the
 watcher moves to that branch's review once the run ends.
 
+A review is Done at one commit (GLOSSARY.md). A new commit on its branch clears it, and the
+watcher keeps the clearing; until then GET /api/done already answers that it is not Done, with
+"lastMark" "cleared" by the new commit. A thread, a comment or a thread status change doesn't
+clear it. Nothing but the reviewer's PUT marks or undoes it.
+
 A viewed file belongs to the review, like a thread: it stays viewed in every
 view, after a reload and after a commit, until its diff in all changes changes
 (any edit to the file, even one that keeps its line counts or is inside a new
@@ -113,8 +127,8 @@ from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ....core.review.model import AUTHOR_OF, DIFFTATE, REVIEWER, Conflict, CouldNotRead, NotAllowed, NotFound
-from .json_format import (NOTE_KINDS, BadRequest, anchor_from_json, changeset_json, comment_json, fields, need,
-                          need_bool, need_kind, need_status, need_text, reviewer_name, thread_json)
+from .json_format import (NOTE_KINDS, BadRequest, anchor_from_json, changeset_json, comment_json, done_json,
+                          fields, need, need_bool, need_kind, need_status, need_text, reviewer_name, thread_json)
 
 MAX_BODY = 1 << 20
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -272,7 +286,7 @@ class ReviewApi:
     """The review API on <review>: the use cases of one review, with its ports
     bound (main.bind_review): about ({"id", "branch", "base"}),
     list_threads, open_thread, add_comment, edit_note, set_status,
-    mark_viewed, list_viewed, changeset and checked_out.
+    mark_viewed, list_viewed, set_done, read_done, changeset and checked_out.
 
     It writes its token and where it runs (api.json: port, pid, <root>) to
     <folder>, the watcher's difftate folder in the checked-out folder's own
@@ -418,6 +432,10 @@ def _handler(current, token, shown, login, default_reviewer):
         file, viewed = need(p, "file"), fields(p).get("viewed", True)
         return {"files": current().mark_viewed(need_text(file, "file"), need_bool(viewed, "viewed"))}
 
+    def put_done(q, p):
+        done, author = need_bool(need(p, "done"), "done"), fields(p).get("author", "reviewer")
+        return done_json(current().set_done(author, done))
+
     routes = [
         ("GET", r"/api/review", get_review),
         ("GET", r"/api/view", lambda q, p: {"view": shown.current()}),
@@ -430,6 +448,8 @@ def _handler(current, token, shown, login, default_reviewer):
         ("PATCH", r"/api/threads/([^/]+)/status", patch_status),
         ("GET", r"/api/viewed", lambda q, p: {"files": current().list_viewed()}),
         ("PUT", r"/api/viewed", put_viewed),
+        ("GET", r"/api/done", lambda q, p: done_json(current().read_done())),
+        ("PUT", r"/api/done", put_done),
     ]
     routes = [(m, re.compile(f"^{path}$"), fn) for m, path, fn in routes]
 
