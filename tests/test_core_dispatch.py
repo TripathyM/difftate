@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core_fakes import FakeClock, FakeCode, FakeCodingAgent, FakeHistory, FakeReporter, FakeRun  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
 from difftate.core.dispatch.model import (  # noqa: E402
-    ContextUsed, Dispatch, Exited, Finished, ModelChosen, Output, Reply, Said, AgentSessionStarted, Step, Unparsed,
+    Dispatch, Exited, Finished, ModelChosen, Output, Reply, Said, AgentSessionStarted, Step, Unparsed,
 )
 from difftate.core.dispatch.use_cases.stop_run import stop_run  # noqa: E402
 from difftate.core.dispatch.use_cases.poll import poll  # noqa: E402
@@ -97,7 +97,7 @@ class AWholeRun(DispatchTest):
             ("dispatching", "fake"),
             ("step", "Read  app.py", False),
             ("said", "Replied to 1 thread."),
-            ("finished", True, 2, 0.0123, ""),
+            ("finished", True, 2, 0.0123),
         ])
         self.assertIsNone(self.dispatch.run)
 
@@ -107,8 +107,7 @@ class AWholeRun(DispatchTest):
         agent = FakeCodingAgent(FakeRun([
             [ModelChosen("opus", "--model"), AgentSessionStarted("fake-session", "fake-model"), Output("not json"),
              Unparsed("bad event"), Step("Bash  false", failed=True)],
-            [Reply(tid, "Done."), ContextUsed(tokens=150_000), ContextUsed(window=200_000),
-             Finished(True, cost=None), Exited(0)],
+            [Reply(tid, "Done."), Finished(True, cost=None), Exited(0)],
         ]))
 
         self.poll(agent, times=3)
@@ -120,10 +119,9 @@ class AWholeRun(DispatchTest):
             ("output", "not json"),
             ("unparsed", "bad event"),
             ("step", "Bash  false", True),
-            ("finished", True, 2, None, "🧠 context 150k / 200k (75%) ⚠️ consider /compact"),
+            ("finished", True, 2, None),
         ])
-        self.assertEqual(self.comments(tid)[1], ("progress", "✅ **Done** in 2s · 🧠 context 150k / 200k (75%) "
-                                                             "⚠️ consider /compact"))
+        self.assertEqual(self.comments(tid)[1], ("progress", "✅ **Done** in 2s"))
 
     def test_the_progress_notes_show_the_time_every_few_seconds_while_nothing_happens(self):
         tid = self.a_thread()
@@ -288,7 +286,7 @@ class ARunWithNoReply(DispatchTest):
         self.assertEqual(self.comments(tid)[1], ("progress", "❌ **Failed** after 2s\n- ✅ `Read app.py`\n\n"
                                                              "The model is overloaded.\n\nNo reply."))
         self.assertIn(("coding_agent_failed", "The model is overloaded."), self.report.reported)
-        self.assertIn(("finished", False, 2, None, ""), self.report.reported)
+        self.assertIn(("finished", False, 2, None), self.report.reported)
 
     def test_a_coding_agent_that_exits_without_finishing_fails_its_threads(self):
         tid = self.a_thread()
@@ -299,7 +297,7 @@ class ARunWithNoReply(DispatchTest):
         self.assertEqual(self.comments(tid)[1], ("progress", "❌ **Failed** after 1s\n\nAgent exited without "
                                                              "finishing — check the watcher terminal.\n\nNo reply."))
         self.assertEqual(self.report.reported[1:], [
-            ("finished", False, 1, None, ""),
+            ("finished", False, 1, None),
             ("warning", "dispatch to fake failed (exit 1)"),
             ("no_reply", tid, False),
         ])

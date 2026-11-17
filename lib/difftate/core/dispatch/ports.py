@@ -58,7 +58,7 @@ class ForReporting(Protocol):
     def coding_agent_failed(self, error: str) -> None:
         """The coding agent says it failed, and why."""
 
-    def finished(self, ok: bool, secs: int, cost: Optional[float], context: str) -> None:
+    def finished(self, ok: bool, secs: int, cost: Optional[float]) -> None:
         """The coding agent finished (<ok>) or failed, after <secs>."""
 
     def output(self, line: str) -> None:

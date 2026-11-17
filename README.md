@@ -144,10 +144,10 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 ```
 🕒 Queued — agent is busy with another comment…   ← a queued note: arrived while the coding agent was busy
 ⏳ Thinking… (4s)
-⏳ Working… (12s) · 🧠 context 84k / 1M (8%)
+⏳ Working… (12s)
 - ✅ `Read src/app.ts`
 - ⏳ `Edit src/app.ts`
-✅ Done in 42s · 🧠 context 90k / 1M (9%)       ← checklist removed when done
+✅ Done in 42s                                 ← checklist removed when done
 ❌ Failed after 30s  (+ checklist and reason)
 ```
 
@@ -161,17 +161,9 @@ The coding agent's reply follows as a separate entry in the thread (kind `reply`
 [07:40:24] 🚀 session 3f1c9a20 started · model claude-opus-5-5
 [07:40:25] 🔧 Read  src/app.ts
 [07:40:26] 💬 <agent text>
-[07:40:26] ✅ done in 8s, $0.1429 · 🧠 context 28k / 1M (3%)
+[07:40:26] ✅ done in 8s, $0.1429
 [07:40:37] Queued thread b2c07211 (agent busy)
 ```
-
-## Context size and when to compact
-
-`🧠 context` is the token count of the coding agent's latest model call: the size of the run's own agent session, which starts fresh with the prompt.
-
-- Claude reports its window, so you get a percentage.
-- OpenCode shows tokens only, unless you set `DT_CONTEXT_WINDOW`.
-- At **70%+** it adds `⚠️ consider /compact`.
 
 ## Which model answers
 
@@ -187,7 +179,6 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 
 | Variable | Default | Effect |
 |---|---|---|
-| `DT_CONTEXT_WINDOW` | unset (Claude auto-detects) | Context window in tokens, for the % when the tool doesn't report it. E.g. `export DT_CONTEXT_WINDOW=200000` for OpenCode |
 | `DT_OPEN` | `browser` | Where the review opens: `browser`, `herdr` or `both`. `--open` overrides it for one run. See [Review in Herdr](#review-in-herdr-optional) |
 | `DT_HERDR` | unset (`herdr-app` on `PATH`) | Path to the Herdr app's binary, for `DT_OPEN=herdr` when `herdr-app` isn't on `PATH` |
 
@@ -195,7 +186,6 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 
 | Name | File | Default | Effect |
 |---|---|---|---|
-| `COMPACT_WARN_PCT` | `lib/difftate/core/dispatch/model.py` | `70` | % of context window that triggers `⚠️ consider /compact` |
 | `MAX_STEPS_SHOWN` | `lib/difftate/core/dispatch/model.py` | `8` | Checklist steps shown; older ones collapse to "…N earlier steps" |
 | `REFRESH_S` | `lib/difftate/core/dispatch/model.py` | `3` | Seconds between progress note refreshes while the coding agent is quiet |
 | `TEXT_MAX` | `lib/difftate/adapters/outbound/terminal/__init__.py` | `300` | Max characters of coding agent text per terminal line |
