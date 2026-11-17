@@ -83,5 +83,11 @@ export class ReviewApi {
 
   async setViewed(file, viewed) { return new Set((await this.call("PUT", "/api/viewed", { file, viewed })).files); }
 
+  // Whether the review is Done: {done, commit, time, head, lastMark: {kind, time, commit}, openThreads, runsInFlight}
+  done() { return this.call("GET", "/api/done"); }
+
+  // Mark the review Done at the commit its branch is at, or undo it (the reviewer's own action)
+  setDone(done) { return this.call("PUT", "/api/done", { done }); }
+
   setStatus(threadId, status) { return this.call("PATCH", `/api/threads/${encodeURIComponent(threadId)}/status`, { status }); }
 }

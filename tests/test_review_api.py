@@ -419,6 +419,125 @@ class TheReviewApiOnFakes(ServedOnFakes, unittest.TestCase):
         self.assertEqual([c.seq for c in thread.thread.comments], list(range(1, 10)), "each its own place")
 
 
+class TheDoneRoutes(ServedOnFakes, unittest.TestCase):
+    """GET and PUT /api/done: whether the review is Done, and the reviewer's mark."""
+
+    def serve(self, code=None, **kwargs):
+        self.code = code or FakeCode({"app.py": "x = 1\n"}, commit="commit-1")
+        super().serve(code=self.code, **kwargs)
+
+    def test_a_review_nobody_marked_is_not_done(self):
+        self.serve()
+
+        self.assertEqual(self.ask("GET", "/api/done"), (200, {
+            "done": False, "time": None, "commit": None, "lastMark": None, "head": "commit-1",
+            "openThreads": 0, "runsInFlight": 0}))
+
+    def test_the_reviewer_marks_it_done_at_the_head_commit_and_the_answer_says_so(self):
+        self.serve()
+
+        status, answer = self.ask("PUT", "/api/done", {"done": True})
+
+        self.assertEqual(status, 200)
+        mark = {"kind": "done", "time": answer["time"], "commit": "commit-1"}
+        self.assertRegex(answer["time"], r"^\d{4}-\d{2}-\d{2}T")
+        self.assertEqual(answer, {"done": True, "time": answer["time"], "commit": "commit-1", "lastMark": mark,
+                                  "head": "commit-1", "openThreads": 0, "runsInFlight": 0})
+        self.assertEqual(self.ask("GET", "/api/done"), (200, answer))
+
+    def test_it_counts_the_open_threads_and_those_with_a_run_in_flight(self):
+        self.serve()
+        first = self.ask("POST", "/api/threads", {"body": "Is this ready?"})[1]["id"]
+        self.ask("POST", "/api/threads", {"body": "And this?"})
+        self.review.start_run([t.thread for t in self.review.list_threads() if t.thread.id == first])
+
+        answer = self.ask("GET", "/api/done")[1]
+
+        self.assertEqual((answer["openThreads"], answer["runsInFlight"]), (2, 2))
+
+    def test_the_reviewer_undoes_it(self):
+        self.serve()
+        self.ask("PUT", "/api/done", {"done": True})
+
+        status, answer = self.ask("PUT", "/api/done", {"done": False})
+
+        self.assertEqual((status, answer["done"], answer["commit"], answer["lastMark"]["kind"]),
+                         (200, False, None, "undone"))
+
+    def test_a_new_commit_clears_it(self):
+        self.serve()
+        self.ask("PUT", "/api/done", {"done": True})
+        self.code.commit = "commit-2"
+
+        answer = self.ask("GET", "/api/done")[1]
+
+        self.assertEqual((answer["done"], answer["head"], answer["lastMark"]["kind"], answer["lastMark"]["commit"]),
+                         (False, "commit-2", "cleared", "commit-2"))
+
+    def test_a_new_thread_does_not_clear_it(self):
+        self.serve()
+        self.ask("PUT", "/api/done", {"done": True})
+
+        self.ask("POST", "/api/threads", {"body": "One more thing"})
+
+        answer = self.ask("GET", "/api/done")[1]
+        self.assertEqual((answer["done"], answer["openThreads"]), (True, 1))
+
+    def test_only_a_reviewer_marks_or_undoes_it(self):
+        self.serve()
+
+        for author in ("agent", "difftate"):
+            with self.subTest(author=author):
+                status, answer = self.ask("PUT", "/api/done", {"done": True, "author": author})
+                self.assertEqual((status, set(answer)), (403, {"error"}))
+        self.assertFalse(self.ask("GET", "/api/done")[1]["done"])
+        self.ask("PUT", "/api/done", {"done": True})
+        self.assertEqual(self.ask("PUT", "/api/done", {"done": False, "author": "agent"})[0], 403)
+        self.assertTrue(self.ask("GET", "/api/done")[1]["done"])
+
+    def test_a_request_that_does_not_say_done_or_not_is_400(self):
+        self.serve()
+
+        for payload in (None, {}, {"done": "yes"}, {"done": 1}, [True]):
+            with self.subTest(payload=payload):
+                status, answer = self.ask("PUT", "/api/done", payload)
+                self.assertEqual((status, set(answer)), (400, {"error"}))
+        self.assertFalse(self.ask("GET", "/api/done")[1]["done"])
+
+    def test_while_another_branch_is_checked_out_marking_it_is_409(self):
+        self.serve()
+        self.code.checked_out = False
+
+        status, answer = self.ask("PUT", "/api/done", {"done": True})
+
+        self.assertEqual((status, set(answer)), (409, {"error"}))
+
+    def test_a_branch_the_repository_does_not_have_cannot_be_marked(self):
+        self.serve()
+        self.code.commit = None
+
+        status, answer = self.ask("PUT", "/api/done", {"done": True})
+
+        self.assertEqual((status, set(answer)), (502, {"error"}))
+
+    def test_a_mark_the_store_cannot_keep_is_502(self):
+        self.serve(store=StoreThatCannotWrite())
+
+        status, answer = self.ask("PUT", "/api/done", {"done": True})
+
+        self.assertEqual((status, answer), (502, {"error": "could not write the review"}))
+        self.assertFalse(self.ask("GET", "/api/done")[1]["done"])
+
+    def test_the_watcher_records_the_clearing_a_new_commit_makes(self):
+        self.serve()
+        self.ask("PUT", "/api/done", {"done": True})
+        self.code.commit = "commit-2"
+
+        self.review.clear_done()
+
+        self.assertEqual(self.ask("GET", "/api/done")[1]["lastMark"]["kind"], "cleared")
+
+
 class TheReviewerName(ServedOnFakes, unittest.TestCase):
     """The reviewer name the review API takes ("reviewer"), and gives back on
     each comment ("by") and on a thread's last status change ("statusBy")."""

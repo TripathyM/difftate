@@ -15,7 +15,7 @@ The part of a review's changes that the reviewer looks at: all of them, one comm
 _Avoid_: range, filter, review (a view is not a separate review)
 
 **Review history**:
-The record of every thread, comment and reply from every review on this machine. It is never deleted, and outlives the repositories it came from.
+The record of every thread, comment and reply, and every Done mark, from every review on this machine. It is never deleted, and outlives the repositories it came from.
 _Avoid_: log, archive
 
 **Outdated**:
@@ -24,6 +24,10 @@ A thread whose anchored code changed after the thread was written. It stays in t
 **Viewed file**:
 A file of the changeset that the reviewer marked as read. It stays viewed in every view, across reloads and commits, until the file's diff changes; then the mark is cleared.
 _Avoid_: seen, reviewed, read
+
+**Done**:
+A reviewer has finished a review at one commit, whether they went through the code or skipped it. A new commit on the branch, or the reviewer undoing it, makes the review not done again. Only a reviewer marks it.
+_Avoid_: approved (it gates nothing), finished, closed, reviewed
 
 **Thread**:
 A conversation about one anchor, or about the changeset as a whole (a general thread).

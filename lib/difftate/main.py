@@ -16,7 +16,8 @@ from .adapters.outbound import git
 from .adapters.outbound.coding_agents import ClaudeCode, OffLimits, OpenCode, find_command
 from .adapters.outbound.git import GitCodeReader
 from .adapters.outbound.history_files import HistoryFiles
-from .adapters.outbound.local_store import LocalStore
+from .adapters.outbound.local_store import LocalStore, review_id
+from .adapters.outbound.memory_store import MemoryStore
 from .adapters.outbound.terminal import Terminal
 from .core.changes.use_cases.changeset import changeset
 from .core.changes.use_cases.checked_out import checked_out
@@ -25,8 +26,9 @@ from .core.dispatch.model import Dispatch
 from .core.dispatch.use_cases.poll import poll
 from .core.dispatch.use_cases.recover_runs import recover_runs as recover_interrupted_runs
 from .core.dispatch.use_cases.stop_run import stop_run
-from .core.review.model import NotesInProgress
+from .core.review.model import NotesInProgress, NotFound
 from .core.review.use_cases.add_comment import add_comment
+from .core.review.use_cases.clear_done import clear_done
 from .core.review.use_cases.edit_note import edit_note
 from .core.review.use_cases.end_run import end_run
 from .core.review.use_cases.list_threads import list_threads
@@ -34,7 +36,9 @@ from .core.review.use_cases.list_viewed import list_viewed
 from .core.review.use_cases.mark_viewed import mark_viewed
 from .core.review.use_cases.move_with_code import move_with_code
 from .core.review.use_cases.open_thread import open_thread
+from .core.review.use_cases.read_done import read_done
 from .core.review.use_cases.recover_runs import recover_runs
+from .core.review.use_cases.set_done import set_done
 from .core.review.use_cases.set_status import set_status
 from .core.review.use_cases.start_run import start_run
 
@@ -83,10 +87,13 @@ def bind_review(store, code, history, about):
         set_status=one_at_a_time(set_status, store, notes, history),
         mark_viewed=one_at_a_time(mark_viewed, store, code, history),
         list_viewed=one_at_a_time(list_viewed, store, code, history),
+        set_done=one_at_a_time(set_done, store, code, history),
+        read_done=functools.partial(read_done, store, code),
         changeset=functools.partial(changeset, code),
         checked_out=functools.partial(checked_out, code),
         # For running the loop (Dispatch)
         move_with_code=one_at_a_time(move_with_code, store, code, history),
+        clear_done=one_at_a_time(clear_done, store, code, history),
         commit_messages=functools.partial(commit_messages, code),
         start_run=one_at_a_time(start_run, store, notes, history),
         end_run=one_at_a_time(end_run, store, notes, history),
@@ -148,6 +155,16 @@ def loop(review, coding_agent):
     )
 
 
+def done_status(folder, cwd, branch, base):
+    """Whether the review of <branch> against <base> kept in <folder> is Done.
+    It starts no review and writes nothing: a watcher may be keeping it."""
+    store = STORE.find(folder, branch, base)
+    code = CODE_READER(cwd, base, branch, review_id(branch, base))
+    if store is None and code.head_commit() is None:
+        raise NotFound(f"no branch '{branch}' in this repository, and no review of it")
+    return read_done(store or MemoryStore(), code)
+
+
 def wiring():
     return cli.Wiring(
         coding_agents=list(CODING_AGENTS),
@@ -162,9 +179,14 @@ def wiring():
         open_review=open_review,
         review_api=review_api,
         loop=loop,
+        done_status=done_status,
     )
 
 
 def main(argv):
+    """difftate-watch.py: `status` reads a review's Done state; anything else
+    starts the watcher."""
+    if argv[:1] == ["status"]:
+        return cli.run_status(argv[1:], wiring())
     return cli.run(argv, wiring())
 

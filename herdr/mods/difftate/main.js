@@ -16,6 +16,7 @@ import { findApi } from "./api.js";
 import { tokenize, langOf } from "./syntax.js";
 import { Editing } from "./edit.js";
 import { isGeneral, threadPlace, openThreads, pickerThreads, stepThread } from "./threads.js";
+import { doneLabel, doneQuestion } from "./done.js";
 
 const MOD = "difftate";
 const SEP = "\u0001";
@@ -151,6 +152,7 @@ export default class Review extends View {
     this.files = [];
     this.threads = [];
     this.viewed = new Set(); // paths of the files marked viewed (the watcher clears a mark when the file's diff changes)
+    this.doneState = null; // whether the review is Done (GET /api/done); a new commit on the branch clears it
     this.reviewView = ""; // the review's view (all changes, commits, staged…); this.view is the file shown
     this.view = null;
     this.jumps = [];
@@ -240,11 +242,12 @@ export default class Review extends View {
     await this.loadReview();
   }
 
-  // The changeset, the threads and the viewed files
+  // The changeset, the threads, the viewed files and whether the review is Done
   async loadReview() {
     await this.loadDiff();
     await this.loadThreads();
     await this.loadViewed();
+    await this.loadDone();
   }
 
   async loadDiff() {
@@ -291,6 +294,46 @@ export default class Review extends View {
     return true;
   }
 
+  // True when whether the review is Done changed (a watcher that has no /api/done shows nothing)
+  async loadDone() {
+    if (!this.api) return false;
+    const s = await this.api.done().catch(() => null);
+    if (!s) return false;
+    const sig = JSON.stringify([s.done, s.commit, s.head, s.lastMark?.kind]);
+    if (sig === this.doneSig) return false;
+    this.doneSig = sig;
+    this.doneState = s;
+    return true;
+  }
+
+  // Done: mark the review Done at the commit it is at, or undo it. Open threads, and runs still
+  // working, are warned about first: Enter marks it anyway, Esc leaves it.
+  toggleDone(cx) {
+    if (!this.api) { this.msg = "Start difftate (or dto) in this repo to mark the review Done."; return; }
+    cx.spawn(async (cx) => {
+      try {
+        const now = await this.api.done();
+        this.doneState = now;
+        if (now.done) {
+          this.doneState = await this.api.setDone(false);
+          this.doneSig = null; // the next poll reads it again, whoever changes it
+          this.msg = "Done undone";
+        } else if (doneQuestion(now)) {
+          this.openPrompt({ kind: "done", label: doneQuestion(now) });
+        } else {
+          await this.markDone();
+        }
+      } catch (e) { this.msg = String(e.message ?? e); }
+      cx.notify();
+    });
+  }
+
+  async markDone() {
+    this.doneState = await this.api.setDone(true);
+    this.doneSig = null;
+    this.msg = `${doneLabel(this.doneState)}. A new commit clears it.`;
+  }
+
   toggleViewed(cx) {
     const path = this.view?.path;
     if (!this.api || !path || !this.fileOf(path)) { this.msg = "Open a changed file to mark it viewed"; return; }
@@ -332,6 +375,7 @@ export default class Review extends View {
         }
         if (await this.loadThreads()) cx.notify();
         if (await this.loadViewed()) cx.notify();
+        if (await this.loadDone()) cx.notify();
       } catch (e) {
         this.msg = String(e);
       } finally {
@@ -700,6 +744,7 @@ export default class Review extends View {
       reply: () => this.startReply(),
       resolve: () => this.setThreadStatus("resolved", cx), reopen: () => this.setThreadStatus("open", cx),
       toggle_viewed: () => this.toggleViewed(cx),
+      toggle_done: () => this.toggleDone(cx),
       goto_definition: () => this.gotoDefinition(cx), references: () => this.references(cx),
       jump_back: () => this.jump(-1, cx), jump_forward: () => this.jump(1, cx),
       find_files: () => this.findFiles(cx), changed_files: () => this.changedFiles(), threads: () => this.threadPicker(), views: () => this.viewPicker(cx),
@@ -954,6 +999,14 @@ export default class Review extends View {
     const text = p.kind === "comment" || p.kind === "reply" ? typed.replace(/\\n/g, "\n") : typed;
     if (p.kind === "search") { this.search = text; this.searchStep(1, cx); cx.notify(); return; }
     if (p.kind === "cmd") { this.runCommand(text, cx); cx.notify(); return; }
+    if (p.kind === "done") {
+      cx.spawn(async (cx) => {
+        try { await this.markDone(); } catch (e) { this.msg = String(e.message ?? e); }
+        cx.notify();
+      });
+      cx.notify();
+      return;
+    }
     if (!text.trim()) { cx.notify(); return; }
     cx.spawn(async (cx) => {
       try {
@@ -1310,6 +1363,7 @@ export default class Review extends View {
       .child(div().text_color(t.dim).child(this.api && this.base ? `${viewLabel(this.reviewView)} · against ${this.base}` : ""))
       .child(div().flex_1())
       .when(open.length > 0, (el) => el.child(div().text_color(t.muted).child(`${open.length} open thread${open.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} with the agent` : ""}`)))
+      .when(Boolean(this.api && doneLabel(this.doneState)), (el) => el.child(div().text_color(t.ansi2).font_semibold().child(`✓ ${doneLabel(this.doneState)}`)))
       .child(h_flex().gap(6).items_center()
         .child(div().size(7).rounded(4).bg(this.api ? t.done : t.dim))
         .child(div().text_color(t.dim).child(this.api ? `review API :${this.api.port}` : "not connected")))
@@ -1331,9 +1385,9 @@ export default class Review extends View {
 
     const promptBar = this.prompt
       ? h_flex().flex_none().px(12).py(8).gap(10).items_center().bg(t.chrome).border_t(1).border_color(t.border)
-        .child(div().flex_none().max_w(360).truncate().text_size(12).text_color(this.prompt.kind === "search" ? t.foreground : t.accent).child(this.prompt.label))
+        .child(div().flex_none().max_w(this.prompt.kind === "done" ? 640 : 360).truncate().text_size(12).text_color(this.prompt.kind === "search" ? t.foreground : t.accent).child(this.prompt.label))
         .child(Input.new(this.input).flex_1().h(32).px(10).rounded(7).border_1().border_color(t.accent).bg(t.background).text_size(12.8).text_color(t.foreground))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child(this.prompt.kind === "search" || this.prompt.kind === "cmd" ? "Enter · Esc" : "Enter sends · \\n new line · Esc"))
+        .child(div().flex_none().text_size(11).text_color(t.dim).child(this.prompt.kind === "search" || this.prompt.kind === "cmd" ? "Enter · Esc" : this.prompt.kind === "done" ? "Enter marks Done · Esc" : "Enter sends · \\n new line · Esc"))
       : null;
 
     const statusBar = h_flex().h(26).flex_none().px(10).gap(10).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(11.5)

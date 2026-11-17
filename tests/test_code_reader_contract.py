@@ -159,6 +159,23 @@ class CodeReaderContract:
         self.assertFalse(self.code.on_branch())
         self.assertEqual(self.code.checked_out_branch(), "other")
 
+    def test_the_head_commit_is_the_one_the_reviews_branch_is_at_and_a_commit_moves_it(self):
+        first = self.code.head_commit()
+        self.assertTrue(first)
+
+        self.commit("a new commit")
+
+        second = self.code.head_commit()
+        self.assertTrue(second)
+        self.assertNotEqual(second, first)
+
+    def test_the_head_commit_is_the_reviews_branchs_while_another_branch_is_checked_out(self):
+        head = self.code.head_commit()
+
+        self.check_out_another_branch()
+
+        self.assertEqual(self.code.head_commit(), head)
+
     # ── The changeset and its diff hashes ────────────────────────────────────
     def test_the_changeset_has_each_changed_file(self):
         changeset = self.code.changeset("")
@@ -288,6 +305,29 @@ class InAGitRepository:
 
 
 class TheGitAdapter(InAGitRepository, CodeReaderContract, unittest.TestCase):
+    def test_the_head_commit_is_the_branchs_commit_even_when_another_branch_has_moved_on(self):
+        self.commit("on feature")
+        feature = self.output("rev-parse", "feature")
+        self.check_out_another_branch()
+        self.write("other.py", "x = 1\n")
+        self.commit("on other")
+
+        self.assertEqual(self.code.head_commit(), feature)
+        self.assertNotEqual(self.code.head_commit(), self.output("rev-parse", "HEAD"))
+
+    def test_a_branch_the_repository_does_not_have_has_no_head_commit(self):
+        gone = GitCodeReader(self.repo, "main", "merged-and-deleted", REVIEW)
+
+        self.assertIsNone(gone.head_commit())
+
+    def test_a_review_of_a_commit_on_the_base_branch_is_at_that_commit(self):
+        self.commit()
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "--ff-only", "feature")
+        head = self.output("rev-parse", "HEAD")
+
+        self.assertEqual(GitCodeReader(self.repo, "main", head, REVIEW).head_commit(), head)
+
     def test_a_review_on_the_base_branch_itself_has_no_commit_messages(self):
         self.commit()
         self.git("checkout", "-q", "main")

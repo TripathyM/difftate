@@ -237,6 +237,15 @@ class GitCodeReader:
     def checked_out_branch(self) -> Optional[str]:
         return repository.review_branch(self.cwd, self.base)
 
+    def head_commit(self) -> Optional[str]:
+        # The branch's own commit, not HEAD's: the same while another branch is checked out. A review
+        # of the base branch itself has a commit for its branch (review_branch)
+        for name in (f"refs/heads/{self.branch}", self.branch):
+            code, out = self._run("rev-parse", "--verify", "--quiet", f"{name}^{{commit}}")
+            if code == 0 and out.strip():
+                return out.strip()
+        return None
+
     # ── The review's commits ─────────────────────────────────────────────────
     def commit_messages(self) -> List[str]:
         # The branch's commits, not HEAD's: the same while another branch is checked out

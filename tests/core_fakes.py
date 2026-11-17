@@ -26,6 +26,9 @@ class FakeCode:
     changes. A file's id is made from its name and text, so a file that is its
     snapshot has the snapshot's id.
 
+    <commit> is the commit the review's branch is at (None: the repository has
+    no such branch, as after a merge and a delete).
+
     <diff_hashes> are each file's diff hash in the changeset (default: made
     from each file that differs from the base). <on_branch> is whether the
     review's branch is checked out ("other" is, when it isn't). <messages>
@@ -97,6 +100,9 @@ class FakeCode:
     def checked_out_branch(self):
         return "feature" if self.checked_out else "other"
 
+    def head_commit(self):
+        return self.commit
+
     def commit_messages(self):
         return list(self.messages)
 
@@ -156,6 +162,9 @@ class UnreadableCode:
         return True
 
     def checked_out_branch(self):
+        return None
+
+    def head_commit(self):
         return None
 
     def commit_messages(self):

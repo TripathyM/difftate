@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from ....core.changes.model import Changeset
-from ....core.review.model import AUTHOR_OF, NOTE_KINDS, Anchor, Comment, ListedThread
+from ....core.review.model import AUTHOR_OF, NOTE_KINDS, Anchor, Comment, DoneMark, DoneStatus, ListedThread
 
 KINDS = tuple(AUTHOR_OF)  # comment, reply, queued, progress
 THREAD_STATUSES = ("open", "resolved", "dismissed")
@@ -134,3 +134,18 @@ def changeset_json(changeset: Changeset) -> Dict[str, Any]:
     as its anchor's "version"."""
     return {"view": changeset.view, "base": changeset.base, "commit": changeset.commit, "diff": changeset.diff,
             "versions": {f: {"old": v.old, "new": v.new} for f, v in changeset.versions.items()}}
+
+
+def done_mark_json(mark: Optional[DoneMark]) -> Optional[Dict[str, Any]]:
+    return None if mark is None else {"kind": mark.kind, "time": mark.time, "commit": mark.commit}
+
+
+def done_json(status: DoneStatus) -> Dict[str, Any]:
+    """Whether the review is Done: "time" and "commit" are the mark that made
+    it Done (null when it isn't), "lastMark" the last mark of any kind (done,
+    undone, or cleared by a commit: then with the new commit), "head" the
+    commit the branch is at now, and the threads still open, and how many of
+    them have a run queued or working."""
+    return {"done": status.done, "time": status.mark.time if status.mark else None,
+            "commit": status.mark.commit if status.mark else None, "lastMark": done_mark_json(status.last_mark),
+            "head": status.head, "openThreads": status.open_threads, "runsInFlight": status.in_flight}

@@ -6,7 +6,7 @@ rules and returns events: facts in the past tense. apply() is the only place
 the Review's state changes, so a Review rebuilt from its events is the same
 Review. There is one event type for each line type the local store keeps
 ("opened", "comment", "note", "status", "moved", "outdated", "run",
-"run-ended", "viewed").
+"run-ended", "viewed", "done", "undone", "done-cleared").
 
 The rules:
   1. Only a reviewer opens a thread or changes its thread status, and only
@@ -15,6 +15,9 @@ The rules:
   3. Only difftate writes notes, and only notes can be edited. A final note
      doesn't change again.
   4. One rule gives the thread state (Review.state).
+  5. Only a reviewer marks the review Done or undoes it. It is Done at one
+     commit: a new commit on the branch clears it, and a thread, a comment or
+     a status change doesn't.
 A thread moves with its code, or is outdated, only as difftate finds it
 (move_with_code). A file stays viewed until its diff in the changeset
 changes. While another branch is checked out, nothing that reads the code
@@ -154,6 +157,36 @@ class Run:
     outcome: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class DoneMark:
+    """One mark in the review's Done history: <kind> is "done" (a reviewer
+    marked it at <commit>), "undone" (a reviewer undid it; <commit> is the one
+    it was Done at) or "cleared" (a new commit, <commit>, cleared it)."""
+    kind: str
+    time: str
+    commit: str
+
+
+@dataclass(frozen=True)
+class DoneStatus:
+    """Whether the review is Done now, for a viewer or a script.
+
+    done          Done at the head commit, with <mark> (kind "done") saying when and where
+    last_mark     the last mark: done, undone, or cleared by a commit (None for none ever).
+                  A review Done at an older commit than <head> is not done: its last mark
+                  is then the clearing by <head>, whether or not it has been kept yet
+    head          the commit the review's branch is at now (None: the repository has no such branch)
+    open_threads  how many threads are open
+    in_flight     how many of them have a run queued or working
+    """
+    done: bool
+    mark: Optional[DoneMark]
+    last_mark: Optional[DoneMark]
+    head: Optional[str]
+    open_threads: int
+    in_flight: int
+
+
 # ── Events ───────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class ThreadOpened:
@@ -236,8 +269,30 @@ class FileViewed:
     time: str
 
 
+@dataclass(frozen=True)
+class DoneMarked:
+    """A reviewer marked the review Done at <commit> (the "done" line)."""
+    commit: str
+    time: str
+
+
+@dataclass(frozen=True)
+class DoneUndone:
+    """A reviewer undid Done, which it was at <commit> (the "undone" line)."""
+    commit: str
+    time: str
+
+
+@dataclass(frozen=True)
+class DoneCleared:
+    """The branch got a new commit, <commit>: the review is no longer Done
+    (the "done-cleared" line)."""
+    commit: str
+    time: str
+
+
 Event = Union[ThreadOpened, CommentAdded, NoteWritten, ThreadStatusChanged, ThreadMoved, ThreadOutdated,
-              RunStarted, RunEnded, FileViewed]
+              RunStarted, RunEnded, FileViewed, DoneMarked, DoneUndone, DoneCleared]
 
 
 def lasting(events: List[Event]) -> List[Event]:
@@ -292,6 +347,8 @@ class Review:
         self._runs: Dict[str, Run] = {}  # id: run, in the order they started
         self._viewed: Dict[str, str] = {}  # file: the hash of its diff when the reviewer marked it viewed
         self._snapshots: Set[str] = set()  # the id of every snapshot a thread had
+        self._done: Optional[DoneMark] = None  # the mark that made the review Done, while it is
+        self._last_mark: Optional[DoneMark] = None  # the last Done mark of any kind
 
     @classmethod
     def from_events(cls, events: List[Event]) -> Review:
@@ -499,6 +556,70 @@ class Review:
             self.apply(event)
         return events
 
+    # ── Done ─────────────────────────────────────────────────────────────────
+    def done(self) -> Optional[DoneMark]:
+        """The mark that made the review Done (kind "done"), or None when it
+        isn't, as the events left it: a new commit clears it only once
+        clear_done says so."""
+        return self._done
+
+    def last_done_mark(self) -> Optional[DoneMark]:
+        """The last mark of any kind: done, undone or cleared."""
+        return self._last_mark
+
+    def clear_done(self, head: Optional[str]) -> List[Event]:
+        """Rule 5: the branch is at <head> now. A review Done at another commit
+        is cleared by it. None for <head> (the branch is gone, after a merge
+        and a delete) clears nothing."""
+        if self._done is None or head is None or head == self._done.commit:
+            return []
+        event = DoneCleared(head, _now())
+        self.apply(event)
+        return [event]
+
+    def mark_done(self, author: str, head: Optional[str], on_branch: bool = True) -> List[Event]:
+        """<author> marks the review Done at <head>, the commit the branch is
+        at. Rule 5: only a reviewer does. A review already Done at <head> is
+        left as it is; one Done at an older commit is cleared first. Raises
+        Conflict while another branch is checked out (_need_branch), and
+        CouldNotRead with no <head>: there is no commit to be Done at."""
+        if author != REVIEWER:
+            raise NotAllowed("only a reviewer marks a review Done")
+        _need_branch(on_branch)
+        if head is None:
+            raise CouldNotRead("could not read the commit the review's branch is at")
+        events = self.clear_done(head)
+        if self._done is None:
+            event = DoneMarked(head, _now())
+            self.apply(event)
+            events.append(event)
+        return events
+
+    def undo_done(self, author: str, head: Optional[str]) -> List[Event]:
+        """<author> undoes Done. Rule 5: only a reviewer does. Done at an
+        older commit than <head> was cleared by it already: that is recorded,
+        not an undo. Nothing when the review isn't Done."""
+        if author != REVIEWER:
+            raise NotAllowed("only a reviewer undoes Done")
+        events = self.clear_done(head)
+        if self._done is not None:
+            event = DoneUndone(self._done.commit, _now())
+            self.apply(event)
+            events.append(event)
+        return events
+
+    def done_status(self, head: Optional[str]) -> DoneStatus:
+        """Whether the review is Done with the branch at <head>, and the
+        threads still open. A review Done at another commit is not: it shows
+        the clearing a new commit makes, as clear_done would keep it, and
+        changes nothing."""
+        done, last = self._done, self._last_mark
+        if done is not None and head is not None and head != done.commit:
+            done, last = None, DoneMark("cleared", _now(), head)
+        open_threads = self.threads("open")
+        in_flight = [t for t in open_threads if self.state(t.id) in ("queued", "working")]
+        return DoneStatus(done is not None, done, last, head, len(open_threads), len(in_flight))
+
     # ── Runs (Dispatch) ──────────────────────────────────────────────────────
     def start_run(self, thread_ids: List[str], in_prompt: Optional[Collection[str]] = None) -> List[Event]:
         """A run starts on the threads: every reviewer comment in them that no
@@ -567,3 +688,7 @@ class Review:
                 self._viewed.pop(event.file, None)
             else:
                 self._viewed[event.file] = event.diff_hash
+        elif isinstance(event, (DoneMarked, DoneUndone, DoneCleared)):
+            kind = {DoneMarked: "done", DoneUndone: "undone", DoneCleared: "cleared"}[type(event)]
+            self._last_mark = DoneMark(kind, event.time, event.commit)
+            self._done = self._last_mark if kind == "done" else None

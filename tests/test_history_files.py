@@ -22,7 +22,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from difftate.adapters.outbound.history_files import HistoryFiles  # noqa: E402
 from difftate.adapters.outbound.local_store.lines import read_events  # noqa: E402
-from difftate.core.review.model import Comment, CommentAdded, ThreadOpened, ThreadStatusChanged  # noqa: E402
+from difftate.core.review.model import (  # noqa: E402
+    Comment, CommentAdded, DoneCleared, DoneMarked, DoneUndone, ThreadOpened, ThreadStatusChanged,
+)
 from test_core_replay import TODAYS_REVIEW  # noqa: E402
 
 ABOUT = {"repo": {"path": "/repo", "remote": "git@example.com:me/repo.git"}, "branch": "feature",
@@ -79,6 +81,18 @@ class TheReviewHistoryFiles(unittest.TestCase):
                   "time": time, "seq": 1, "type": "comment", "thread": "t1"}, **ABOUT),
             dict({"type": "status", "thread": "t1", "status": "resolved", "by": "security-bot", "time": time},
                  **ABOUT)])
+
+    def test_every_done_mark_is_a_line_with_its_time_and_commit(self):
+        folder = os.path.join(self.tmp, "history")
+        time = "2026-11-07T10:00:00.000Z"
+
+        HistoryFiles(ABOUT, folder).record([DoneMarked("a" * 40, time), DoneUndone("a" * 40, time),
+                                            DoneCleared("b" * 40, time)])
+
+        self.assertEqual([json.loads(line) for line in lines_in(folder)], [
+            dict({"type": "done", "commit": "a" * 40, "time": time}, **ABOUT),
+            dict({"type": "undone", "commit": "a" * 40, "time": time}, **ABOUT),
+            dict({"type": "done-cleared", "commit": "b" * 40, "time": time}, **ABOUT)])
 
     def test_a_history_it_cannot_write_is_a_warning_not_an_error(self):
         in_the_way = os.path.join(self.tmp, "a-file")
