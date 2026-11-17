@@ -42,9 +42,8 @@ class Terminal:
     def coding_agent_failed(self, error: str) -> None:
         self._coding_agent("❌", error)
 
-    def finished(self, ok: bool, secs: int, cost: Optional[float], context: str) -> None:
+    def finished(self, ok: bool, secs: int, cost: Optional[float]) -> None:
         extra = f", ${cost:.4f}" if isinstance(cost, (int, float)) else ""
-        extra += f" · {context}" if context else ""
         self._coding_agent("✅" if ok else "❌", f"{'done' if ok else 'failed'} in {secs}s{extra}")
 
     def output(self, line: str) -> None:

@@ -3,13 +3,12 @@ a thread of its own, and its replies come through the reply channel."""
 from __future__ import annotations
 
 import io
-import os
 import queue
 import subprocess
 import threading
 from typing import Dict, List, Sequence
 
-from ....core.dispatch.model import ContextUsed, CouldNotStart, Exited, News, Reply
+from ....core.dispatch.model import CouldNotStart, Exited, News, Reply
 from .events import ReadsEvents, read_line
 from .processes import STOP_GRACE_S, stop_tree
 from .reply_channel import RunFolder
@@ -72,13 +71,3 @@ class ProcessRun:
         self._stopped = True
         stop_tree(self.proc)
         self._reader.join(timeout=STOP_GRACE_S)
-
-
-def context_window() -> List[News]:
-    """The context window, for a coding agent that doesn't report it
-    (DT_CONTEXT_WINDOW)."""
-    try:
-        window = int(os.environ.get("DT_CONTEXT_WINDOW") or 0)
-    except ValueError:
-        window = 0
-    return [ContextUsed(window=window)] if window else []

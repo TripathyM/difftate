@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..model import (
-    NOT_FINISHED, AgentSessionStarted, ContextUsed, Dispatch, Exited, Finished, ModelChosen, Output, Reply, Said, Step,
+    NOT_FINISHED, AgentSessionStarted, Dispatch, Exited, Finished, ModelChosen, Output, Reply, Said, Step,
     Unparsed,
 )
 from ..ports import ForReporting
@@ -33,8 +33,6 @@ def read_news(dispatch: Dispatch, report: ForReporting, stopped: bool = False) -
             if news.error:
                 report.coding_agent_failed(news.error)
             finished(dispatch, report, news)
-        elif isinstance(news, ContextUsed):
-            run.progress.use(news)
         elif isinstance(news, Said):
             report.said(news.text)
         elif isinstance(news, AgentSessionStarted):
@@ -56,7 +54,7 @@ def finished(dispatch: Dispatch, report: ForReporting, news: Finished) -> None:
     note keeps the first."""
     run = dispatch.run
     assert run is not None
-    report.finished(news.ok, dispatch.secs(run.started), news.cost, run.progress.context())
+    report.finished(news.ok, dispatch.secs(run.started), news.cost)
     if run.progress.finish(news.ok, news.error):
         run.changed = True
         run.ending_secs = dispatch.secs(run.started)

@@ -33,7 +33,6 @@ WATCHER_STOPPED = " (the watcher stopped)"
 MAX_STEPS_SHOWN = 8
 STEP_MAX = 80  # characters of a step in the progress note
 REFRESH_S = 3  # edit the progress notes this often while nothing happens, so the elapsed time moves
-COMPACT_WARN_PCT = 70  # suggest /compact at or above this share of the context window
 
 
 def short(text: str, n: int) -> str:
@@ -73,14 +72,6 @@ class Step:
 
 
 @dataclass(frozen=True)
-class ContextUsed:
-    """The agent session's context: <tokens> in its latest model call, of a
-    <window>. None: not known from this news."""
-    tokens: Optional[int] = None
-    window: Optional[int] = None
-
-
-@dataclass(frozen=True)
 class Reply:
     """The coding agent's answer to a thread."""
     thread_id: str
@@ -115,7 +106,7 @@ class Exited:
     code: int
 
 
-News = Union[ModelChosen, AgentSessionStarted, Said, Step, ContextUsed, Reply, Finished, Output, Unparsed, Exited]
+News = Union[ModelChosen, AgentSessionStarted, Said, Step, Reply, Finished, Output, Unparsed, Exited]
 
 
 class CouldNotStart(Exception):
@@ -124,12 +115,6 @@ class CouldNotStart(Exception):
 
 
 # ── The progress note ────────────────────────────────────────────────────────
-def fmt_tokens(n: int) -> str:
-    if n >= 1_000_000:
-        return f"{n / 1_000_000:.1f}M".replace(".0M", "M")
-    return f"{n / 1000:.0f}k" if n >= 1000 else str(n)
-
-
 @dataclass
 class ProgressNote:
     """The progress note a run keeps on each of its threads: a live checklist
@@ -137,18 +122,10 @@ class ProgressNote:
     state: str = "thinking"  # thinking | working | done | failed
     steps: List[str] = field(default_factory=list)
     error: str = ""
-    tokens: int = 0
-    window: int = 0
 
     def step(self, label: str) -> None:
         self.steps.append(short(label, STEP_MAX))
         self.state = "working"
-
-    def use(self, context: ContextUsed) -> None:
-        if context.tokens:
-            self.tokens = context.tokens
-        if context.window:
-            self.window = context.window
 
     def finish(self, ok: bool, error: str = "") -> bool:
         """The coding agent finished. False when it had finished already: the
@@ -163,16 +140,6 @@ class ProgressNote:
     def finished(self) -> bool:
         return self.state in ("done", "failed")
 
-    def context(self) -> str:
-        """The agent session's context, as the note and the terminal show it."""
-        if not self.tokens:
-            return ""
-        if not self.window:
-            return f"🧠 context {fmt_tokens(self.tokens)}"
-        pct = 100 * self.tokens / self.window
-        warn = " ⚠️ consider /compact" if pct >= COMPACT_WARN_PCT else ""
-        return f"🧠 context {fmt_tokens(self.tokens)} / {fmt_tokens(self.window)} ({pct:.0f}%){warn}"
-
     def render(self, secs: int) -> str:
         head = {
             "thinking": f"⏳ **Thinking…** ({secs}s)",
@@ -180,11 +147,10 @@ class ProgressNote:
             "done": f"✅ **Done** in {secs}s",
             "failed": f"❌ **Failed** after {secs}s",
         }[self.state]
-        ctx = self.context()
-        lines = [head + (f" · {ctx}" if ctx else "")]
         if self.state == "done":
             # Finished: one line is enough, the coding agent's own reply has the details
-            return lines[0]
+            return head
+        lines = [head]
         hidden = len(self.steps) - MAX_STEPS_SHOWN
         if hidden > 0:
             lines.append(f"- ✅ …{hidden} earlier steps")

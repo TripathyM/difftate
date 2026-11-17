@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import List
 
-from .....core.dispatch.model import ContextUsed, Finished, News, Said, Step, short
+from .....core.dispatch.model import Finished, News, Said, Step, short
 from ..events import ERROR_MAX, describe
 
 
@@ -24,11 +24,6 @@ class OpenCodeEvents:
             found.append(Said(part["text"]))
         elif kind == "step_finish":
             self.cost += part.get("cost") or 0
-            tokens = part.get("tokens") or {}
-            cache = tokens.get("cache") or {}
-            used = sum(x or 0 for x in (tokens.get("input"), tokens.get("output"), cache.get("read"), cache.get("write")))
-            if used:
-                found.append(ContextUsed(tokens=used))
             if part.get("reason") == "stop":
                 found.append(Finished(True, self.cost))
         elif kind == "error":

@@ -21,7 +21,7 @@ from difftate.adapters.outbound.coding_agents.opencode.events import OpenCodeEve
 from difftate.adapters.outbound.coding_agents.reply_channel import RunFolder  # noqa: E402
 from difftate.adapters.outbound.coding_agents.run import ProcessRun  # noqa: E402
 from difftate.core.dispatch.model import (  # noqa: E402
-    ContextUsed, CouldNotStart, Exited, Finished, ModelChosen, Output, Reply, Said, AgentSessionStarted, Step,
+    CouldNotStart, Exited, Finished, ModelChosen, Output, Reply, Said, AgentSessionStarted, Step,
     Unparsed,
 )
 
@@ -49,12 +49,10 @@ class ReadingClaudeCodesEvents(unittest.TestCase):
 
         self.assertEqual(news, [
             AgentSessionStarted("3f1c9a20-aaaa", "claude-opus-5-5"),
-            ContextUsed(tokens=28000),
             Step("Read  src/app.ts"),
             Said("Done reading."),
             Step("Bash  " + "x" * 119 + "…"),
             Step("TodoWrite"),
-            ContextUsed(window=1_000_000),
             Finished(True, 0.1429),
         ])
 
@@ -81,7 +79,6 @@ class ReadingOpenCodesEvents(unittest.TestCase):
             Step("read  app.py"),
             Step("bash  false", failed=True),
             Said("Looking."),
-            ContextUsed(tokens=1520),
             Finished(True, 0.03),
         ])
 
