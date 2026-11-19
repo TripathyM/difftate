@@ -281,7 +281,7 @@ The watcher (Python 3.9 or later, nothing else) serves the **review API** on `12
 
 | Request | What it does |
 |---|---|
-| `GET /api/review` | Start or reuse the review of the checked-out branch: `id`, `branch` and `base` (they change when the watcher follows another branch) |
+| `GET /api/review` | Start or reuse the review of the checked-out branch: `id`, `branch` and `base` (they change when the watcher follows another branch), `mode` and `held` (as `GET /api/mode`) |
 | `GET /api/view` | The view viewers show: `view` (`""` all changes, a commit such as `HEAD~2` for the commits after it, `HEAD` uncommitted, `staged`, `unstaged`) |
 | `PUT /api/view` | Show another view: `view`, and `open` (`browser`, `herdr`, `both`) to open the viewer on it too. A second `difftate` in the repository sends this, then exits |
 | `GET /api/changeset?view=<view>` | The review's changeset in a view (default: the one viewers show), from git: `view`, `base`, `commit` (where the branch left the base), `diff` (unified, new untracked files included) |
@@ -290,8 +290,11 @@ The watcher (Python 3.9 or later, nothing else) serves the **review API** on `12
 | `POST /api/threads/<id>/comments` | Add a comment: `kind` (`comment`, the default; `reply`; `queued` or `progress` for a note), `body` |
 | `PATCH /api/notes/<id>` | Edit a note: `kind`, `body`. Anything that isn't a note gets 403; a note whose run has ended gets 409 |
 | `PATCH /api/threads/<id>/status` | Set the thread status: `open`, `resolved` or `dismissed`. Answers `id`, `status` and `statusBy` |
+| `GET /api/mode` | The review mode: `mode` (`live` or `batched`) and `held` (the ids of the held threads) |
+| `PUT /api/mode` | Change the review mode: `mode`. Answers as `GET /api/mode`, with `submitted`: the ids of the threads a change to `live` submitted (`[]` for none) |
+| `POST /api/submit` | Submit a batched review: its held threads go to the coding agent as one run (queued while a run is busy). Answers as `PUT /api/mode`; `submitted: []` when nothing was held, and no run starts |
 
-Opening a thread and setting its status take an optional `author`, which must be `reviewer`: anyone else gets 403. That enforces the review's rules for difftate's own callers; it isn't a security check (the token is).
+Opening a thread, setting its status, changing the review mode and submitting take an optional `author`, which must be `reviewer`: anyone else gets 403. That enforces the review's rules for difftate's own callers; it isn't a security check (the token is).
 
 Opening a thread, adding a comment and setting the thread status also take an optional `reviewer`: the **reviewer name**, which says which reviewer wrote the comment or changed the status (one line of text, at most 100 characters). Give each reviewing agent its own name, such as `security-bot`. Without one, the name is the repository's `git config user.name`, so your own viewers need nothing. The name is what the caller says: any token holder can give any name. Each comment comes back with its `by` (`null` for a reply, a note, or a comment written before reviewer names), and each thread with `statusBy`, the name of its last status change. The prompt shows the coding agent each comment's reviewer name, and the review history keeps it. Threads come back in difftate's own format:
 
@@ -308,11 +311,14 @@ The **thread state** of an open thread (`null` otherwise) is the one rule the wa
 
 | State | Meaning |
 |---|---|
+| `held` | The review is batched, and it has a reviewer's comment written since the last submit: it waits for you to submit |
 | `waiting` | It has a reviewer's comment that no run has been sent yet |
 | `queued` | Waiting while a run handles other threads |
 | `working` | The run in progress has it |
 | `replied` | The coding agent spoke last, and every reviewer comment was sent to a run |
 | `failed` | Its run ended with no reply to it. Its progress note says "no reply", and it isn't sent again until you comment |
+
+**Review mode.** A review is `live` until you change it: each comment is dispatched as soon as you write it. In a `batched` review, each comment you (or a reviewing agent) write makes its thread `held`, and no run starts until you submit: then every held thread goes to the coding agent in one run. Changing a batched review to live submits it; changing a live one to batched leaves a run in progress alone, and holds only the comments written after the change. A reply on a held thread makes it `replied`, so a later submit doesn't send it. The mode, each change and each submit are kept in the review, so they survive a restart, and in the review history.
 
 So a follow-up you write while the agent works on the same thread is answered in the next run ([#3](https://github.com/TripathyM/difftate/issues/3)). A comment from a separate reviewing agent (written through the review API, as a comment) counts as yours.
 
