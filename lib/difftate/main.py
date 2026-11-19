@@ -200,7 +200,6 @@ def main(argv):
     return cli.run(argv, wiring())
 
 
-
 def export_main(argv):
     """bin/dt-export: print the export of a review, asked of its watcher."""
     return cli.run_export(argv, wiring())

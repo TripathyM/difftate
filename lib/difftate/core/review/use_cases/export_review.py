@@ -22,7 +22,7 @@ INTRO = """# Review export
 
 A copy of a code review as it stands now: its commit messages, then every thread in full. The reviewer tells you what to do with it.
 
-Lines starting 'reviewer' are reviewers' comments, with the reviewer's name when it has one ('reviewer security-bot:'). Lines starting '{agent}:' are replies. A thread's heading names its thread status (open, resolved or dismissed) and, for an open one, its thread state in brackets: held, waiting, queued, working, replied or failed. A thread marked 'outdated' was written on code that changed since: its code block is the code then, not the file now."""
+Lines starting 'reviewer' are reviewers' comments, with the reviewer's name when it has one ('reviewer security-bot:'). Lines starting '{agent}:' are replies. A thread's heading names its thread status (open, resolved or dismissed) and, for an open one, its thread state in parentheses: held, waiting, queued, working, replied or failed. A thread marked 'outdated' was written on code that changed since: its code block is the code then, not the file now."""
 
 HOW_TO_REPLY = """## How to reply
 
