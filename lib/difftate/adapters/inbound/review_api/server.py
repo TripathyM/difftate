@@ -50,6 +50,11 @@ without it gets 401.
   PUT   /api/mode                       change it: {"mode", "author"?}: {"mode", "held", "submitted"
                                         (the ids of the threads a change to live submitted: [] for
                                         none)}. "author" must be "reviewer", as for Done
+  GET   /api/export[?folder=<folder>]   the review as text (text/plain), for an agent session
+                                        the reviewer starts: its commit messages, every thread in
+                                        full with its thread status and state, the threads that
+                                        need an answer, and how to reply (with --folder <folder>
+                                        in the command when one is given). It writes no event
   POST  /api/submit                     submit a batched review: {"author"?}: as PUT /api/mode, with
                                         the held threads "submitted" ([] when none was held: no
                                         run starts). They wait for one run, or queue while one is busy
@@ -161,6 +166,10 @@ PAGE_HEADERS = {
 }
 
 
+class PlainText(str):
+    """An answer that is text, not JSON (the export)."""
+
+
 def token_file(folder):
     """Where the review API keeps its token, in the watcher's <folder>."""
     return os.path.join(folder, "token")
@@ -196,9 +205,17 @@ def running_watcher(folder):
     return pid
 
 
+def _answer(response):
+    """What the review API answered: JSON, or text for a text/plain answer."""
+    data = response.read()
+    if response.headers.get_content_type() == "text/plain":
+        return data.decode("utf-8")
+    return json.loads(data or b"null")
+
+
 def ask_running_watcher(folder, method, path, payload=None):
     """Call the review API of the watcher serving from <folder>, as a viewer
-    would: (status, the JSON answer)."""
+    would: (status, the JSON answer, or the text of a text/plain one)."""
     with open(os.path.join(folder, "api.json")) as f:
         port = int(json.load(f)["port"])
     with open(os.path.join(folder, "token")) as f:
@@ -208,11 +225,11 @@ def ask_running_watcher(folder, method, path, payload=None):
                                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return r.status, json.loads(r.read() or b"null")
+            return r.status, _answer(r)
     except urllib.error.HTTPError as e:
         with e:
             try:
-                return e.code, json.loads(e.read() or b"null")
+                return e.code, _answer(e)
             except ValueError:
                 return e.code, None
 
@@ -450,6 +467,12 @@ def _handler(current, token, shown, login, default_reviewer):
         mode, author = need_mode(need(p, "mode")), fields(p).get("author", "reviewer")
         return submitted_json(current().set_mode(author, mode))
 
+    def get_export(q, p):
+        folder = (q.get("folder") or [None])[0]
+        if folder is not None and not folder.strip():
+            raise BadRequest("folder must be a path")
+        return PlainText(current().export(folder))
+
     def post_submit(q, p):
         return submitted_json(current().submit(fields(p).get("author", "reviewer")))
 
@@ -470,6 +493,7 @@ def _handler(current, token, shown, login, default_reviewer):
         ("GET", r"/api/mode", lambda q, p: mode_json(current().read_mode())),
         ("PUT", r"/api/mode", put_mode),
         ("POST", r"/api/submit", post_submit),
+        ("GET", r"/api/export", get_export),
     ]
     routes = [(m, re.compile(f"^{path}$"), fn) for m, path, fn in routes]
 
@@ -561,6 +585,8 @@ def _handler(current, token, shown, login, default_reviewer):
             except tuple(STATUS_OF) as e:
                 status = next(STATUS_OF[kind] for kind in type(e).__mro__ if kind in STATUS_OF)
                 return self._send(status, {"error": str(e)})
+            if isinstance(result, PlainText):
+                return self._send_bytes(200, "text/plain; charset=utf-8", result.encode())
             self._send(200, result)
 
         do_GET = do_POST = do_PATCH = do_PUT = _handle

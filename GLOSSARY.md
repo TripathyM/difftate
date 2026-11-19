@@ -127,7 +127,7 @@ The coding agent's conversation: during one run, which it starts fresh with the 
 _Avoid_: session (alone), conversation
 
 **Export**:
-A copy of a review for an agent session that the reviewer starts: its commit messages, every thread in full, and how to reply. It says nothing about what to do: the reviewer says that in the session. Exporting changes no thread.
+A copy of a review for an agent session that the reviewer starts: its commit messages, every thread in full with its thread status and thread state, which threads need an answer (open ones no reply answers yet), and how to reply. It says nothing about what to do: the reviewer says that in the session. Exporting changes no thread.
 _Avoid_: handoff, dump, snapshot
 
 ### Viewing

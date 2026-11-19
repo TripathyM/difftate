@@ -1,8 +1,8 @@
 """The Review's use cases: one plain function per file.
 
 For reviewing: open_thread, add_comment, edit_note, set_status, mark_viewed,
-list_threads, list_viewed, set_done, read_done, set_mode, read_mode and
-submit. For running the loop, what
+list_threads, list_viewed, set_done, read_done, set_mode, read_mode,
+submit and export_review. For running the loop, what
 Dispatch does to the review: move_with_code, clear_done, start_run, end_run
 and recover_runs.
 

@@ -29,6 +29,13 @@ DT_REPLY = os.path.join(ROOT, "bin", "dt-reply")
 REPLY_COMMAND = shlex.quote(DT_REPLY)
 
 
+def reply_command(folder=None):
+    """The command an agent session the reviewer started (outside a run) answers
+    with, ready for its shell: it finds its watcher from the folder it runs
+    in, or from <folder> when one was given (`dt-export <folder>`)."""
+    return REPLY_COMMAND if folder is None else f"{REPLY_COMMAND} --folder {shlex.quote(folder)}"
+
+
 class ReplyError(Exception):
     pass
 
