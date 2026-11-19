@@ -37,6 +37,9 @@ class Wiring:
     running_watcher(folder), ask_running_watcher(folder, method, path,
         payload): another watcher serving the review API of the checked-out
         folder whose own difftate folder is <folder>.
+    reply_in_run(run_dir, thread, body): leave a run's answer in its folder
+        <run_dir> (the reply channel); the thread's full id. Raises ReplyRefused,
+        or OSError.
     coding_agent(tool, cmd, model, cwd, folder, watcher_folder): the coding
         agent; raises the core's CouldNotStart when its command isn't found.
     base(cwd, given): the review's base; raises the core's NotFound.
@@ -57,6 +60,7 @@ class Wiring:
     difftate_folder: Callable[[str], Optional[Tuple[str, str, str]]]
     running_watcher: Callable[[str], Optional[int]]
     ask_running_watcher: Callable[..., Tuple[int, Any]]
+    reply_in_run: Callable[[str, str, str], str]
     coding_agent: Callable[..., Any]
     base: Callable[[str, str], str]
     need_view: Callable[[str, Any], str]
