@@ -320,10 +320,16 @@ class ModeChanged:
 
 @dataclass(frozen=True)
 class ReviewSubmitted:
-    """A reviewer submitted the review: its held threads wait for a run now
+    """A reviewer submitted the review: its held <threads> wait for a run now
     (the "submitted" line). A change from batched to live with threads held
     submits them first."""
+    threads: Tuple[str, ...]
     time: str
+
+
+def submitted(events: List[Event]) -> Tuple[str, ...]:
+    """The ids of the threads <events> submitted: () when they hold no submit."""
+    return next((e.threads for e in events if isinstance(e, ReviewSubmitted)), ())
 
 
 Event = Union[ThreadOpened, CommentAdded, NoteWritten, ThreadStatusChanged, ThreadMoved, ThreadOutdated,
@@ -385,8 +391,8 @@ class Review:
         self._done: Optional[DoneMark] = None  # the mark that made the review Done, while it is
         self._last_mark: Optional[DoneMark] = None  # the last Done mark of any kind
         self._mode = LIVE  # a review with no mode event is live
-        self._held: Set[str] = set()  # ids of the reviewer comments written while batched, not yet submitted
-        self._answered: Set[str] = set()  # ids of held comments a reply answered: no run is sent them
+        self._submitted_at = 0  # the last comment's place in the review at the latest submit
+        self._answered: Set[str] = set()  # ids of comments a reply on their held thread answered
 
     @classmethod
     def from_events(cls, events: List[Event]) -> Review:
@@ -424,7 +430,8 @@ class Review:
         return [t for t in self.threads("open") if t.id in thread_ids and self.state(t.id) == "failed"]
 
     def unsent(self, thread_id: str) -> List[str]:
-        """The ids of the thread's reviewer comments that no run has been sent yet."""
+        """The ids of the thread's reviewer comments that no run has been sent
+        yet, and that no reply answered while their thread was held."""
         sent = {cid for run in self._runs.values() for cid in run.sent} | self._answered
         return [c.id for c in self.thread(thread_id).comments if c.author == REVIEWER and c.id not in sent]
 
@@ -432,8 +439,9 @@ class Review:
         """Rule 4: where an open thread stands in the loop (None for a resolved
         or dismissed one).
 
-          held      it has a reviewer's comment written while the review is
-                    batched, which waits for the reviewer to submit
+          held      the review is batched, and it has a reviewer's comment that
+                    no run has been sent yet, written since the latest submit:
+                    it waits for the reviewer to submit
           waiting   it has a reviewer's comment that no run has been sent yet
           queued    waiting while a run handles other threads
           working   the run in progress has it
@@ -447,7 +455,7 @@ class Review:
         if thread.id in running:
             return "working"
         unsent = self.unsent(thread.id)
-        if self._held.intersection(unsent):
+        if self._held(thread, unsent):
             return "held"
         if unsent:
             return "queued" if running else "waiting"
@@ -457,6 +465,15 @@ class Review:
         for run in self._runs.values():
             before = run.replies_before.get(thread.id, before)
         return "replied" if _replies(thread) - set(before) else "failed"
+
+    def _held(self, thread: Thread, unsent: List[str]) -> bool:
+        """Whether the thread, with the <unsent> comments, is held: the review
+        is batched, and its newest comment no run was sent came after the
+        latest submit."""
+        if self._mode != BATCHED or not unsent:
+            return False
+        newest = next(c for c in reversed(thread.comments) if c.id == unsent[-1])
+        return newest.seq > self._submitted_at
 
     def open_thread(self, author: str, body: str, anchor: Optional[Anchor] = None,
                     snapshot: Optional[Snapshot] = None, on_branch: bool = True,
@@ -665,14 +682,17 @@ class Review:
 
     # ── Review mode ──────────────────────────────────────────────────────────
     def mode(self) -> str:
+        """The review mode: live or batched."""
         return self._mode
 
     def held(self) -> List[Thread]:
         """The held threads, oldest first."""
         return [t for t in self.threads("open") if self.state(t.id) == "held"]
 
-    def mode_status(self, submitted: Collection[str] = ()) -> ModeStatus:
-        return ModeStatus(self._mode, tuple(t.id for t in self.held()), tuple(submitted))
+    def mode_status(self, events: Optional[List[Event]] = None) -> ModeStatus:
+        """The review mode and its held threads, with the threads <events>
+        (the ones a change just returned) submitted."""
+        return ModeStatus(self._mode, tuple(t.id for t in self.held()), submitted(events or []))
 
     def submit(self, author: str) -> List[Event]:
         """<author> submits the review: its held threads wait for a run. Rule
@@ -680,21 +700,24 @@ class Review:
         with nothing to send leaves no mark."""
         if author != REVIEWER:
             raise NotAllowed("only a reviewer submits a review")
-        if not self.held():
+        held = self.held()
+        if not held:
             return []
-        event = ReviewSubmitted(_now())
+        event = ReviewSubmitted(tuple(t.id for t in held), _now())
         self.apply(event)
         return [event]
 
     def set_mode(self, author: str, mode: str) -> List[Event]:
         """<author> changes the review mode to <mode>. Rule 6: only a reviewer
-        does. A change to live submits the held threads first; a change to
-        batched leaves a run in progress alone, and holds only the comments
-        written after it. Nothing when the review is in <mode> already."""
+        does. A change to live submits the held threads first. A change to
+        batched leaves a run in progress alone, and holds every other thread
+        with a comment no run has been sent yet, until the reviewer submits.
+        Nothing when the review is in <mode> already; ValueError for a mode
+        that isn't one."""
         if author != REVIEWER:
             raise NotAllowed("only a reviewer changes the review mode")
         if mode not in MODES:
-            raise NotAllowed(f"no review mode {mode!r}: {LIVE} or {BATCHED}")
+            raise ValueError(f"no review mode {mode!r}: {LIVE} or {BATCHED}")
         if mode == self._mode:
             return []
         events = self.submit(author) if mode == LIVE else []
@@ -743,13 +766,9 @@ class Review:
                 self._snapshots.add(event.anchor.snapshot_id)
         elif isinstance(event, (CommentAdded, NoteWritten)):
             thread, comment = self._threads[event.thread_id], event.comment
-            if comment.author == REVIEWER and self._mode == BATCHED:
-                self._held.add(comment.id)
-            elif comment.kind == "reply" and self.state(thread.id) == "held":
+            if comment.kind == "reply" and self.state(thread.id) == "held":
                 # A reply on a held thread answers it: a later submit doesn't send it
-                answered = self._held.intersection(self.unsent(thread.id))
-                self._answered |= answered
-                self._held -= answered
+                self._answered.update(self.unsent(thread.id))
             # A note written again replaces itself, in its place
             others = tuple(c for c in thread.comments if c.id != comment.id)
             comments = tuple(sorted(others + (comment,), key=lambda c: c.seq))
@@ -782,8 +801,8 @@ class Review:
             self._last_mark = DoneMark(kind, event.time, event.commit)
             self._done = self._last_mark if kind == "done" else None
         elif isinstance(event, ReviewSubmitted):
-            self._held.clear()
+            self._submitted_at = self._seq
         elif isinstance(event, ModeChanged):
             self._mode = event.mode
-            if event.mode == LIVE:
-                self._held.clear()
+            if event.mode == LIVE:  # a change to live submits
+                self._submitted_at = self._seq

@@ -1519,7 +1519,7 @@ class WatcherTest(Harness, unittest.TestCase):
 class BatchedReviewTest(Harness, unittest.TestCase):
     """The review mode through a running watcher (GLOSSARY.md, Review mode)."""
 
-    def batched(self, mode="batched"):
+    def change_mode(self, mode="batched"):
         return self.api("PUT", "/api/mode", {"mode": mode})
 
     def submit(self):
@@ -1539,7 +1539,7 @@ class BatchedReviewTest(Harness, unittest.TestCase):
     def test_a_batched_review_holds_comments_and_submit_sends_them_all_in_one_run(self):
         self.release_agent()
         self.start_watcher()
-        self.batched()
+        self.change_mode()
 
         first = self.open_thread("Why an f-string here?")["id"]
         second = self.open_thread("Rename greet to welcome?", line=1)["id"]
@@ -1560,7 +1560,7 @@ class BatchedReviewTest(Harness, unittest.TestCase):
         self.start_watcher()
         tid = self.open_thread("Why an f-string here?")["id"]
         wait_for("the replied state", lambda: self.state(tid) == "replied")
-        self.batched()
+        self.change_mode()
 
         self.api("POST", f"/api/threads/{tid}/comments", {"body": "And why not str.format?"})
         self.polls()
@@ -1571,7 +1571,7 @@ class BatchedReviewTest(Harness, unittest.TestCase):
         self.start_watcher()
         busy = self.open_thread("Why an f-string here?")["id"]
         wait_for("a working progress note", lambda: self.note(busy, "progress", "Working"))
-        self.batched()
+        self.change_mode()
         tid = self.open_thread("Rename greet to welcome?", line=1)["id"]
         self.polls()
         self.assertEqual((self.state(busy), self.state(tid)), ("working", "held"),
@@ -1587,7 +1587,7 @@ class BatchedReviewTest(Harness, unittest.TestCase):
 
     def test_submit_with_nothing_held_starts_no_run_and_says_so(self):
         self.start_watcher()
-        self.batched()
+        self.change_mode()
 
         self.assertEqual(self.submit(), {"mode": "batched", "held": [], "submitted": []})
         self.polls()
@@ -1596,17 +1596,17 @@ class BatchedReviewTest(Harness, unittest.TestCase):
     def test_changing_to_live_submits_the_held_threads(self):
         self.release_agent()
         self.start_watcher()
-        self.batched()
+        self.change_mode()
         tid = self.open_thread("Why an f-string here?")["id"]
 
-        self.assertEqual(self.batched("live")["submitted"], [tid])
+        self.assertEqual(self.change_mode("live")["submitted"], [tid])
 
         wait_for("the replied state", lambda: self.state(tid) == "replied")
 
     def test_a_reply_on_a_held_thread_makes_it_replied_and_submit_does_not_send_it(self):
         self.release_agent()
         self.start_watcher()
-        self.batched()
+        self.change_mode()
         answered = self.open_thread("Why an f-string here?")["id"]
         other = self.open_thread("Rename greet to welcome?", line=1)["id"]
 
@@ -1622,7 +1622,7 @@ class BatchedReviewTest(Harness, unittest.TestCase):
     def test_the_mode_and_held_threads_survive_a_restart(self):
         self.release_agent()
         self.start_watcher()
-        self.batched()
+        self.change_mode()
         tid = self.open_thread("Why an f-string here?")["id"]
 
         self.stop_watcher()

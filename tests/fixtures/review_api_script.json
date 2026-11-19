@@ -5020,7 +5020,15 @@
   "status": 200,
   "answer": {
    "mode": "batched",
-   "held": [],
+   "held": [
+    "<id-5>",
+    "<id-7>",
+    "<id-9>",
+    "<id-11>",
+    "<id-13>",
+    "<id-20>",
+    "<id-22>"
+   ],
    "submitted": []
   }
  },
@@ -5087,6 +5095,13 @@
    "mode": "batched",
    "held": [
     "<id-1>",
+    "<id-5>",
+    "<id-7>",
+    "<id-9>",
+    "<id-11>",
+    "<id-13>",
+    "<id-20>",
+    "<id-22>",
     "<id-24>"
    ]
   }
@@ -5183,7 +5198,7 @@
       "time": "<time>"
      }
     ],
-    "state": "waiting"
+    "state": "held"
    },
    {
     "id": "<id-7>",
@@ -5210,7 +5225,7 @@
       "time": "<time>"
      }
     ],
-    "state": "waiting"
+    "state": "held"
    },
    {
     "id": "<id-9>",
@@ -5245,7 +5260,7 @@
       "time": "<time>"
      }
     ],
-    "state": "waiting"
+    "state": "held"
    },
    {
     "id": "<id-11>",
@@ -5272,7 +5287,7 @@
       "time": "<time>"
      }
     ],
-    "state": "waiting"
+    "state": "held"
    },
    {
     "id": "<id-13>",
@@ -5299,7 +5314,7 @@
       "time": "<time>"
      }
     ],
-    "state": "waiting"
+    "state": "held"
    },
    {
     "id": "<id-20>",
@@ -5317,7 +5332,7 @@
       "time": "<time>"
      }
     ],
-    "state": "waiting"
+    "state": "held"
    },
    {
     "id": "<id-22>",
@@ -5344,7 +5359,7 @@
       "time": "<time>"
      }
     ],
-    "state": "waiting"
+    "state": "held"
    },
    {
     "id": "<id-24>",
@@ -5429,6 +5444,13 @@
    "held": [],
    "submitted": [
     "<id-1>",
+    "<id-5>",
+    "<id-7>",
+    "<id-9>",
+    "<id-11>",
+    "<id-13>",
+    "<id-20>",
+    "<id-22>",
     "<id-24>"
    ]
   }

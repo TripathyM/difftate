@@ -311,14 +311,14 @@ The **thread state** of an open thread (`null` otherwise) is the one rule the wa
 
 | State | Meaning |
 |---|---|
-| `held` | The review is batched, and it has a reviewer's comment written since the last submit: it waits for you to submit |
+| `held` | The review is batched, and it has a reviewer's comment that no run has been sent yet, written since the last submit: it waits for you to submit |
 | `waiting` | It has a reviewer's comment that no run has been sent yet |
 | `queued` | Waiting while a run handles other threads |
 | `working` | The run in progress has it |
 | `replied` | The coding agent spoke last, and every reviewer comment was sent to a run |
 | `failed` | Its run ended with no reply to it. Its progress note says "no reply", and it isn't sent again until you comment |
 
-**Review mode.** A review is `live` until you change it: each comment is dispatched as soon as you write it. In a `batched` review, each comment you (or a reviewing agent) write makes its thread `held`, and no run starts until you submit: then every held thread goes to the coding agent in one run. Changing a batched review to live submits it; changing a live one to batched leaves a run in progress alone, and holds only the comments written after the change. A reply on a held thread makes it `replied`, so a later submit doesn't send it. The mode, each change and each submit are kept in the review, so they survive a restart, and in the review history.
+**Review mode.** A review is `live` until you change it: each comment is dispatched as soon as you write it. In a `batched` review, each comment you (or a reviewing agent) write makes its thread `held`, and no run starts until you submit: then every held thread goes to the coding agent in one run. Changing a batched review to live submits it. Changing a live one to batched leaves a run in progress alone, and holds every other thread with a comment no run has been sent yet. A reply on a held thread makes it `replied`, so a later submit doesn't send it. The mode, each change and each submit are kept in the review, so they survive a restart, and in the review history.
 
 So a follow-up you write while the agent works on the same thread is answered in the next run ([#3](https://github.com/TripathyM/difftate/issues/3)). A comment from a separate reviewing agent (written through the review API, as a comment) counts as yours.
 

@@ -14,8 +14,7 @@ def submit(store: ForKeepingTheReview, notes: NotesInProgress, history: ForRecor
     Raises NotAllowed for anyone but a reviewer, and CouldNotRead when the
     submit can't be kept; nothing is kept then."""
     review = Review.from_events(store.load() + notes.events())
-    held = [t.id for t in review.held()]
     events = review.submit(author)
     store.append(lasting(events))
     history.record(lasting(events))
-    return review.mode_status(submitted=held if events else ())
+    return review.mode_status(events)

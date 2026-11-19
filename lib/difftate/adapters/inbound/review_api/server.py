@@ -137,7 +137,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ....core.review.model import AUTHOR_OF, DIFFTATE, REVIEWER, Conflict, CouldNotRead, NotAllowed, NotFound
 from .json_format import (NOTE_KINDS, BadRequest, anchor_from_json, changeset_json, comment_json, done_json,
                           fields, mode_json, need, need_bool, need_kind, need_mode, need_status, need_text,
-                          reviewer_name, thread_json)
+                          reviewer_name, submitted_json, thread_json)
 
 MAX_BODY = 1 << 20
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -386,7 +386,7 @@ def _handler(current, token, shown, login, default_reviewer):
     def get_review(q, p):
         review = current()
         about = {"id": review.about["id"], "branch": review.about["branch"], "base": review.about["base"]}
-        return dict(about, **waiting_for_run(review), **mode_json(review.read_mode(), submitted=False))
+        return dict(about, **waiting_for_run(review), **mode_json(review.read_mode()))
 
     def switch_view(q, p):
         where = open_in(p)
@@ -448,10 +448,10 @@ def _handler(current, token, shown, login, default_reviewer):
 
     def put_mode(q, p):
         mode, author = need_mode(need(p, "mode")), fields(p).get("author", "reviewer")
-        return mode_json(current().set_mode(author, mode))
+        return submitted_json(current().set_mode(author, mode))
 
     def post_submit(q, p):
-        return mode_json(current().submit(fields(p).get("author", "reviewer")))
+        return submitted_json(current().submit(fields(p).get("author", "reviewer")))
 
     routes = [
         ("GET", r"/api/review", get_review),
@@ -467,7 +467,7 @@ def _handler(current, token, shown, login, default_reviewer):
         ("PUT", r"/api/viewed", put_viewed),
         ("GET", r"/api/done", lambda q, p: done_json(current().read_done())),
         ("PUT", r"/api/done", put_done),
-        ("GET", r"/api/mode", lambda q, p: mode_json(current().read_mode(), submitted=False)),
+        ("GET", r"/api/mode", lambda q, p: mode_json(current().read_mode())),
         ("PUT", r"/api/mode", put_mode),
         ("POST", r"/api/submit", post_submit),
     ]

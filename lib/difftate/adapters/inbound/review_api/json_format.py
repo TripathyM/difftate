@@ -158,9 +158,12 @@ def done_json(status: DoneStatus) -> Dict[str, Any]:
             "head": status.head, "openThreads": status.open_threads, "runsInFlight": status.in_flight}
 
 
-def mode_json(status: ModeStatus, submitted: bool = True) -> Dict[str, Any]:
-    """The review mode and the ids of the held threads; with <submitted>,
-    the ids of the threads the request just sent to the coding agent too
-    ([] for none)."""
-    mode = {"mode": status.mode, "held": list(status.held)}
-    return dict(mode, submitted=list(status.submitted)) if submitted else mode
+def mode_json(status: ModeStatus) -> Dict[str, Any]:
+    """The review mode and the ids of the held threads."""
+    return {"mode": status.mode, "held": list(status.held)}
+
+
+def submitted_json(status: ModeStatus) -> Dict[str, Any]:
+    """The review mode as a change left it, with the ids of the threads it
+    submitted ([] for none)."""
+    return dict(mode_json(status), submitted=list(status.submitted))

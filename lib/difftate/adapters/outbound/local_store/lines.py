@@ -74,7 +74,7 @@ def event_from_line(line: Dict[str, Any]) -> Event:
     if kind == "mode":
         return ModeChanged(line["mode"], line["time"])
     if kind == "submitted":
-        return ReviewSubmitted(line["time"])
+        return ReviewSubmitted(tuple(line["threads"]), line["time"])
     raise KeyError(f"no event in a {kind!r} line")
 
 
@@ -142,7 +142,7 @@ def line_from_event(event: Event) -> Dict[str, Any]:
     if isinstance(event, ModeChanged):
         return {"type": "mode", "mode": event.mode, "time": event.time}
     if isinstance(event, ReviewSubmitted):
-        return {"type": "submitted", "time": event.time}
+        return {"type": "submitted", "threads": list(event.threads), "time": event.time}
     raise TypeError(f"no line for {event!r}")
 
 
