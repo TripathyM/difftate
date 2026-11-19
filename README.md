@@ -99,6 +99,8 @@ dt-export ~/work/app # the review of that folder, from anywhere: the reply comma
 
 `dt-export` asks the difftate running in that folder (the same lookup a second `difftate` there uses), so one must be running; with none, it says so and exits 1. Thread state shows by name: `held`, `waiting`, `queued`, `working`, `replied` or `failed`. The same text is `GET /api/export`.
 
+The session replies with `dt-reply <thread> "<answer>"` (the export's command, with `--folder <folder>` when you gave one). Outside a run, `dt-reply` finds the difftate of its folder the same way and posts the answer through the review API: it shows as the coding agent's reply, with no progress note, and the thread becomes `replied`. It may reply to any thread of the review, open, resolved or dismissed, and changes no thread status. `<thread>` is the 8 characters the export shows, or the whole id; an id that isn't in the review is refused. With no running difftate it says so and exits 1, posting nothing: `dt-reply` never writes the review itself. Inside a run (`DT_RUN_DIR` set) it works as before, through the run's folder, and never reaches the review API.
+
 ## Example: several Claude setups
 
 Shortcuts go in `~/.zshrc`, after the `source` line. They pick the coding agent and account that replies, say the one with credits left. Say `ccw` runs Claude with the default config and `ccp` is a wrapper that sets its own config dir:
@@ -149,7 +151,7 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 |---|---|
 | `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the coding agent, then start `difftate-watch.py` |
 | `difftate-watch.py`, `lib/difftate/` | The watcher: opens the [review](#the-review), serves the [review API](#review-api) and the browser viewer, dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
-| `bin/dt-reply` | How the coding agent answers a thread: `dt-reply <thread> "<answer>"` |
+| `bin/dt-reply` | How the coding agent answers a thread: `dt-reply [--folder <folder>] <thread> "<answer>"`: into the run's folder in a run, through the review API in an exported session |
 | `bin/dt-export` | Prints the [export](#export) of a review, for an agent session you start: `dt-export [<folder>]` |
 | `lib/difftate/main.py` | The composition root: picks the adapters (which store, coding agent and viewers, in one marked block), binds them to the core's use cases, and runs the command line |
 | `lib/difftate/core/` | The core: the Review, the changes and Dispatch, with no technology ([ADR 0003](docs/adr/0003-the-core-knows-no-technology.md)). It reaches the rest only through its ports |

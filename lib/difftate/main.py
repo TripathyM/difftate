@@ -14,7 +14,7 @@ from .adapters.inbound import cli
 from .adapters.inbound.review_api import ReviewApi, ShownView, ask_running_watcher, running_watcher, token_file
 from .adapters.outbound import git
 from .adapters.outbound.coding_agents import ClaudeCode, OffLimits, OpenCode, find_command
-from .adapters.outbound.coding_agents.reply_channel import reply_command
+from .adapters.outbound.coding_agents.reply_channel import ReplyError, RunFolder, reply_command
 from .adapters.outbound.git import GitCodeReader
 from .adapters.outbound.history_files import HistoryFiles
 from .adapters.outbound.local_store import LocalStore, review_id
@@ -174,6 +174,14 @@ def done_status(folder, cwd, branch, base):
     return read_done(store or MemoryStore(), code)
 
 
+def reply_in_run(run_dir, thread, body):
+    """A run's answer to <thread>, left in the run's folder (the reply channel)."""
+    try:
+        return RunFolder(run_dir).write_reply(thread, body)
+    except ReplyError as e:
+        raise cli.ReplyRefused(str(e)) from e
+
+
 def wiring():
     return cli.Wiring(
         coding_agents=list(CODING_AGENTS),
@@ -181,6 +189,7 @@ def wiring():
         difftate_folder=REPOSITORY.difftate_folder,
         running_watcher=running_watcher,
         ask_running_watcher=ask_running_watcher,
+        reply_in_run=reply_in_run,
         coding_agent=coding_agent,
         base=REPOSITORY.base,
         need_view=REPOSITORY.need_view,
@@ -203,3 +212,9 @@ def main(argv):
 def export_main(argv):
     """bin/dt-export: print the export of a review, asked of its watcher."""
     return cli.run_export(argv, wiring())
+
+
+def reply_main(argv):
+    """bin/dt-reply: a run's answer into its folder, or an agent session's,
+    posted through the review API of its folder's watcher."""
+    return cli.run_reply(argv, wiring())

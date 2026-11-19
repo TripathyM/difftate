@@ -2,40 +2,22 @@
 """dt-reply: the coding agent's answer to a review thread.
 
 Usage:
-  dt-reply <thread> "<answer>"
-  dt-reply <thread> <<'EOF'        (the answer from stdin, for quotes or several lines)
+  dt-reply [--folder <folder>] <thread> "<answer>"
+  dt-reply [--folder <folder>] <thread> <<'EOF'        (the answer from stdin, for quotes or several lines)
 
-<thread> is the thread's id, or its first 8 characters as the prompt shows them.
-Write only the answer: difftate posts it as a reply. Works only inside a
-difftate run, which sets DT_RUN_DIR.
+<thread> is the thread's id, or its first 8 characters as the prompt or the export
+shows them. Write only the answer: difftate posts it as a reply.
+
+Inside a difftate run (which sets DT_RUN_DIR) it leaves the answer for the run.
+In an agent session you started with dt-export, it posts the answer through the
+difftate running in the checked-out folder you run it in, or in <folder> (the
+export names it when you gave one): one must be running, or nothing is posted.
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
 
-from difftate.adapters.outbound.coding_agents.reply_channel import ReplyError, RunFolder  # noqa: E402
+from difftate.main import reply_main  # noqa: E402
 
-
-def main(argv):
-    if argv[:1] in (["-h"], ["--help"]):
-        print(__doc__.strip())
-        return 0
-    if len(argv) not in (1, 2):
-        print(__doc__.strip(), file=sys.stderr)
-        return 2
-    run_dir = os.environ.get("DT_RUN_DIR")
-    if not run_dir:
-        print("dt-reply: DT_RUN_DIR is not set: dt-reply works only during a difftate run", file=sys.stderr)
-        return 1
-    body = argv[1] if len(argv) == 2 and argv[1] != "-" else sys.stdin.read()
-    try:
-        tid = RunFolder(run_dir).write_reply(argv[0], body)
-    except (ReplyError, OSError) as e:
-        print(f"dt-reply: {e}", file=sys.stderr)
-        return 1
-    print(f"Replied to thread {tid[:8]}.")
-    return 0
-
-
-sys.exit(main(sys.argv[1:]))
+sys.exit(reply_main(sys.argv[1:]))
