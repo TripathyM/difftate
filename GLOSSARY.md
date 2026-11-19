@@ -25,6 +25,21 @@ A thread whose anchored code changed after the thread was written. It stays in t
 A file of the changeset that the reviewer marked as read. It stays viewed in every view, across reloads and commits, until the file's diff changes; then the mark is cleared.
 _Avoid_: seen, reviewed, read
 
+**Review mode**:
+How a review sends the reviewer's comments to the coding agent: live or batched. Each review has one, live until the reviewer changes it.
+_Avoid_: setting, flag
+
+**Live**:
+The review mode in which each comment is dispatched as soon as the reviewer writes it.
+
+**Batched**:
+The review mode in which comments are held until the reviewer submits the review, like a pending review on a pull request.
+_Avoid_: draft, pending
+
+**Submit**:
+The reviewer sends a batched review's held threads to the coding agent, as one run. Changing a review from batched to live submits it too.
+_Avoid_: publish, send, finish
+
 **Done**:
 A reviewer has finished a review at one commit, whether they went through the code or skipped it. A new commit on the branch, or the reviewer undoing it, makes the review not done again. Only a reviewer marks it.
 _Avoid_: approved (it gates nothing), finished, closed, reviewed
@@ -65,7 +80,7 @@ Open, resolved or dismissed. Only a reviewer changes it.
 _Avoid_: state (that is where the thread stands in the loop)
 
 **Thread state**:
-Where an open thread stands in the loop: **waiting** (it has a reviewer's comment that no run has been sent yet), **queued** (waiting while a run handles other threads), **working** (a run has it), **replied** (the coding agent spoke last) or **failed** (its run ended with no reply to it).
+Where an open thread stands in the loop: **held** (it has a reviewer's comment that waits for the reviewer to submit a batched review), **waiting** (it has a reviewer's comment that no run has been sent yet), **queued** (waiting while a run handles other threads), **working** (a run has it), **replied** (the coding agent spoke last) or **failed** (its run ended with no reply to it).
 _Avoid_: pending, status
 
 ### Changes
@@ -104,12 +119,16 @@ The difftate process for one checked-out folder of a repository: the repository 
 ### Coding agent
 
 **Coding agent**:
-The agent that difftate runs to reply to threads and change the code, such as Claude Code or OpenCode. It need not be the agent that wrote the code: it learns the decisions behind the code from the review's commit messages.
+The agent that replies to threads and changes the code, such as Claude Code or OpenCode: in a run, or in an agent session the reviewer started with an export. It need not be the agent that wrote the code: it learns the decisions behind the code from the review's commit messages.
 _Avoid_: agent (alone: a reviewing agent is an agent too), implementer, tool, bot, AI, model
 
 **Agent session**:
-The coding agent's conversation during one run. It starts fresh, with the review's threads and commit messages, and ends with the run.
+The coding agent's conversation: during one run, which it starts fresh with the review's threads and commit messages and ends with; or one the reviewer runs, given an export.
 _Avoid_: session (alone), conversation
+
+**Export**:
+A copy of a review for an agent session that the reviewer starts: its commit messages, every thread in full, and how to reply. It says nothing about what to do: the reviewer says that in the session. Exporting changes no thread.
+_Avoid_: handoff, dump, snapshot
 
 ### Viewing
 
