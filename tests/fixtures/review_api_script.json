@@ -5789,6 +5789,24 @@
  },
  {
   "request": [
+   "GET",
+   "/api/export",
+   null
+  ],
+  "status": 200,
+  "answer": "# Review export\n\nA copy of a code review as it stands now: its commit messages, then every thread in full. The reviewer tells you what to do with it.\n\nLines starting 'reviewer' are reviewers' comments, with the reviewer's name when it has one ('reviewer security-bot:'). Lines starting 'coding agent:' are replies. A thread's heading names its thread status (open, resolved or dismissed) and, for an open one, its thread state in brackets: held, waiting, queued, working, replied or failed. A thread marked 'outdated' was written on code that changed since: its code block is the code then, not the file now.\n\n## The decisions behind the code: the review's commit messages (1), oldest first\n\nEach commit from the base to the branch. Read them to know why the code is as it is.\n\n### Commit 1\nsecond\n\n## Threads that need an answer (10)\n\n### Thread <id-1:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Why an f-string?\nreviewer Test: And the name?\ncoding agent: It reads better.\nreviewer Test: A follow-up, held too\n\n### Thread <id-5:8> — long.py:20 — open (waiting)\nCode:\n```\nline_18 = 180\n```\nreviewer Test: Why 180?\n\n### Thread <id-7:8> — app.py:1 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\ndef greet(nam):\n```\nreviewer Test: Typo?\n\n### Thread <id-9:8> — app.py:2 (old side, before the change) — open (waiting)\nCode:\n```\n    return 'hi ' + name\n```\nreviewer Test: Why was this concatenated?\n\n### Thread <id-11:8> — long.py:7-8 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\nline_5 = 5\nline_6 = 6\n```\nreviewer Test: Why 5 and 6?\n\n### Thread <id-13:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: No code sent\n\n### Thread <id-20:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Opened during a run\n\n### Thread <id-22:8> — app.py:4 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Shown before the import\n\n### Thread <id-24:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Held until I submit\n\n### Thread <id-27:8> — general thread (not tied to a line) — open (held)\nreviewer Test: Held, then live\n\n## Other threads (1)\n\n### Thread <id-3:8> — general thread (not tied to a line) — resolved\nreviewer Test: Is this ready?\nreviewer Test: Still?\n\n## How to reply\n\nReply to a thread with: <dt-reply> <thread> \"<answer>\"\n<thread> is the 8 characters after 'Thread'. Write only the answer: difftate posts it as a reply. A reply changes no thread status.\nFor an answer with quotes or several lines, pass it on stdin: <dt-reply> <thread> <<'EOF' … EOF\n"
+ },
+ {
+  "request": [
+   "GET",
+   "/api/export?folder=<repo>",
+   null
+  ],
+  "status": 200,
+  "answer": "# Review export\n\nA copy of a code review as it stands now: its commit messages, then every thread in full. The reviewer tells you what to do with it.\n\nLines starting 'reviewer' are reviewers' comments, with the reviewer's name when it has one ('reviewer security-bot:'). Lines starting 'coding agent:' are replies. A thread's heading names its thread status (open, resolved or dismissed) and, for an open one, its thread state in brackets: held, waiting, queued, working, replied or failed. A thread marked 'outdated' was written on code that changed since: its code block is the code then, not the file now.\n\n## The decisions behind the code: the review's commit messages (1), oldest first\n\nEach commit from the base to the branch. Read them to know why the code is as it is.\n\n### Commit 1\nsecond\n\n## Threads that need an answer (10)\n\n### Thread <id-1:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Why an f-string?\nreviewer Test: And the name?\ncoding agent: It reads better.\nreviewer Test: A follow-up, held too\n\n### Thread <id-5:8> — long.py:20 — open (waiting)\nCode:\n```\nline_18 = 180\n```\nreviewer Test: Why 180?\n\n### Thread <id-7:8> — app.py:1 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\ndef greet(nam):\n```\nreviewer Test: Typo?\n\n### Thread <id-9:8> — app.py:2 (old side, before the change) — open (waiting)\nCode:\n```\n    return 'hi ' + name\n```\nreviewer Test: Why was this concatenated?\n\n### Thread <id-11:8> — long.py:7-8 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\nline_5 = 5\nline_6 = 6\n```\nreviewer Test: Why 5 and 6?\n\n### Thread <id-13:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: No code sent\n\n### Thread <id-20:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Opened during a run\n\n### Thread <id-22:8> — app.py:4 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Shown before the import\n\n### Thread <id-24:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Held until I submit\n\n### Thread <id-27:8> — general thread (not tied to a line) — open (held)\nreviewer Test: Held, then live\n\n## Other threads (1)\n\n### Thread <id-3:8> — general thread (not tied to a line) — resolved\nreviewer Test: Is this ready?\nreviewer Test: Still?\n\n## How to reply\n\nReply to a thread with: <dt-reply> --folder <repo> <thread> \"<answer>\"\n<thread> is the 8 characters after 'Thread'. Write only the answer: difftate posts it as a reply. A reply changes no thread status.\nFor an answer with quotes or several lines, pass it on stdin: <dt-reply> --folder <repo> <thread> <<'EOF' … EOF\n"
+ },
+ {
+  "request": [
    "PUT",
    "/api/mode",
    {
@@ -5815,6 +5833,26 @@
   "answer": {
    "mode": "live",
    "held": []
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/export",
+   null
+  ],
+  "status": 200,
+  "answer": "# Review export\n\nA copy of a code review as it stands now: its commit messages, then every thread in full. The reviewer tells you what to do with it.\n\nLines starting 'reviewer' are reviewers' comments, with the reviewer's name when it has one ('reviewer security-bot:'). Lines starting 'coding agent:' are replies. A thread's heading names its thread status (open, resolved or dismissed) and, for an open one, its thread state in brackets: held, waiting, queued, working, replied or failed. A thread marked 'outdated' was written on code that changed since: its code block is the code then, not the file now.\n\n## The decisions behind the code: the review's commit messages (1), oldest first\n\nEach commit from the base to the branch. Read them to know why the code is as it is.\n\n### Commit 1\nsecond\n\n## Threads that need an answer (10)\n\n### Thread <id-1:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Why an f-string?\nreviewer Test: And the name?\ncoding agent: It reads better.\nreviewer Test: A follow-up, held too\n\n### Thread <id-5:8> — long.py:20 — open (waiting)\nCode:\n```\nline_18 = 180\n```\nreviewer Test: Why 180?\n\n### Thread <id-7:8> — app.py:1 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\ndef greet(nam):\n```\nreviewer Test: Typo?\n\n### Thread <id-9:8> — app.py:2 (old side, before the change) — open (waiting)\nCode:\n```\n    return 'hi ' + name\n```\nreviewer Test: Why was this concatenated?\n\n### Thread <id-11:8> — long.py:7-8 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\nline_5 = 5\nline_6 = 6\n```\nreviewer Test: Why 5 and 6?\n\n### Thread <id-13:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: No code sent\n\n### Thread <id-20:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Opened during a run\n\n### Thread <id-22:8> — app.py:4 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Shown before the import\n\n### Thread <id-24:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Held until I submit\n\n### Thread <id-27:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Held, then live\n\n## Other threads (1)\n\n### Thread <id-3:8> — general thread (not tied to a line) — resolved\nreviewer Test: Is this ready?\nreviewer Test: Still?\n\n## How to reply\n\nReply to a thread with: <dt-reply> <thread> \"<answer>\"\n<thread> is the 8 characters after 'Thread'. Write only the answer: difftate posts it as a reply. A reply changes no thread status.\nFor an answer with quotes or several lines, pass it on stdin: <dt-reply> <thread> <<'EOF' … EOF\n"
+ },
+ {
+  "request": [
+   "POST",
+   "/api/export",
+   {}
+  ],
+  "status": 405,
+  "answer": {
+   "error": "method not allowed"
   }
  },
  {

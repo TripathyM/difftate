@@ -88,6 +88,17 @@ difftate status --json --branch my-branch
 - Every stored line also goes to the **review history**, `~/.difftate/history/<year>-<month>.jsonl`, with the repository (path and remote), branch and base added, so deleting a clone doesn't lose it.
 - Only the watcher writes the store. If `events.jsonl` changes in a way it didn't make (say, the coding agent with the sandbox off), the watcher prints a warning, restores the file, and says so in the final progress note of a thread in the run.
 
+## Export
+
+An **export** is a copy of the review for an agent session you start yourself, in any coding agent: its commit messages, every thread in full (open, resolved and dismissed, with comments, replies, thread status and thread state), which threads need an answer (open threads no reply answers yet, held ones too), and how to reply with `dt-reply`. It holds no other rule: you say in the session what to do (reply, read and plan, redo). Exporting changes no thread.
+
+```sh
+dt-export            # the review of the folder you are in
+dt-export ~/work/app # the review of that folder, from anywhere: the reply command names it
+```
+
+`dt-export` asks the difftate running in that folder (the same lookup a second `difftate` there uses), so one must be running; with none, it says so and exits 1. Thread state shows by name: `held`, `waiting`, `queued`, `working`, `replied` or `failed`. The same text is `GET /api/export`.
+
 ## Example: several Claude setups
 
 Shortcuts go in `~/.zshrc`, after the `source` line. They pick the coding agent and account that replies, say the one with credits left. Say `ccw` runs Claude with the default config and `ccp` is a wrapper that sets its own config dir:
@@ -139,6 +150,7 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 | `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the coding agent, then start `difftate-watch.py` |
 | `difftate-watch.py`, `lib/difftate/` | The watcher: opens the [review](#the-review), serves the [review API](#review-api) and the browser viewer, dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
 | `bin/dt-reply` | How the coding agent answers a thread: `dt-reply <thread> "<answer>"` |
+| `bin/dt-export` | Prints the [export](#export) of a review, for an agent session you start: `dt-export [<folder>]` |
 | `lib/difftate/main.py` | The composition root: picks the adapters (which store, coding agent and viewers, in one marked block), binds them to the core's use cases, and runs the command line |
 | `lib/difftate/core/` | The core: the Review, the changes and Dispatch, with no technology ([ADR 0003](docs/adr/0003-the-core-knows-no-technology.md)). It reaches the rest only through its ports |
 | `lib/difftate/adapters/inbound/cli/` | The command line: options and help, one watcher per checked-out folder (`watcher.lock`), switching a running watcher's view, opening a viewer, the timer, following the checked-out branch |
@@ -292,6 +304,7 @@ The watcher (Python 3.9 or later, nothing else) serves the **review API** on `12
 | `PATCH /api/threads/<id>/status` | Set the thread status: `open`, `resolved` or `dismissed`. Answers `id`, `status` and `statusBy` |
 | `GET /api/mode` | The review mode: `mode` (`live` or `batched`) and `held` (the ids of the held threads) |
 | `PUT /api/mode` | Change the review mode: `mode`. Answers as `GET /api/mode`, with `submitted`: the ids of the threads a change to `live` submitted (`[]` for none) |
+| `GET /api/export?folder=<folder>` | The [export](#export) of the review as `text/plain`; with a `folder`, its reply command names it. Writes no event |
 | `POST /api/submit` | Submit a batched review: its held threads go to the coding agent as one run (queued while a run is busy). Answers as `PUT /api/mode`; `submitted: []` when nothing was held, and no run starts |
 
 Opening a thread, setting its status, changing the review mode and submitting take an optional `author`, which must be `reviewer`: anyone else gets 403. That enforces the review's rules for difftate's own callers; it isn't a security check (the token is).

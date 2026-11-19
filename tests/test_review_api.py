@@ -31,6 +31,7 @@ import threading
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from unittest import mock
 
@@ -41,6 +42,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core_fakes import FakeCode, FakeHistory, UnreadableCode  # noqa: E402
 from difftate.adapters.inbound.review_api import ReviewApi, ShownView  # noqa: E402
 from difftate.adapters.outbound import git  # noqa: E402
+from difftate.adapters.outbound.coding_agents.reply_channel import DT_REPLY  # noqa: E402
 from difftate.adapters.outbound.history_files import HistoryFiles  # noqa: E402
 from difftate.adapters.outbound.local_store import LocalStore  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
@@ -80,8 +82,16 @@ def serve(repo, folder, history):
     return served
 
 
+def answer_of(response):
+    """What the API answered: its JSON, or its text for a text/plain answer (the export)."""
+    data = response.read()
+    if response.headers.get_content_type() == "text/plain":
+        return data.decode("utf-8")
+    return json.loads(data or b"null")
+
+
 def ask(api, method, path, payload=None, token=True, body=None):
-    """Call the review API as a viewer would: (status, the JSON answer)."""
+    """Call the review API as a viewer would: (status, the JSON answer, or the text of the export)."""
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {api.token}"
@@ -89,10 +99,10 @@ def ask(api, method, path, payload=None, token=True, body=None):
     req = urllib.request.Request(api.address().url + path, method=method, headers=headers, data=data)
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
-            return r.status, json.loads(r.read() or b"null")
+            return r.status, answer_of(r)
     except urllib.error.HTTPError as e:
         with e:
-            return e.code, json.loads(e.read() or b"null")
+            return e.code, answer_of(e)
 
 
 # ── Naming what differs from run to run ──────────────────────────────────────
@@ -105,8 +115,9 @@ INDEX = re.compile(r"^index [0-9a-f]+\.\.[0-9a-f]+", re.M)
 class Names:
     """Each id and hash named by its first appearance: <id-1>, <hash-1>, …"""
 
-    def __init__(self):
+    def __init__(self, paths=None):
         self.seen = {}
+        self.paths = dict(paths or {})  # path: its name, for a machine's own paths in the answers
 
     def _name(self, kind, found):
         return self.seen.setdefault(found, f"<{kind}-{sum(1 for v in self.seen.values() if v.startswith('<' + kind)) + 1}>")
@@ -115,6 +126,12 @@ class Names:
         s = INDEX.sub("index <blob>..<blob>", s)
         s = UUID.sub(lambda m: self._name("id", m[0]), s)
         s = HASH.sub(lambda m: self._name("hash", m[0]), s)
+        # The export names a thread by the first 8 characters of its id
+        for found, name in list(self.seen.items()):
+            if UUID.fullmatch(found):
+                s = s.replace(found[:8], name[:-1] + ":8>")
+        for path, name in self.paths.items():
+            s = s.replace(path, name)
         return TIME.sub("<time>", s)
 
     def json(self, value):
@@ -163,7 +180,7 @@ class TheReviewApi(unittest.TestCase):
                             os.path.join(self.tmp, "history"))
         self.served.api.start()
         self.addCleanup(self.served.api.stop)
-        self.names = Names()
+        self.names = Names({DT_REPLY: "<dt-reply>", self.repo: "<repo>"})
         self.transcript = []
 
     def git(self, *args):
@@ -329,8 +346,13 @@ class TheReviewApi(unittest.TestCase):
         call("POST", "/api/submit")
         call("PUT", "/api/mode", {"mode": "batched"})
         call("POST", "/api/threads", {"anchor": None, "body": "Held, then live"})
+        # The export: held threads by their state, the folder in the reply command when one was given
+        call("GET", "/api/export")
+        call("GET", f"/api/export?folder={urllib.parse.quote(self.repo)}")
         call("PUT", "/api/mode", {"mode": "live", "author": "reviewer"})
         call("GET", "/api/mode")
+        call("GET", "/api/export")
+        call("POST", "/api/export", {})
 
         # What isn't a route, a method, a token or JSON
         call("GET", "/api/nope")
@@ -556,6 +578,65 @@ class TheDoneRoutes(ServedOnFakes, unittest.TestCase):
         self.review.clear_done()
 
         self.assertEqual(self.ask("GET", "/api/done")[1]["lastMark"]["kind"], "cleared")
+
+
+class TheExportRoute(ServedOnFakes, unittest.TestCase):
+    """GET /api/export: the review as text for an agent session the reviewer
+    starts. It writes no event."""
+
+    def a_thread(self, body="Is this ready?"):
+        return self.ask("POST", "/api/threads", {"body": body})[1]["id"]
+
+    def test_answers_the_review_as_text_with_its_commits_threads_states_and_how_to_reply(self):
+        self.serve(code=FakeCode({"app.py": "x = 1\n"}, messages=["Start with x"]))
+        self.ask("PUT", "/api/mode", {"mode": "batched"})
+        tid = self.a_thread("Why x?")
+
+        status, text = self.ask("GET", "/api/export")
+
+        self.assertEqual(status, 200)
+        self.assertIn("Start with x", text)
+        self.assertIn(f"### Thread {tid[:8]} — general thread (not tied to a line) — open (held)\nreviewer: Why x?",
+                      text)
+        self.assertRegex(text, r'Reply to a thread with: \S*dt-reply <thread> "<answer>"')
+
+    def test_names_the_folder_in_the_reply_command_when_one_is_given(self):
+        self.serve()
+
+        text = self.ask("GET", "/api/export?folder=" + urllib.parse.quote("/work/my demo"))[1]
+
+        self.assertRegex(text, r"dt-reply --folder '/work/my demo' <thread> ")
+
+    def test_writes_no_event_and_changes_no_thread(self):
+        store = MemoryStore()
+        self.serve(store=store)
+        tid = self.a_thread()
+        events = list(store.load())
+
+        self.ask("GET", "/api/export")
+
+        self.assertEqual(store.load(), events)
+        self.assertEqual(self.ask("GET", "/api/threads")[1][0]["state"], "waiting")
+        self.assertEqual(self.ask("GET", "/api/threads")[1][0]["id"], tid)
+
+    def test_needs_the_token(self):
+        self.serve()
+
+        self.assertEqual(self.ask("GET", "/api/export", token=False), (401, {"error": "missing or wrong token"}))
+
+    def test_commit_messages_that_cannot_be_read_are_502_not_an_export_without_them(self):
+        class UnreadableCommits(FakeCode):
+            def commit_messages(self):
+                raise CouldNotRead("could not read the review's commits")
+
+        self.serve(code=UnreadableCommits({"app.py": "x = 1\n"}))
+
+        self.assertEqual(self.ask("GET", "/api/export"), (502, {"error": "could not read the review's commits"}))
+
+    def test_is_for_reading_only(self):
+        self.serve()
+
+        self.assertEqual(self.ask("POST", "/api/export", {})[0], 405)
 
 
 class TheModeRoutes(ServedOnFakes, unittest.TestCase):

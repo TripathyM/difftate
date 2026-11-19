@@ -14,6 +14,7 @@ from .adapters.inbound import cli
 from .adapters.inbound.review_api import ReviewApi, ShownView, ask_running_watcher, running_watcher, token_file
 from .adapters.outbound import git
 from .adapters.outbound.coding_agents import ClaudeCode, OffLimits, OpenCode, find_command
+from .adapters.outbound.coding_agents.reply_channel import reply_command
 from .adapters.outbound.git import GitCodeReader
 from .adapters.outbound.history_files import HistoryFiles
 from .adapters.outbound.local_store import LocalStore, review_id
@@ -31,6 +32,7 @@ from .core.review.use_cases.add_comment import add_comment
 from .core.review.use_cases.clear_done import clear_done
 from .core.review.use_cases.edit_note import edit_note
 from .core.review.use_cases.end_run import end_run
+from .core.review.use_cases.export_review import export_review
 from .core.review.use_cases.list_threads import list_threads
 from .core.review.use_cases.list_viewed import list_viewed
 from .core.review.use_cases.mark_viewed import mark_viewed
@@ -95,6 +97,7 @@ def bind_review(store, code, history, about):
         set_mode=one_at_a_time(set_mode, store, notes, history),
         read_mode=functools.partial(read_mode, store),
         submit=one_at_a_time(submit, store, notes, history),
+        export=one_at_a_time(export_review, store, notes, code, reply_command),
         changeset=functools.partial(changeset, code),
         checked_out=functools.partial(checked_out, code),
         # For running the loop (Dispatch)
@@ -196,3 +199,8 @@ def main(argv):
         return cli.run_status(argv[1:], wiring())
     return cli.run(argv, wiring())
 
+
+
+def export_main(argv):
+    """bin/dt-export: print the export of a review, asked of its watcher."""
+    return cli.run_export(argv, wiring())
