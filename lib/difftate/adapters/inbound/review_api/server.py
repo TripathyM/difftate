@@ -45,6 +45,14 @@ without it gets 401.
                                         undo it: {"done": true|false, "author"?}: the same answer.
                                         "author" must be "reviewer" (the default): anyone else gets
                                         403. 409 while another branch is checked out
+  GET   /api/mode                       the review mode: {"mode": "live"|"batched", "held" (the ids
+                                        of the held threads, oldest first)}
+  PUT   /api/mode                       change it: {"mode", "author"?}: {"mode", "held", "submitted"
+                                        (the ids of the threads a change to live submitted: [] for
+                                        none)}. "author" must be "reviewer", as for Done
+  POST  /api/submit                     submit a batched review: {"author"?}: as PUT /api/mode, with
+                                        the held threads "submitted" ([] when none was held: no
+                                        run starts). They wait for one run, or queue while one is busy
 
 A thread (difftate's thread format):
   {"id",
@@ -59,7 +67,7 @@ A thread (difftate's thread format):
                only line numbers move); after, it keeps the lines and code it had,
    "status": "open"|"resolved"|"dismissed",
    "statusBy": the reviewer name of the last thread status change (null for none),
-   "state": "waiting"|"queued"|"working"|"replied"|"failed" (null unless open),
+   "state": "held"|"waiting"|"queued"|"working"|"replied"|"failed" (null unless open),
    "comments": [{"id", "author": "reviewer"|"agent"|"difftate",
                  "by": the reviewer name (null for a reply, a note, or no name),
                  "kind": "comment"|"reply"|"queued"|"progress", "body", "time"}]}
@@ -128,7 +136,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ....core.review.model import AUTHOR_OF, DIFFTATE, REVIEWER, Conflict, CouldNotRead, NotAllowed, NotFound
 from .json_format import (NOTE_KINDS, BadRequest, anchor_from_json, changeset_json, comment_json, done_json,
-                          fields, need, need_bool, need_kind, need_status, need_text, reviewer_name, thread_json)
+                          fields, mode_json, need, need_bool, need_kind, need_mode, need_status, need_text,
+                          reviewer_name, submitted_json, thread_json)
 
 MAX_BODY = 1 << 20
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -286,7 +295,8 @@ class ReviewApi:
     """The review API on <review>: the use cases of one review, with its ports
     bound (main.bind_review): about ({"id", "branch", "base"}),
     list_threads, open_thread, add_comment, edit_note, set_status,
-    mark_viewed, list_viewed, set_done, read_done, changeset and checked_out.
+    mark_viewed, list_viewed, set_done, read_done, set_mode, read_mode, submit,
+    changeset and checked_out.
 
     It writes its token and where it runs (api.json: port, pid, <root>) to
     <folder>, the watcher's difftate folder in the checked-out folder's own
@@ -376,7 +386,7 @@ def _handler(current, token, shown, login, default_reviewer):
     def get_review(q, p):
         review = current()
         about = {"id": review.about["id"], "branch": review.about["branch"], "base": review.about["base"]}
-        return dict(about, **waiting_for_run(review))
+        return dict(about, **waiting_for_run(review), **mode_json(review.read_mode()))
 
     def switch_view(q, p):
         where = open_in(p)
@@ -436,6 +446,13 @@ def _handler(current, token, shown, login, default_reviewer):
         done, author = need_bool(need(p, "done"), "done"), fields(p).get("author", "reviewer")
         return done_json(current().set_done(author, done))
 
+    def put_mode(q, p):
+        mode, author = need_mode(need(p, "mode")), fields(p).get("author", "reviewer")
+        return submitted_json(current().set_mode(author, mode))
+
+    def post_submit(q, p):
+        return submitted_json(current().submit(fields(p).get("author", "reviewer")))
+
     routes = [
         ("GET", r"/api/review", get_review),
         ("GET", r"/api/view", lambda q, p: {"view": shown.current()}),
@@ -450,6 +467,9 @@ def _handler(current, token, shown, login, default_reviewer):
         ("PUT", r"/api/viewed", put_viewed),
         ("GET", r"/api/done", lambda q, p: done_json(current().read_done())),
         ("PUT", r"/api/done", put_done),
+        ("GET", r"/api/mode", lambda q, p: mode_json(current().read_mode())),
+        ("PUT", r"/api/mode", put_mode),
+        ("POST", r"/api/submit", post_submit),
     ]
     routes = [(m, re.compile(f"^{path}$"), fn) for m, path, fn in routes]
 

@@ -1516,5 +1516,125 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertEqual(self.api("GET", "/api/view")["view"], "")
 
 
+class BatchedReviewTest(Harness, unittest.TestCase):
+    """The review mode through a running watcher (GLOSSARY.md, Review mode)."""
+
+    def change_mode(self, mode="batched"):
+        return self.api("PUT", "/api/mode", {"mode": mode})
+
+    def submit(self):
+        return self.api("POST", "/api/submit", {})
+
+    def polls(self):
+        time.sleep(1)  # several polls: a run would have started
+
+    def test_a_new_review_is_live_and_a_comment_dispatches_as_today(self):
+        self.release_agent()
+        self.start_watcher()
+
+        self.assertEqual(self.api("GET", "/api/review")["mode"], "live")
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+    def test_a_batched_review_holds_comments_and_submit_sends_them_all_in_one_run(self):
+        self.release_agent()
+        self.start_watcher()
+        self.change_mode()
+
+        first = self.open_thread("Why an f-string here?")["id"]
+        second = self.open_thread("Rename greet to welcome?", line=1)["id"]
+        self.polls()
+
+        self.assertEqual((self.state(first), self.state(second)), ("held", "held"))
+        self.assertEqual((self.dispatches(), self.prompts()), (0, []), "no run starts")
+        self.assertEqual(self.api("GET", "/api/review")["held"], [first, second])
+
+        self.assertEqual(self.submit()["submitted"], [first, second])
+        wait_for("both replied", lambda: self.state(first) == self.state(second) == "replied")
+        [prompt] = self.prompts()
+        self.assertIn("## Reply to these threads (2)", prompt)
+        self.assertEqual(self.dispatches(), 1)
+
+    def test_a_follow_up_on_a_replied_thread_is_held_too(self):
+        self.release_agent()
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        self.change_mode()
+
+        self.api("POST", f"/api/threads/{tid}/comments", {"body": "And why not str.format?"})
+        self.polls()
+
+        self.assertEqual((self.state(tid), len(self.prompts())), ("held", 1))
+
+    def test_submit_while_a_run_is_busy_queues_the_held_threads(self):
+        self.start_watcher()
+        busy = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(busy, "progress", "Working"))
+        self.change_mode()
+        tid = self.open_thread("Rename greet to welcome?", line=1)["id"]
+        self.polls()
+        self.assertEqual((self.state(busy), self.state(tid)), ("working", "held"),
+                         "changing to batched leaves the run in progress alone")
+
+        self.submit()
+
+        wait_for("a queued note", lambda: self.note(tid, "queued"))
+        self.assertEqual(self.state(tid), "queued")
+        self.release_agent()
+        wait_for("both replied", lambda: self.state(busy) == self.state(tid) == "replied")
+        self.assertEqual(len(self.prompts()), 2)
+
+    def test_submit_with_nothing_held_starts_no_run_and_says_so(self):
+        self.start_watcher()
+        self.change_mode()
+
+        self.assertEqual(self.submit(), {"mode": "batched", "held": [], "submitted": []})
+        self.polls()
+        self.assertEqual(self.dispatches(), 0)
+
+    def test_changing_to_live_submits_the_held_threads(self):
+        self.release_agent()
+        self.start_watcher()
+        self.change_mode()
+        tid = self.open_thread("Why an f-string here?")["id"]
+
+        self.assertEqual(self.change_mode("live")["submitted"], [tid])
+
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+    def test_a_reply_on_a_held_thread_makes_it_replied_and_submit_does_not_send_it(self):
+        self.release_agent()
+        self.start_watcher()
+        self.change_mode()
+        answered = self.open_thread("Why an f-string here?")["id"]
+        other = self.open_thread("Rename greet to welcome?", line=1)["id"]
+
+        self.api("POST", f"/api/threads/{answered}/comments", {"kind": "reply", "body": "It reads better."})
+        self.assertEqual(self.state(answered), "replied")
+
+        self.assertEqual(self.submit()["submitted"], [other])
+        wait_for("the other replied", lambda: self.state(other) == "replied")
+        [prompt] = self.prompts()
+        self.assertIn("## Reply to these threads (1)", prompt)
+        self.assertIn(f"Thread {other[:8]}", prompt.split("## Other threads")[0])
+
+    def test_the_mode_and_held_threads_survive_a_restart(self):
+        self.release_agent()
+        self.start_watcher()
+        self.change_mode()
+        tid = self.open_thread("Why an f-string here?")["id"]
+
+        self.stop_watcher()
+        self.output.clear()
+        self.start_watcher()
+        self.polls()
+
+        self.assertEqual(self.api("GET", "/api/mode"), {"mode": "batched", "held": [tid]})
+        self.assertEqual((self.state(tid), self.dispatches()), ("held", 0))
+        self.submit()
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+
+
 if __name__ == "__main__":
     unittest.main()

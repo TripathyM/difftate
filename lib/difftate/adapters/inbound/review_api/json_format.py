@@ -10,7 +10,8 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from ....core.changes.model import Changeset
-from ....core.review.model import AUTHOR_OF, NOTE_KINDS, Anchor, Comment, DoneMark, DoneStatus, ListedThread
+from ....core.review.model import (AUTHOR_OF, MODES, NOTE_KINDS, Anchor, Comment, DoneMark, DoneStatus, ListedThread,
+                                   ModeStatus)
 
 KINDS = tuple(AUTHOR_OF)  # comment, reply, queued, progress
 THREAD_STATUSES = ("open", "resolved", "dismissed")
@@ -55,6 +56,12 @@ def need_status(status: Any) -> str:
     if status not in THREAD_STATUSES:
         raise BadRequest(f"status must be one of {', '.join(THREAD_STATUSES)}")
     return status
+
+
+def need_mode(mode: Any) -> str:
+    if mode not in MODES:
+        raise BadRequest(f"mode must be {' or '.join(MODES)}")
+    return mode
 
 
 def reviewer_name(payload: Any, default: Optional[str]) -> Optional[str]:
@@ -149,3 +156,14 @@ def done_json(status: DoneStatus) -> Dict[str, Any]:
     return {"done": status.done, "time": status.mark.time if status.mark else None,
             "commit": status.mark.commit if status.mark else None, "lastMark": done_mark_json(status.last_mark),
             "head": status.head, "openThreads": status.open_threads, "runsInFlight": status.in_flight}
+
+
+def mode_json(status: ModeStatus) -> Dict[str, Any]:
+    """The review mode and the ids of the held threads."""
+    return {"mode": status.mode, "held": list(status.held)}
+
+
+def submitted_json(status: ModeStatus) -> Dict[str, Any]:
+    """The review mode as a change left it, with the ids of the threads it
+    submitted ([] for none)."""
+    return dict(mode_json(status), submitted=list(status.submitted))

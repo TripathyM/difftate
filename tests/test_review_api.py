@@ -4,7 +4,8 @@ A scripted review goes through every route: the review, the view, the
 changeset in each view, threads (opened, listed by status and in each view,
 moved with their code and outdated), comments, replies and notes, thread
 status, viewed files, the thread states a run gives, the review while another
-branch is checked out, and the errors each route answers. Each answer (status
+branch is checked out, the review mode and submit, and the errors each route
+answers. Each answer (status
 and JSON) is compared with tests/fixtures/review_api_script.json, recorded
 from the review API before it ran on the new core (#66). Ids, times and
 hashes are named by where they first appear, so the same review gives the
@@ -312,6 +313,25 @@ class TheReviewApi(unittest.TestCase):
         for refused in (5, ""):
             call("POST", "/api/threads", {"anchor": dict(self.anchor("app.py", 4), version=refused), "body": "Hi"})
 
+        # The review mode: batched holds comments until submit; changing to live submits too
+        call("GET", "/api/mode")
+        call("PUT", "/api/mode", {"mode": "batched"})
+        call("POST", "/api/threads", {"anchor": None, "body": "Held until I submit"})
+        call("POST", f"/api/threads/{on_line}/comments", {"body": "A follow-up, held too"})
+        call("GET", "/api/review")
+        call("GET", "/api/threads?status=open")
+        for path, refused in (("/api/mode", {"mode": "pending"}), ("/api/mode", {}),
+                              ("/api/mode", {"mode": "live", "author": "agent"})):
+            call("PUT", path, refused)
+        call("POST", "/api/submit", {"author": "agent"})
+        call("POST", "/api/submit", {})
+        call("GET", "/api/threads?status=open")
+        call("POST", "/api/submit")
+        call("PUT", "/api/mode", {"mode": "batched"})
+        call("POST", "/api/threads", {"anchor": None, "body": "Held, then live"})
+        call("PUT", "/api/mode", {"mode": "live", "author": "reviewer"})
+        call("GET", "/api/mode")
+
         # What isn't a route, a method, a token or JSON
         call("GET", "/api/nope")
         call("POST", "/api/review", {})
@@ -536,6 +556,89 @@ class TheDoneRoutes(ServedOnFakes, unittest.TestCase):
         self.review.clear_done()
 
         self.assertEqual(self.ask("GET", "/api/done")[1]["lastMark"]["kind"], "cleared")
+
+
+class TheModeRoutes(ServedOnFakes, unittest.TestCase):
+    """GET and PUT /api/mode and POST /api/submit: the review mode, held
+    threads, and the reviewer's submit."""
+
+    def a_thread(self, body="Is this ready?"):
+        return self.ask("POST", "/api/threads", {"body": body})[1]["id"]
+
+    def state(self, tid):
+        return next(t for t in self.ask("GET", "/api/threads")[1] if t["id"] == tid)["state"]
+
+    def test_a_new_review_is_live_with_nothing_held(self):
+        self.serve()
+
+        self.assertEqual(self.ask("GET", "/api/mode"), (200, {"mode": "live", "held": []}))
+        answer = self.ask("GET", "/api/review")[1]
+        self.assertEqual((answer["mode"], answer["held"]), ("live", []))
+
+    def test_in_a_batched_review_a_comment_is_held_and_the_review_says_which(self):
+        self.serve()
+
+        self.assertEqual(self.ask("PUT", "/api/mode", {"mode": "batched"}),
+                         (200, {"mode": "batched", "held": [], "submitted": []}))
+        tid = self.a_thread()
+
+        self.assertEqual(self.state(tid), "held")
+        self.assertEqual(self.ask("GET", "/api/mode"), (200, {"mode": "batched", "held": [tid]}))
+        self.assertEqual(self.ask("GET", "/api/review")[1]["held"], [tid])
+
+    def test_submit_names_the_threads_it_sent_and_they_wait_for_a_run(self):
+        self.serve()
+        self.ask("PUT", "/api/mode", {"mode": "batched"})
+        tid = self.a_thread()
+
+        self.assertEqual(self.ask("POST", "/api/submit", {}),
+                         (200, {"mode": "batched", "held": [], "submitted": [tid]}))
+        self.assertEqual(self.state(tid), "waiting")
+
+    def test_submit_with_nothing_held_says_it_sent_none(self):
+        self.serve()
+        self.ask("PUT", "/api/mode", {"mode": "batched"})
+
+        self.assertEqual(self.ask("POST", "/api/submit"), (200, {"mode": "batched", "held": [], "submitted": []}))
+
+    def test_changing_to_live_submits_the_held_threads(self):
+        self.serve()
+        self.ask("PUT", "/api/mode", {"mode": "batched"})
+        tid = self.a_thread()
+
+        self.assertEqual(self.ask("PUT", "/api/mode", {"mode": "live", "author": "reviewer"}),
+                         (200, {"mode": "live", "held": [], "submitted": [tid]}))
+        self.assertEqual(self.state(tid), "waiting")
+
+    def test_only_a_reviewer_changes_the_mode_or_submits(self):
+        self.serve()
+        self.ask("PUT", "/api/mode", {"mode": "batched"})
+        self.a_thread()
+
+        for author in ("agent", "difftate"):
+            with self.subTest(author=author):
+                for method, path, payload in (("PUT", "/api/mode", {"mode": "live", "author": author}),
+                                              ("POST", "/api/submit", {"author": author})):
+                    status, answer = self.ask(method, path, payload)
+                    self.assertEqual((status, set(answer)), (403, {"error"}), path)
+        self.assertEqual(self.ask("GET", "/api/mode")[1]["mode"], "batched")
+        self.assertEqual(len(self.ask("GET", "/api/mode")[1]["held"]), 1)
+
+    def test_a_request_that_names_no_mode_is_400(self):
+        self.serve()
+
+        for payload in (None, {}, {"mode": "pending"}, {"mode": 1}, ["batched"]):
+            with self.subTest(payload=payload):
+                status, answer = self.ask("PUT", "/api/mode", payload)
+                self.assertEqual((status, set(answer)), (400, {"error"}))
+        self.assertEqual(self.ask("GET", "/api/mode")[1]["mode"], "live")
+
+    def test_a_change_the_store_cannot_keep_is_502(self):
+        self.serve(store=StoreThatCannotWrite())
+
+        status, answer = self.ask("PUT", "/api/mode", {"mode": "batched"})
+
+        self.assertEqual((status, answer), (502, {"error": "could not write the review"}))
 
 
 class TheReviewerName(ServedOnFakes, unittest.TestCase):

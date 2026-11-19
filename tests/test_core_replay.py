@@ -85,6 +85,9 @@ class TodaysEventsThroughTheNewCore(unittest.TestCase):
         self.assertEqual(self.review.viewed(), self.today["viewed"])
         self.assertEqual(self.review.viewed(), {"app.py": "0" * 40, "README.md": "f" * 40})
 
+    def test_a_review_from_before_review_modes_is_live_with_nothing_held(self):
+        self.assertEqual((self.review.mode(), self.review.held()), ("live", []))
+
     def test_the_same_thread_states_once_the_run_that_never_ended_is_recovered(self):
         failed = recover_runs(self.store, NotesInProgress(), FakeHistory())
 

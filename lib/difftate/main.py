@@ -37,10 +37,13 @@ from .core.review.use_cases.mark_viewed import mark_viewed
 from .core.review.use_cases.move_with_code import move_with_code
 from .core.review.use_cases.open_thread import open_thread
 from .core.review.use_cases.read_done import read_done
+from .core.review.use_cases.read_mode import read_mode
 from .core.review.use_cases.recover_runs import recover_runs
 from .core.review.use_cases.set_done import set_done
+from .core.review.use_cases.set_mode import set_mode
 from .core.review.use_cases.set_status import set_status
 from .core.review.use_cases.start_run import start_run
+from .core.review.use_cases.submit import submit
 
 # ═══ The adapters ══════════════════════════════════════════════════════════
 # Which adapter plugs into each port. They are picked here and nowhere else:
@@ -89,6 +92,9 @@ def bind_review(store, code, history, about):
         list_viewed=one_at_a_time(list_viewed, store, code, history),
         set_done=one_at_a_time(set_done, store, code, history),
         read_done=functools.partial(read_done, store, code),
+        set_mode=one_at_a_time(set_mode, store, notes, history),
+        read_mode=functools.partial(read_mode, store),
+        submit=one_at_a_time(submit, store, notes, history),
         changeset=functools.partial(changeset, code),
         checked_out=functools.partial(checked_out, code),
         # For running the loop (Dispatch)
