@@ -53,13 +53,22 @@ local function map_keys(keys)
   end
 end
 
--- The "review" group in which-key, once which-key is there. Under lazy.nvim
+local GROUP = "<leader>r"
+
+-- The "review" group in which-key, once which-key is there, when a key is mapped
+-- under it (else the prefix may be another plugin's group). Under lazy.nvim
 -- which-key loads at VeryLazy: wait for it rather than load it early.
 local function add_which_key_group()
+  local under = vim.tbl_filter(function(key)
+    return vim.startswith(key.lhs, GROUP)
+  end, mapped)
+  if #under == 0 then
+    return
+  end
   local function add()
     local ok, wk = pcall(require, "which-key")
     if ok and type(wk.add) == "function" then
-      wk.add({ { "<leader>r", group = "review", mode = { "n", "x" } } })
+      wk.add({ { GROUP, group = "review", mode = { "n", "x" } } })
     end
   end
   if package.loaded["lazy"] and vim.v.vim_did_enter == 0 then

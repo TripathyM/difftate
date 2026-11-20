@@ -60,9 +60,10 @@ local function poll(review)
     review.base = answer.base
     follow_base(review, function(why)
       review.polling = false
-      if why then
-        say(why, vim.log.levels.WARN)
+      if why and why ~= review.base_error then
+        say(why, vim.log.levels.WARN) -- once, not every poll
       end
+      review.base_error = why
     end)
   end)
 end
@@ -131,8 +132,8 @@ function M.close()
   end
   stop_polling(current)
   current = nil
-  gitsigns.restore()
-  say("Review closed: git signs show changes since the index again")
+  local base = gitsigns.restore()
+  say(("Review closed: git signs show changes since %s again"):format(base or "the index"))
 end
 
 --- Say whether the review is open, and what git signs show.

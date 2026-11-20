@@ -72,11 +72,12 @@ function M.request(watcher, method, path, on_answer)
     end
     local body, status = (r.stdout or ""):match("^(.*)\n(%d+)$")
     local decoded_ok, answer = pcall(vim.json.decode, body or "", { luanil = { object = true, array = true } })
-    if not decoded_ok then
+    if not decoded_ok or type(answer) ~= "table" then
       answer = nil
     end
-    if tonumber(status) ~= 200 then
-      local said = type(answer) == "table" and answer.error or nil
+    if tonumber(status) ~= 200 or not answer then
+      local said = answer and answer.error or nil
+      -- 401: another watcher's token, from a stale file (as the Herdr viewer reads it)
       on_answer(nil, { missing = status == "401", message = said or ("%s %s: %s"):format(method, path, status) })
       return
     end

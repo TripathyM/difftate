@@ -32,10 +32,11 @@ function M.point_at(commit)
   return true
 end
 
---- Put gitsigns' base back as it was before point_at, when it changed it.
+--- Put gitsigns' base back as it was before point_at, when it changed it: that
+--- base (nil for the index).
 function M.restore()
   if not before then
-    return
+    return nil
   end
   local base = before.base
   before = nil
@@ -43,6 +44,7 @@ function M.restore()
   if gs then
     gs.change_base(base, true) -- no base: gitsigns' reset_base, the index
   end
+  return base
 end
 
 return M

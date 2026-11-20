@@ -77,7 +77,7 @@ def needs(missing):
     return failing
 
 
-def lua_string(text):
+def vim_string(text):
     """<text> as a Vim script string in double quotes."""
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
 
@@ -121,18 +121,18 @@ class Neovim:
 
     def lua(self, code, timeout=10):
         """What the Lua chunk <code> returns, run in this Neovim."""
-        answer = json.loads(self.expr(f"v:lua.T.eval({lua_string(code)})", timeout=timeout))
+        answer = json.loads(self.expr(f"v:lua.T.eval({vim_string(code)})", timeout=timeout))
         if not answer["ok"]:
             raise AssertionError(f"Lua failed: {answer.get('value')}\n{code}")
         return answer.get("value")
 
     def command(self, command):
         """Run the Ex <command>, as the reviewer types it."""
-        return self.lua(f"vim.cmd({lua_string(command)})")
+        return self.lua(f"vim.cmd({vim_string(command)})")
 
     def keys(self, keys):
         """Press <keys> in normal mode (<leader> is the space, as in LazyVim)."""
-        self.lua(f"vim.api.nvim_feedkeys(vim.keycode({lua_string(keys)}), 'mx', false)")
+        self.lua(f"vim.api.nvim_feedkeys(vim.keycode({vim_string(keys)}), 'mx', false)")
 
     def messages(self):
         return self.lua("return vim.fn.execute('messages')")
@@ -273,6 +273,19 @@ class ClosingTheReview(NeovimHarness, unittest.TestCase):
         self.assertEqual(nvim.status(), "")
         self.assertIn("Review closed", nvim.messages())
 
+    def test_a_base_the_reviewer_gave_gitsigns_comes_back_and_the_message_names_it(self):
+        self.commit()
+        self.start_watcher()
+        nvim = self.nvim(before="require('gitsigns').change_base('HEAD', true)")
+        wait_for("the reviewer's base", lambda: nvim.gitsigns_base() == "HEAD")
+        nvim.command("DifftateOpen")
+        wait_for("gitsigns on the base", lambda: nvim.gitsigns_base() == self.head(ref="main"))
+
+        nvim.command("DifftateClose")
+
+        wait_for("the reviewer's base again", lambda: nvim.gitsigns_base() == "HEAD")
+        self.assertIn("Review closed: git signs show changes since HEAD again", nvim.messages())
+
     def test_difftate_status_says_whether_it_is_open(self):
         nvim = self.an_open_review()
         nvim.command("messages clear")
@@ -334,8 +347,9 @@ class WhileTheReviewIsOpen(NeovimHarness, unittest.TestCase):
         nvim.command("messages clear")
 
         self.start_watcher()
+        time.sleep(1)  # five polls, were it still polling: one would reach this watcher
         self.stop_watcher()
-        time.sleep(1)  # five polls, were it still polling
+        time.sleep(1)  # and five more would find it stopped
 
         self.assertNotIn("difftate stopped answering", nvim.messages())
 
@@ -383,6 +397,11 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
         added = nvim.lua("return require('which-key').added")
 
         self.assertEqual(added, [[{"1": "<leader>r", "group": "review", "mode": ["n", "x"]}]])
+
+    def test_with_no_key_under_leader_r_it_adds_no_group_to_which_key(self):
+        nvim = self.nvim(extra_rtp=[FAKE_WHICH_KEY], opts={"keys": {"toggle": "<leader>gR"}})
+
+        self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
     def test_setting_it_up_changes_no_option_and_only_adds_its_key(self):
         nvim = self.nvim()
