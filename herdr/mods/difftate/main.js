@@ -325,7 +325,7 @@ export default class Review extends View {
     if (!this.api) { this.msg = "Start difftate (or dto) in this repo to change the review mode."; return; }
     cx.spawn(async (cx) => {
       try {
-        await this.loadMode();
+        this.modeState = await this.api.mode(); // read it now: someone may have changed it elsewhere
         const to = otherMode(this.modeState);
         const r = await this.api.setMode(to);
         this.modeSig = null; // the next poll reads it again, whoever changes it
@@ -343,7 +343,7 @@ export default class Review extends View {
     if (!this.api) { this.msg = "Start difftate (or dto) in this repo to submit."; return; }
     cx.spawn(async (cx) => {
       try {
-        await this.loadMode();
+        this.modeState = await this.api.mode();
         const problem = submitProblem(this.modeState);
         if (problem) { this.msg = problem; cx.notify(); return; }
         const r = await this.api.submit();
