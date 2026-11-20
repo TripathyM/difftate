@@ -113,6 +113,35 @@ dtcx() { CLAUDE_CONFIG_DIR=~/.claude-other difftate "$@"; }   # plain claude, an
 
 The watcher passes its environment to the coding agent, so `CLAUDE_CONFIG_DIR` set in a shortcut reaches `claude`.
 
+## Review in Neovim
+
+The Neovim viewer reviews in your own Neovim (LazyVim), on the real files, with your own keys, pickers and LSP ([ADR 0007](docs/adr/0007-reviews-happen-in-the-reviewers-own-editor.md)). It is a Lua plugin at the top of this repository (`lua/difftate/`, `plugin/difftate.lua`), a client of the [review API](#review-api) like the browser.
+
+**Install** with lazy.nvim, in `~/.config/nvim/lua/plugins/difftate.lua`:
+
+```lua
+return {
+  {
+    "TripathyM/difftate", -- or, from a clone: dir = "~/difftate", name = "difftate",
+    main = "difftate",
+    opts = {}, -- keys = { toggle = "<leader>rr" } is the default; false maps none
+  },
+  -- The note "review open · git signs show changes since <base>" in the statusline,
+  -- while a review is open (it shows nothing otherwise)
+  {
+    "nvim-lualine/lualine.nvim",
+    optional = true,
+    opts = function(_, opts)
+      table.insert(opts.sections.lualine_x, 1, { function() return require("difftate").status() end })
+    end,
+  },
+}
+```
+
+**Use:** start `difftate` in the repository or worktree, then in Neovim in that folder press `<leader>rr` (or `:DifftateOpen`; `nvim +DifftateOpen` opens it at start-up). It finds the folder's watcher as `dt-export` does; with none running, it says so and changes nothing. While the review is open, gitsigns compares every buffer against where the branch left the review's base (`git merge-base <base> HEAD`, computed again at every poll, so it follows a new commit), so `]h`, `[h` and hunk preview move through the review's changes, committed ones too. `<leader>rr` again (or `:DifftateClose`) puts gitsigns back on the index. `:DifftateStatus` says whether a review is open.
+
+The plugin only adds: it maps no key that is mapped already (it says which option to change instead), sets no option, and changes nothing but gitsigns' base, and only while the review is open. Its keys are under `<leader>r`, a "review" group in which-key (added only while a key is mapped under it); LazyVim's core doesn't use it, only its refactoring extra: with that extra, pick other keys in `opts.keys`.
+
 ## Review in Herdr (optional)
 
 If you use the [Herdr](https://herdr.dev) app, the review can open in a Herdr tab instead of the browser: a small code editor with vim keys, comment threads under the lines, go to definition, fuzzy file open, and quick edits you save yourself. The tab reads and writes through difftate's [review API](#review-api), like the browser viewer, so the coding agent answers its comments as it does in the browser, and both stay in sync. The tab shows the review's view (all changes unless the argument or `Space V` picks another).
@@ -162,6 +191,7 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 | `lib/difftate/adapters/inbound/review_api/` | The [review API](#review-api) (`server.py`, the thread format in `json_format.py`) and, in `web/`, difftate's own browser viewer, which reads and writes the review through it |
 | `lib/difftate/adapters/outbound/` | The other driven adapters: `local_store/` and `memory_store/` keep the review, `history_files/` records the review history, `git/` reads the code |
 | `tests/` | Watcher tests: a temporary repository, the real watcher, a fake coding agent. See [Tests](#tests) |
+| `lua/difftate/`, `plugin/difftate.lua` | The Neovim viewer: a lazy.nvim plugin. See [Review in Neovim](#review-in-neovim) |
 | `herdr/mods/difftate/` | The Herdr Review tab (optional): code view, keys, threads, editing. See [Review in Herdr](#review-in-herdr-optional) |
 | `herdr/keys.json`, `herdr/RECIPE.md`, `herdr/preview.png` | Herdr's sharing files: the optional key binding, the build brief, the screenshot |
 | `herdr/screenshots/` | More screenshots of the Review tab, shown in the mod's README |
@@ -345,7 +375,7 @@ So a follow-up you write while the agent works on the same thread is answered in
 python3 -m unittest discover -s tests -v
 ```
 
-`tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_review_api.py` runs a scripted review through every review API route and compares each answer with `tests/fixtures/review_api_script.json`. The core's tests (`tests/test_core_*.py`) need no repository and no process. `tests/test_core_boundary.py` checks that the core imports no technology, and that only `main.py` wires adapters to the core: an adapter imports the core and itself, never another adapter (one named exception: the history files share the local store's event line format). `tests/test_stores.py` runs one test suite against every store (memory and local). CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
+`tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_review_api.py` runs a scripted review through every review API route and compares each answer with `tests/fixtures/review_api_script.json`. The core's tests (`tests/test_core_*.py`) need no repository and no process. `tests/test_core_boundary.py` checks that the core imports no technology, and that only `main.py` wires adapters to the core: an adapter imports the core and itself, never another adapter (one named exception: the history files share the local store's event line format). `tests/test_stores.py` runs one test suite against every store (memory and local). `tests/test_neovim_viewer.py` starts the watcher, then a headless Neovim with only the plugin and gitsigns (`tests/nvim/init.lua`; never your own config, as HOME and the XDG folders are temporary), and drives it as the reviewer does; it needs `nvim` 0.10 or later and `DIFFTATE_TEST_GITSIGNS` set to a gitsigns.nvim checkout, and skips without (`DIFFTATE_TEST_GITSIGNS=~/.local/share/nvim/lazy/gitsigns.nvim` uses LazyVim's, read only). CI (`.github/workflows/ci.yml`) runs them on Python 3.9 and the latest, runs the Neovim viewer's tests with Neovim and gitsigns installed, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
 
 ## Troubleshooting
 

@@ -21,6 +21,35 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m unittest discover -s tests -v
 
+  # The Neovim viewer's tests skip where Neovim or gitsigns is missing, as in the job
+  # above: here both are installed, and DIFFTATE_TEST_NVIM_REQUIRED makes a skip a failure
+  neovim:
+    name: Neovim viewer
+    runs-on: ubuntu-latest
+    env:
+      NVIM_VERSION: v0.12.6
+      # gitsigns.nvim at a fixed commit, so a new gitsigns doesn't break CI unannounced
+      GITSIGNS_COMMIT: c0862d382a35b7b45757d8d151a6a634c09bf3ce
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install Neovim
+        run: |
+          curl -fsSL "https://github.com/neovim/neovim/releases/download/$NVIM_VERSION/nvim-linux-x86_64.tar.gz" | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
+      - name: Clone gitsigns
+        run: |
+          git init -q "$RUNNER_TEMP/gitsigns.nvim"
+          git -C "$RUNNER_TEMP/gitsigns.nvim" fetch -q --depth 1 https://github.com/lewis6991/gitsigns.nvim "$GITSIGNS_COMMIT"
+          git -C "$RUNNER_TEMP/gitsigns.nvim" checkout -q FETCH_HEAD
+      - run: nvim --version
+      - run: python -m unittest discover -s tests -p "test_neovim_viewer.py" -v
+        env:
+          DIFFTATE_TEST_GITSIGNS: ${{ runner.temp }}/gitsigns.nvim
+          DIFFTATE_TEST_NVIM_REQUIRED: "1"
+
   # ShellCheck has no zsh support, so the one shell file gets zsh's own syntax check
   zsh-syntax:
     name: zsh syntax
