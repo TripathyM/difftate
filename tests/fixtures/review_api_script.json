@@ -13,7 +13,8 @@
    "waitingForRun": false,
    "checkedOut": "feature",
    "mode": "live",
-   "held": []
+   "held": [],
+   "folder": "<repo>"
   }
  },
  {
@@ -4536,7 +4537,8 @@
    "waitingForRun": true,
    "checkedOut": "other",
    "mode": "live",
-   "held": []
+   "held": [],
+   "folder": "<repo>"
   }
  },
  {
@@ -4877,7 +4879,8 @@
    "waitingForRun": false,
    "checkedOut": "feature",
    "mode": "live",
-   "held": []
+   "held": [],
+   "folder": "<repo>"
   }
  },
  {
@@ -5103,7 +5106,8 @@
     "<id-20>",
     "<id-22>",
     "<id-24>"
-   ]
+   ],
+   "folder": "<repo>"
   }
  },
  {

@@ -97,7 +97,7 @@ dt-export            # the review of the folder you are in
 dt-export ~/work/app # the review of that folder, from anywhere: the reply command names it
 ```
 
-`dt-export` asks the difftate running in that folder (the same lookup a second `difftate` there uses), so one must be running; with none, it says so and exits 1. Thread state shows by name: `held`, `waiting`, `queued`, `working`, `replied` or `failed`. The same text is `GET /api/export`.
+`dt-export` asks the difftate running in that folder (the same lookup a second `difftate` there uses), so one must be running; with none, it says so and exits 1. Thread state shows by name: `held`, `waiting`, `queued`, `working`, `replied` or `failed`. The same text is `GET /api/export`. Both viewers copy it to the clipboard: the **Export** button in the browser viewer, and Space E in the Review tab; the reply command in what they copy names the folder the watcher runs in, so the session can reply from anywhere.
 
 The session replies with `dt-reply <thread> "<answer>"` (the export's command, with `--folder <folder>` when you gave one). Outside a run, `dt-reply` finds the difftate of its folder the same way and posts the answer through the review API: it shows as the coding agent's reply, with no progress note, and the thread becomes `replied`. It may reply to any thread of the review, open, resolved or dismissed, and changes no thread status. `<thread>` is the 8 characters the export shows, or the whole id; an id that isn't in the review is refused. With no running difftate it says so and exits 1, posting nothing: `dt-reply` never writes the review itself. Inside a run (`DT_RUN_DIR` set) it works as before, through the run's folder, and never reaches the review API.
 
@@ -295,7 +295,7 @@ The watcher (Python 3.9 or later, nothing else) serves the **review API** on `12
 
 | Request | What it does |
 |---|---|
-| `GET /api/review` | Start or reuse the review of the checked-out branch: `id`, `branch` and `base` (they change when the watcher follows another branch), `mode` and `held` (as `GET /api/mode`) |
+| `GET /api/review` | Start or reuse the review of the checked-out branch: `id`, `branch` and `base` (they change when the watcher follows another branch), `mode` and `held` (as `GET /api/mode`), and `folder`, the checked-out folder the watcher runs in (what a viewer passes to `GET /api/export`) |
 | `GET /api/view` | The view viewers show: `view` (`""` all changes, a commit such as `HEAD~2` for the commits after it, `HEAD` uncommitted, `staged`, `unstaged`) |
 | `PUT /api/view` | Show another view: `view`, and `open` (`browser`, `herdr`, `both`) to open the viewer on it too. A second `difftate` in the repository sends this, then exits |
 | `GET /api/changeset?view=<view>` | The review's changeset in a view (default: the one viewers show), from git: `view`, `base`, `commit` (where the branch left the base), `diff` (unified, new untracked files included) |
