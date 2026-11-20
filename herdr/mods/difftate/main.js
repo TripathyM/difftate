@@ -17,6 +17,7 @@ import { tokenize, langOf } from "./syntax.js";
 import { Editing } from "./edit.js";
 import { isGeneral, threadPlace, openThreads, pickerThreads, stepThread } from "./threads.js";
 import { doneLabel, doneQuestion } from "./done.js";
+import { STATE_LABEL, commentMessage, modeChangedMessage, modeLabel, otherMode, submitProblem, submittedMessage } from "./batched.js";
 
 const MOD = "difftate";
 const SEP = "\u0001";
@@ -27,7 +28,6 @@ const SPECIAL = {
   up: "<up>", down: "<down>", left: "<left>", right: "<right>",
   pageup: "<pageup>", pagedown: "<pagedown>", home: "<home>", end: "<end>",
 };
-const STATE_LABEL = { waiting: "waiting for agent", queued: "queued", working: "agent working", replied: "agent replied", failed: "failed: no reply", resolved: "resolved", dismissed: "dismissed" };
 // "resolved by security-bot": a resolved or dismissed thread names the reviewer who closed it, when it has a name.
 const stateLabel = (th, state) => `${STATE_LABEL[state] ?? state}${th.status !== "open" && th.statusBy ? ` by ${th.statusBy}` : ""}`;
 // Where a thread stands: the API's thread state while open, else its status (resolved, dismissed).
@@ -153,6 +153,7 @@ export default class Review extends View {
     this.threads = [];
     this.viewed = new Set(); // paths of the files marked viewed (the watcher clears a mark when the file's diff changes)
     this.doneState = null; // whether the review is Done (GET /api/done); a new commit on the branch clears it
+    this.modeState = null; // the review mode and the held threads (GET /api/mode); null from a watcher that has none
     this.reviewView = ""; // the review's view (all changes, commits, staged…); this.view is the file shown
     this.view = null;
     this.jumps = [];
@@ -248,6 +249,7 @@ export default class Review extends View {
     await this.loadThreads();
     await this.loadViewed();
     await this.loadDone();
+    await this.loadMode();
   }
 
   async loadDiff() {
@@ -304,6 +306,55 @@ export default class Review extends View {
     this.doneSig = sig;
     this.doneState = s;
     return true;
+  }
+
+  // True when the review mode, or the threads it holds, changed (a watcher that has no /api/mode shows nothing)
+  async loadMode() {
+    if (!this.api) return false;
+    const s = await this.api.mode().catch(() => null);
+    if (!s) return false;
+    const sig = JSON.stringify([s.mode, s.held]);
+    if (sig === this.modeSig) return false;
+    this.modeSig = sig;
+    this.modeState = s;
+    return true;
+  }
+
+  // Change the review to the other mode. Changing to live submits what is held: the message says so
+  toggleMode(cx) {
+    if (!this.api) { this.msg = "Start difftate (or dto) in this repo to change the review mode."; return; }
+    cx.spawn(async (cx) => {
+      try {
+        await this.loadMode();
+        const to = otherMode(this.modeState);
+        const r = await this.api.setMode(to);
+        this.modeSig = null; // the next poll reads it again, whoever changes it
+        this.modeState = { mode: r.mode, held: r.held };
+        this.msg = modeChangedMessage(r.mode, r.submitted);
+        this.threadSig = null; // submitted threads are no longer held
+        await this.loadThreads();
+      } catch (e) { this.msg = String(e.message ?? e); }
+      cx.notify();
+    });
+  }
+
+  // Submit the held threads of a batched review: they go to the coding agent as one run
+  submitHeld(cx) {
+    if (!this.api) { this.msg = "Start difftate (or dto) in this repo to submit."; return; }
+    cx.spawn(async (cx) => {
+      try {
+        await this.loadMode();
+        const problem = submitProblem(this.modeState);
+        if (problem) { this.msg = problem; cx.notify(); return; }
+        const r = await this.api.submit();
+        this.modeSig = null;
+        this.modeState = { mode: r.mode, held: r.held };
+        this.msg = submittedMessage(r.submitted);
+        this.threadSig = null;
+        await this.loadThreads();
+      } catch (e) { this.msg = String(e.message ?? e); }
+      cx.notify();
+    });
   }
 
   // Done: mark the review Done at the commit it is at, or undo it. Open threads, and runs still
@@ -376,6 +427,7 @@ export default class Review extends View {
         if (await this.loadThreads()) cx.notify();
         if (await this.loadViewed()) cx.notify();
         if (await this.loadDone()) cx.notify();
+        if (await this.loadMode()) { this.threadSig = null; await this.loadThreads(); cx.notify(); }
       } catch (e) {
         this.msg = String(e);
       } finally {
@@ -745,6 +797,7 @@ export default class Review extends View {
       resolve: () => this.setThreadStatus("resolved", cx), reopen: () => this.setThreadStatus("open", cx),
       toggle_viewed: () => this.toggleViewed(cx),
       toggle_done: () => this.toggleDone(cx),
+      toggle_mode: () => this.toggleMode(cx), submit: () => this.submitHeld(cx),
       goto_definition: () => this.gotoDefinition(cx), references: () => this.references(cx),
       jump_back: () => this.jump(-1, cx), jump_forward: () => this.jump(1, cx),
       find_files: () => this.findFiles(cx), changed_files: () => this.changedFiles(), threads: () => this.threadPicker(), views: () => this.viewPicker(cx),
@@ -1014,11 +1067,11 @@ export default class Review extends View {
           const th = await this.api.openThread(p.target, text, this.reviewView);
           this.curThread = th.id;
           this.mode = "normal";
-          this.msg = "Comment sent. The agent picks it up within a few seconds.";
+          this.msg = commentMessage(this.modeState, "thread");
         } else if (p.kind === "reply") {
           await this.api.comment(p.thread.id, text);
           this.curThread = p.thread.id;
-          this.msg = "Comment sent";
+          this.msg = commentMessage(this.modeState, "reply");
         }
         this.threadSig = null;
         await this.loadThreads();
@@ -1256,7 +1309,7 @@ export default class Review extends View {
   threadEl(it, t) {
     const th = it.th, state = stateOf(th);
     const on = th.id === this.curThread && (it.i < 0 || this.anchorRow(th) === this.cur.row);
-    const stripe = { waiting: t.blocked, queued: t.blocked, working: t.working, replied: t.done, failed: t.ansi1 }[state] ?? t.dim;
+    const stripe = { held: t.ansi3, waiting: t.blocked, queued: t.blocked, working: t.working, replied: t.done, failed: t.ansi1 }[state] ?? t.dim;
     const tc = (k) => ({ head: stripe, author: t.dim, agent: t.foreground, status: t.muted, hint: t.dim, dim: t.dim, code: t.muted }[k] ?? t.foreground);
     return h_flex().h(it.h).w_full().flex_none().pl(this.gutterW()).pr(20).py(5)
       .child(h_flex().h_full().flex_1().min_w(0).rounded(6).overflow_hidden().border_1().border_color(on ? t.accent : t.border).bg(t.surface)
@@ -1363,6 +1416,7 @@ export default class Review extends View {
       .child(div().text_color(t.dim).child(this.api && this.base ? `${viewLabel(this.reviewView)} · against ${this.base}` : ""))
       .child(div().flex_1())
       .when(open.length > 0, (el) => el.child(div().text_color(t.muted).child(`${open.length} open thread${open.length === 1 ? "" : "s"}${waiting ? ` · ${waiting} with the agent` : ""}`)))
+      .when(Boolean(this.api && modeLabel(this.modeState)), (el) => el.child(div().text_color(t.ansi3).font_semibold().child(`${modeLabel(this.modeState)}${this.modeState.held.length ? " · Space S submits" : ""}`)))
       .when(Boolean(this.api && doneLabel(this.doneState)), (el) => el.child(div().text_color(t.ansi2).font_semibold().child(`✓ ${doneLabel(this.doneState)}`)))
       .child(h_flex().gap(6).items_center()
         .child(div().size(7).rounded(4).bg(this.api ? t.done : t.dim))
