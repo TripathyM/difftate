@@ -1425,7 +1425,7 @@ export default class Review extends View {
     const maxLen = this.rows.reduce((m, r) => Math.max(m, r.text?.length ?? 0), 0);
     const contentW = this.gutterW() + maxLen * this.cw() + 40;
     const r = this.rows[this.cur.row];
-    const modeLabel = this.mode === "visual" ? "V-LINE" : this.mode === "insert" ? "INSERT" : "NORMAL";
+    const editorModeLabel = this.mode === "visual" ? "V-LINE" : this.mode === "insert" ? "INSERT" : "NORMAL";
     const modeBg = this.mode === "visual" ? t.ansi5 : this.mode === "insert" ? t.ansi2 : t.accent;
 
     const header = h_flex().h(36).flex_none().px(14).gap(10).items_center().bg(t.chrome).border_b(1).border_color(t.border).text_size(12)
@@ -1463,7 +1463,7 @@ export default class Review extends View {
 
     const statusBar = h_flex().h(26).flex_none().px(10).gap(10).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(11.5)
       .child(div().px(7).h(18).flex().items_center().rounded(4).font_semibold().text_size(10.5)
-        .bg(modeBg).text_color(t.accent_foreground ?? t.background).child(modeLabel))
+        .bg(modeBg).text_color(t.accent_foreground ?? t.background).child(editorModeLabel))
       .when(Boolean(this.count || this.pending.length), (el) => el.child(div().font_family(mono).text_color(t.foreground).child(this.count + this.pending.join(""))))
       .child(div().flex_1().min_w(0).truncate().text_color(this.keymapError ? t.blocked : t.muted).child(this.keymapError ?? this.msg ?? ""))
       .when(Boolean(this.view), (el) => el
