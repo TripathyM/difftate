@@ -133,8 +133,13 @@ _Avoid_: handoff, dump, snapshot
 ### Viewing
 
 **Viewer**:
-Where the reviewer reads a review and writes comments, such as the browser or a Review tab.
+Where the reviewer reads a review and writes comments: the browser, the Neovim viewer or the Herdr viewer.
 _Avoid_: UI, frontend, client
 
-**Review tab**:
-The viewer inside the Herdr app: a code-editor tab for one repository's review.
+**Neovim viewer**:
+The viewer inside the reviewer's own Neovim: the review's threads shown on the real files, which the reviewer reads, edits and moves through with their own editor.
+_Avoid_: Review tab, nvim plugin
+
+**Herdr viewer**:
+The viewer inside the Herdr app that imitates a code editor, for one repository's review. It gets no new features.
+_Avoid_: Review tab (the Herdr tab of that name now runs the Neovim viewer)
