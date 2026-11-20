@@ -17,8 +17,8 @@ from .command import run
 from .export import run_export
 from .reply import ReplyRefused, run_reply
 from .status import run_status
-from .viewers import open_browser, open_in_herdr, where_to_open
+from .viewers import open_browser, open_in_herdr, open_in_nvim, where_to_open
 from .wiring import Loop, Wiring
 
-__all__ = ["Loop", "ReplyRefused", "Wiring", "open_browser", "open_in_herdr", "run", "run_export", "run_reply",
+__all__ = ["Loop", "ReplyRefused", "Wiring", "open_browser", "open_in_herdr", "open_in_nvim", "run", "run_export", "run_reply",
            "run_status", "where_to_open"]

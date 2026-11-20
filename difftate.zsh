@@ -19,7 +19,8 @@
 #   dto                            # opencode
 #   difftate --model <model>       # the coding agent's model (default: its own default)
 #   difftate --cmd <binary>        # run the coding agent through another command or alias
-#   difftate --open herdr          # open the review in Herdr (browser|herdr|both; default $DT_OPEN, else browser)
+#   difftate --open nvim           # open the review in Neovim, in a Herdr tab when Herdr is reachable (browser|nvim|herdr|both; default $DT_OPEN, else browser)
+#   difftate --open herdr          # the Herdr viewer (frozen)
 #   difftate status --json [--branch <branch>]   # whether a review is Done (needs no watcher; see README)
 #
 # Your own shortcuts go in ~/.zshrc, e.g. to reply with another account or wrapper:

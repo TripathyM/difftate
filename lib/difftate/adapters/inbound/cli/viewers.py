@@ -1,4 +1,5 @@
-"""Opening the review in a viewer: the browser, or a Herdr Review tab.
+"""Opening the review in a viewer: the browser, the Neovim viewer (in the
+host where difftate runs), or the frozen Herdr viewer.
 
 Each viewer is opened with (url, root): the link to difftate's own page, and
 the repository's top folder. It says whether it could be reached. main.py
@@ -6,6 +7,7 @@ picks the viewers; --open names one of them, or both.
 """
 import json
 import os
+import shlex
 import shutil
 import subprocess
 
@@ -38,16 +40,17 @@ def _herdr_cli():
     return os.environ.get("DT_HERDR") or shutil.which("herdr-app") or ""
 
 
-def open_in_herdr(url, root):
+def _herdr_tab(root, new_tab, say, why_not_opened="could not open a Review tab"):
     """Switch to the Review tab of the repository at <root> in Herdr, or open
-    one (Herdr's `difftate` mod). False when Herdr can't be reached."""
+    one with the arguments of <new_tab> (a function of the tab's name). <say>
+    reports what went wrong. False when Herdr can't be reached or won't open it."""
     cli = _herdr_cli()
     if not cli or not os.access(cli, os.X_OK):
-        print("  Herdr: herdr-app not found (set DT_HERDR to the Herdr app's binary)")
+        say("  Herdr: herdr-app not found (set DT_HERDR to the Herdr app's binary)")
         return False
     tabs = _run([cli, "ls"])
     if not tabs or tabs.returncode != 0:
-        print("  Herdr: not running")
+        say("  Herdr: not running")
         return False
     name = f"Review · {os.path.basename(root)}"
     try:
@@ -60,12 +63,46 @@ def open_in_herdr(url, root):
         if r and r.returncode == 0:
             print(f'  Herdr: switched to the "{name}" tab')
             return True
-    args = {"name": name, "mod": "difftate", "props": {"folder": root}}
-    r = _run([cli, "do", "tab.new", json.dumps(args)])
+    r = _run([cli, "do", "tab.new", json.dumps(new_tab(name))])
     if not r or r.returncode != 0:
-        print("  Herdr: could not open a Review tab (is the difftate mod installed?)")
+        say(f"  Herdr: {why_not_opened}")
         return False
     print(f'  Herdr: opened the "{name}" tab')
+    return True
+
+
+def open_in_herdr(url, root):
+    """The Herdr viewer, frozen: a Review tab running Herdr's `difftate` mod.
+    False when Herdr can't be reached."""
+    def mod_tab(name):
+        return {"name": name, "mod": "difftate", "props": {"folder": root}}
+
+    return _herdr_tab(root, mod_tab, print, "could not open a Review tab (is the difftate mod installed?)")
+
+
+NVIM_COMMAND = ["nvim", "+DifftateOpen"]
+
+
+def _nvim_in_herdr(root):
+    """The Neovim viewer's host when difftate runs where Herdr is reachable:
+    a `Review · <folder>` tab running nvim in <root>."""
+    def nvim_tab(name):
+        return {"name": name, "folder": root, "argv": NVIM_COMMAND}
+
+    return _herdr_tab(root, nvim_tab, lambda message: None)
+
+
+# Where the Neovim viewer opens, in order: the first that takes it wins. Another
+# host (tmux, another multiplexer) is one more function here, taking the folder.
+NVIM_HOSTS = (_nvim_in_herdr,)
+
+
+def open_in_nvim(url, root):
+    """The Neovim viewer: nvim with the review open, in the first host that
+    takes it; with none, the command to run is printed. Always True: a host that
+    is missing is no reason to open the browser."""
+    if not any(host(root) for host in NVIM_HOSTS):
+        print(f"  Neovim: no host to open it in; run: cd {shlex.quote(root)} && {shlex.join(NVIM_COMMAND)}")
     return True
 
 
