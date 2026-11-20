@@ -996,7 +996,13 @@ class CommentingOnLines(NeovimHarness, unittest.TestCase):
         self.assertIsNone(nvim.compose_float(), "the float closed once it was sent")
 
     def test_the_thread_shows_inline_as_soon_as_it_is_posted_not_at_the_next_poll(self):
-        nvim = self.an_open_review(); self.batched()
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        nvim = self.nvim(opts={"poll_ms": 600000})  # no poll can draw it
+        self.attached(nvim)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
         nvim.command("2")
         nvim.keys("<leader>rc")
         wait_for("the compose float", lambda: nvim.compose_float())
@@ -1150,6 +1156,16 @@ class TheComposeFloat(NeovimHarness, unittest.TestCase):
         nvim.keys("<leader>rc")
         wait_for("the float once saved", lambda: nvim.compose_float())
 
+    def test_an_unsaved_buffer_outside_the_review_is_asked_to_be_saved_first(self):
+        nvim = self.a_review()
+        nvim.command("enew")
+        nvim.lua("vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'scratch' })")
+
+        nvim.keys("<leader>rc")
+
+        wait_for("the message", lambda: "Save the file to comment on it" in nvim.messages())
+        self.assertIsNone(nvim.compose_float())
+
     def test_with_no_review_open_it_says_so(self):
         self.commit()
         nvim = self.nvim()
@@ -1203,6 +1219,7 @@ class TheComposeFloat(NeovimHarness, unittest.TestCase):
         nvim.keys("<Esc>q")
         nvim.keys("<leader>rR")
         wait_for("resolved", lambda: self.api("GET", "/api/threads")[0]["status"] == "resolved")
+        wait_for("drawn as resolved", lambda: len(nvim.threads()[0]["lines"]) == 1)
         nvim.keys("<leader>rO")
         wait_for("reopened", lambda: self.api("GET", "/api/threads")[0]["status"] == "open")
         nvim.command("DifftateClose")
@@ -1337,6 +1354,7 @@ class GeneralThreads(NeovimHarness, unittest.TestCase):
         nvim.command("write")
 
         wait_for("the thread", lambda: self.api("GET", "/api/threads"))
+        self.assertIsNone(self.api("GET", "/api/threads")[0]["anchor"])
 
 
 @needs(MISSING_GITSIGNS)

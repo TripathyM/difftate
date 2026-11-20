@@ -204,8 +204,8 @@ local function open_review(what)
   return current
 end
 
--- Choose among <candidates>, one of the threads on the cursor's line (a choice when
--- several are): then(thread). <none> is said when there are none.
+-- Choose among <candidates>, the threads on the cursor's line (a choice when several
+-- are): then_(thread). <none> is said when there are none.
 local function choose(candidates, none, then_)
   if #candidates == 0 then
     say(none)
@@ -222,15 +222,16 @@ local function choose(candidates, none, then_)
   end
 end
 
--- The threads on the cursor's line that <wanted> (a function of a thread) accepts: then_(thread)
--- on the one the reviewer chooses. <none> says what is missing when none is.
+-- The threads on the cursor's line that <wanted> (a function of a thread, any when nil)
+-- accepts: then_(thread) on the one the reviewer chooses. <none> says what is missing when
+-- threads are there but none is wanted.
 local function thread_here(wanted, none, then_)
   local found = draw.threads_at(vim.api.nvim_get_current_buf(), vim.api.nvim_win_get_cursor(0)[1])
   if #found == 0 then
     say("No thread on this line")
     return
   end
-  choose(vim.tbl_filter(wanted, found), none, then_)
+  choose(wanted and vim.tbl_filter(wanted, found) or found, none, then_)
 end
 
 --- Open the thread on the cursor's line in the read float (a choice when several are).
@@ -238,7 +239,7 @@ function M.read_thread()
   if not open_review("read a thread") then
     return
   end
-  thread_here(function() return true end, "No thread on this line", float.open)
+  thread_here(nil, nil, float.open)
 end
 
 -- Read the threads again now, so that what was just sent is drawn without waiting for a poll
@@ -247,7 +248,7 @@ local function refresh(review)
 end
 
 -- Send <payload> to the review API: done(true) once it took it (and the threads are
--- drawn again), or done(false, why). A closed review takes nothing.
+-- drawn again, when the review is still open), or done(false, why).
 local function send(review, method, path, payload, done)
   api.request(review.watcher, method, path, function(answer, err)
     if not answer then
@@ -259,6 +260,19 @@ local function send(review, method, path, payload, done)
       refresh(review)
     end
   end, payload)
+end
+
+-- A compose float's send function: post <payload> (a function of the text) to <path>, say
+-- <sent> when the review API took it
+local function poster(review, method, path, payload, sent)
+  return function(body, done)
+    send(review, method, path, payload(body), function(ok, why)
+      if ok then
+        say(sent)
+      end
+      done(ok, why)
+    end)
+  end
 end
 
 -- The path of the file of buffer <buf> in the review's folder, or nil and why
@@ -277,12 +291,12 @@ end
 
 -- The lines of the cursor, or of the visual selection when <visual> (which ends it)
 local function lines_picked(visual)
-  local first, last = vim.fn.line("."), vim.fn.line(".")
+  local cursor = vim.fn.line(".")
+  local other = visual and vim.fn.line("v") or cursor -- the selection's other end
   if visual then
-    first = vim.fn.line("v")
     vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "nx", false)
   end
-  return math.min(first, last), math.max(first, last)
+  return math.min(cursor, other), math.max(cursor, other)
 end
 
 --- Write a comment on the cursor's line, or on the visual selection when <visual>: it opens a
@@ -294,13 +308,13 @@ function M.comment(visual)
   end
   local first, last = lines_picked(visual)
   local buf, win = vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win()
+  if vim.bo[buf].modified then
+    say("Save the file to comment on it", vim.log.levels.WARN)
+    return
+  end
   local file, why = path_in_review(review, buf)
   if not file then
     say(why, vim.log.levels.WARN)
-    return
-  end
-  if vim.bo[buf].modified then
-    say("Save the file to comment on it", vim.log.levels.WARN)
     return
   end
   -- The anchor, as the browser sends it, without a version: the file is read from disk, not from a diff
@@ -310,14 +324,9 @@ function M.comment(visual)
   compose.open({
     title = ("comment on %s:%s"):format(file, where), win = win, line = last,
     key = ("%s\0%s:%d:%d"):format(review.watcher.top, file, first, last),
-    send = function(body, done)
-      send(review, "POST", "/api/threads", { anchor = anchor, body = body, view = "" }, function(ok, why_not)
-        if ok then
-          say("Comment sent")
-        end
-        done(ok, why_not)
-      end)
-    end,
+    send = poster(review, "POST", "/api/threads", function(body)
+      return { anchor = anchor, body = body, view = "" }
+    end, "Comment sent"),
   })
 end
 
@@ -328,20 +337,14 @@ function M.reply()
     return
   end
   local win, line = vim.api.nvim_get_current_win(), vim.api.nvim_win_get_cursor(0)[1]
-  thread_here(function() return true end, "No thread on this line", function(thread)
+  thread_here(nil, nil, function(thread)
     local a = thread.anchor
     compose.open({
-      title = ("reply on %s:%d"):format(a.file, a.endLine), win = win, line = line,
+      title = a and ("reply on %s:%d"):format(a.file, a.endLine) or "reply on a general thread", win = win, line = line,
       key = ("%s\0reply:%s"):format(review.watcher.top, thread.id),
-      send = function(body, done)
-        send(review, "POST", ("/api/threads/%s/comments"):format(vim.uri_encode(thread.id)),
-          { kind = "comment", body = body }, function(ok, why_not)
-            if ok then
-              say("Reply sent")
-            end
-            done(ok, why_not)
-          end)
-      end,
+      send = poster(review, "POST", ("/api/threads/%s/comments"):format(vim.uri_encode(thread.id)), function(body)
+        return { kind = "comment", body = body }
+      end, "Reply sent"),
     })
   end)
 end
@@ -355,14 +358,9 @@ function M.general()
   compose.open({
     title = "general thread", win = vim.api.nvim_get_current_win(), line = vim.api.nvim_win_get_cursor(0)[1],
     key = review.watcher.top .. "\0general",
-    send = function(body, done)
-      send(review, "POST", "/api/threads", { anchor = vim.NIL, body = body, view = "" }, function(ok, why_not)
-        if ok then
-          say("General thread sent")
-        end
-        done(ok, why_not)
-      end)
-    end,
+    send = poster(review, "POST", "/api/threads", function(body)
+      return { anchor = vim.NIL, body = body, view = "" }
+    end, "General thread sent"),
   })
 end
 

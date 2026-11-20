@@ -16,7 +16,7 @@ local MAX_WIDTH = 100
 local HEIGHT = 8
 
 local current -- the open float: { win, buf, key, sending, sent }
-local drafts = {} -- the text not sent yet, by key: { line, ... }
+local unsent = {} -- the text not sent yet, by key: { line, ... }
 local count = 0
 
 local function say(message, level)
@@ -33,7 +33,7 @@ local function keep(float)
     return
   end
   local lines = vim.api.nvim_buf_get_lines(float.buf, 0, -1, false)
-  drafts[float.key] = not blank(lines) and lines or nil
+  unsent[float.key] = not blank(lines) and lines or nil
 end
 
 --- Close the float, when one is open: what is in it stays as the unsent text.
@@ -52,11 +52,6 @@ end
 --- Whether the compose float is open.
 function M.is_open()
   return current ~= nil
-end
-
---- The unsent text of <key> (a list of lines), or nil.
-function M.draft(key)
-  return drafts[key]
 end
 
 -- Where the float goes: under what is drawn under <line> (its threads) of <win>, as
@@ -101,8 +96,9 @@ function M.open(opts)
   end
   set("wrap", true)
   set("linebreak", true)
-  local text = drafts[opts.key] or { "" }
+  local text = unsent[opts.key] or { "" }
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, text)
+  vim.bo[buf].modified = false -- its own buffer: :q closes it, the text is kept
   vim.api.nvim_set_option_value("filetype", "markdown", { buf = buf })
   vim.api.nvim_win_set_cursor(win, { #text, #text[#text] })
 
@@ -119,7 +115,7 @@ function M.open(opts)
     opts.send(body, function(ok, why)
       float.sending = false
       if ok then
-        drafts[float.key] = nil
+        unsent[float.key] = nil
         float.sent = true
         if current == float then
           M.close()
