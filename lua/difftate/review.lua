@@ -1,6 +1,7 @@
 -- The review open in this Neovim: at most one, of the checked-out folder Neovim
 -- was in when it opened.
 local api = require("difftate.api")
+local compose = require("difftate.compose")
 local draw = require("difftate.draw")
 local float = require("difftate.float")
 local git = require("difftate.git")
@@ -178,6 +179,7 @@ function M.close()
   stop_polling(current)
   current = nil
   float.close()
+  compose.close() -- what is typed stays, for when a review is open again
   draw.clear()
   local base = gitsigns.restore()
   say(("Review closed: git signs show changes since %s again"):format(base or "the index"))
@@ -193,26 +195,193 @@ function M.toggle_expanded()
   say(draw.toggle_expanded() and "Every thread is expanded" or "Resolved, dismissed and outdated threads are one line")
 end
 
---- Open the thread on the cursor's line in the read float (a choice when several are).
-function M.read_thread()
+-- The review for a key that needs one, or nil (with the message): <what> says what the key does
+local function open_review(what)
   if not (current and current.watcher) then
-    say("No review is open: open it to read a thread")
-    return
+    say("No review is open: open it to " .. what)
+    return nil
   end
-  local found = draw.threads_at(vim.api.nvim_get_current_buf(), vim.api.nvim_win_get_cursor(0)[1])
-  if #found == 0 then
-    say("No thread on this line")
-  elseif #found == 1 then
-    float.open(found[1])
+  return current
+end
+
+-- Choose among <candidates>, one of the threads on the cursor's line (a choice when
+-- several are): then(thread). <none> is said when there are none.
+local function choose(candidates, none, then_)
+  if #candidates == 0 then
+    say(none)
+  elseif #candidates == 1 then
+    then_(candidates[1])
   else
-    vim.ui.select(found, { prompt = "Which thread?", format_item = function(thread)
+    vim.ui.select(candidates, { prompt = "Which thread?", format_item = function(thread)
       return threads.summary(thread, 80)
     end }, function(thread)
       if thread then
-        float.open(thread)
+        then_(thread)
       end
     end)
   end
+end
+
+-- The threads on the cursor's line that <wanted> (a function of a thread) accepts: then_(thread)
+-- on the one the reviewer chooses. <none> says what is missing when none is.
+local function thread_here(wanted, none, then_)
+  local found = draw.threads_at(vim.api.nvim_get_current_buf(), vim.api.nvim_win_get_cursor(0)[1])
+  if #found == 0 then
+    say("No thread on this line")
+    return
+  end
+  choose(vim.tbl_filter(wanted, found), none, then_)
+end
+
+--- Open the thread on the cursor's line in the read float (a choice when several are).
+function M.read_thread()
+  if not open_review("read a thread") then
+    return
+  end
+  thread_here(function() return true end, "No thread on this line", float.open)
+end
+
+-- Read the threads again now, so that what was just sent is drawn without waiting for a poll
+local function refresh(review)
+  read_threads(review, function() end)
+end
+
+-- Send <payload> to the review API: done(true) once it took it (and the threads are
+-- drawn again), or done(false, why). A closed review takes nothing.
+local function send(review, method, path, payload, done)
+  api.request(review.watcher, method, path, function(answer, err)
+    if not answer then
+      done(false, err.missing and no_watcher(review.watcher.top) or err.message)
+      return
+    end
+    done(true)
+    if current == review then
+      refresh(review)
+    end
+  end, payload)
+end
+
+-- The path of the file of buffer <buf> in the review's folder, or nil and why
+local function path_in_review(review, buf)
+  local name = vim.api.nvim_buf_get_name(buf)
+  if vim.bo[buf].buftype ~= "" or name == "" then
+    return nil, "This buffer is not a file: comments go on the files of the review"
+  end
+  local top = vim.uv.fs_realpath(review.watcher.top) or review.watcher.top
+  local path = vim.uv.fs_realpath(name) or name
+  if not vim.startswith(path, top .. "/") then
+    return nil, ("%s is not in %s, the folder of the review"):format(vim.fn.fnamemodify(name, ":~"), review.watcher.top)
+  end
+  return path:sub(#top + 2)
+end
+
+-- The lines of the cursor, or of the visual selection when <visual> (which ends it)
+local function lines_picked(visual)
+  local first, last = vim.fn.line("."), vim.fn.line(".")
+  if visual then
+    first = vim.fn.line("v")
+    vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "nx", false)
+  end
+  return math.min(first, last), math.max(first, last)
+end
+
+--- Write a comment on the cursor's line, or on the visual selection when <visual>: it opens a
+--- thread on the code on disk at those lines, on the side new (a deleted line is in no buffer).
+function M.comment(visual)
+  local review = open_review("comment")
+  if not review then
+    return
+  end
+  local first, last = lines_picked(visual)
+  local buf, win = vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win()
+  local file, why = path_in_review(review, buf)
+  if not file then
+    say(why, vim.log.levels.WARN)
+    return
+  end
+  if vim.bo[buf].modified then
+    say("Save the file to comment on it", vim.log.levels.WARN)
+    return
+  end
+  -- The anchor, as the browser sends it, without a version: the file is read from disk, not from a diff
+  local anchor = { file = file, side = "new", startLine = first, endLine = last,
+    code = table.concat(vim.api.nvim_buf_get_lines(buf, first - 1, last, false), "\n") }
+  local where = first == last and tostring(first) or ("%d-%d"):format(first, last)
+  compose.open({
+    title = ("comment on %s:%s"):format(file, where), win = win, line = last,
+    key = ("%s\0%s:%d:%d"):format(review.watcher.top, file, first, last),
+    send = function(body, done)
+      send(review, "POST", "/api/threads", { anchor = anchor, body = body, view = "" }, function(ok, why_not)
+        if ok then
+          say("Comment sent")
+        end
+        done(ok, why_not)
+      end)
+    end,
+  })
+end
+
+--- Write a reply to the thread on the cursor's line (a choice when several are).
+function M.reply()
+  local review = open_review("reply")
+  if not review then
+    return
+  end
+  local win, line = vim.api.nvim_get_current_win(), vim.api.nvim_win_get_cursor(0)[1]
+  thread_here(function() return true end, "No thread on this line", function(thread)
+    local a = thread.anchor
+    compose.open({
+      title = ("reply on %s:%d"):format(a.file, a.endLine), win = win, line = line,
+      key = ("%s\0reply:%s"):format(review.watcher.top, thread.id),
+      send = function(body, done)
+        send(review, "POST", ("/api/threads/%s/comments"):format(vim.uri_encode(thread.id)),
+          { kind = "comment", body = body }, function(ok, why_not)
+            if ok then
+              say("Reply sent")
+            end
+            done(ok, why_not)
+          end)
+      end,
+    })
+  end)
+end
+
+--- Write a general thread: one on the changeset as a whole, with no line.
+function M.general()
+  local review = open_review("write a general thread")
+  if not review then
+    return
+  end
+  compose.open({
+    title = "general thread", win = vim.api.nvim_get_current_win(), line = vim.api.nvim_win_get_cursor(0)[1],
+    key = review.watcher.top .. "\0general",
+    send = function(body, done)
+      send(review, "POST", "/api/threads", { anchor = vim.NIL, body = body, view = "" }, function(ok, why_not)
+        if ok then
+          say("General thread sent")
+        end
+        done(ok, why_not)
+      end)
+    end,
+  })
+end
+
+--- Set the status of the thread on the cursor's line: <status> "resolved" resolves an open
+--- one, "open" reopens a resolved or dismissed one.
+function M.set_status(status)
+  local review = open_review(status == "open" and "reopen a thread" or "resolve a thread")
+  if not review then
+    return
+  end
+  local reopening = status == "open"
+  thread_here(function(thread)
+    return (thread.status == "open") ~= reopening
+  end, reopening and "No resolved or dismissed thread on this line" or "No open thread on this line", function(thread)
+    send(review, "PATCH", ("/api/threads/%s/status"):format(vim.uri_encode(thread.id)), { status = status },
+      function(ok, why)
+        say(ok and (reopening and "Reopened" or "Resolved") or why, ok and vim.log.levels.INFO or vim.log.levels.ERROR)
+      end)
+  end)
 end
 
 --- Say whether the review is open, and what git signs show.

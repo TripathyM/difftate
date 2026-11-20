@@ -50,11 +50,18 @@ local function address(watcher)
   return tonumber(info.port), token
 end
 
+-- <text> as a double-quoted string of curl's config file: \ and " escaped (a JSON
+-- text has no raw control characters, vim.json.encode escapes them)
+local function quoted(text)
+  return '"' .. text:gsub('[\\"]', "\\%0") .. '"'
+end
+
 --- Call the review API of <watcher> (from M.find): on_answer(answer) on the main
 --- loop with the decoded JSON, or on_answer(nil, err) where err.missing says no
 --- watcher answered (none wrote where it runs, or it doesn't answer there), and
---- err.message what went wrong.
-function M.request(watcher, method, path, on_answer)
+--- err.message what went wrong. <payload> (a Lua table, sent as JSON) is the body of a
+--- POST or PATCH, as the browser sends it.
+function M.request(watcher, method, path, on_answer, payload)
   local port, token = address(watcher)
   if not port then
     vim.schedule(function()
@@ -65,6 +72,11 @@ function M.request(watcher, method, path, on_answer)
   local cmd = { "curl", "-sS", "--max-time", tostring(MAX_S), "-K", "-", "-X", method,
     "-w", "\n%{http_code}", ("http://127.0.0.1:%d%s"):format(port, path) }
   local config = ('header = "Authorization: Bearer %s"\n'):format(token)
+  if payload ~= nil then
+    -- In the config on stdin, like the token: a comment is private text too, and argv is readable by any process
+    config = config .. 'header = "Content-Type: application/json"\n'
+      .. "data-raw = " .. quoted(vim.json.encode(payload)) .. "\n"
+  end
   local ok, err = pcall(vim.system, cmd, { text = true, stdin = config }, vim.schedule_wrap(function(r)
     if r.code ~= 0 then
       on_answer(nil, { missing = true, message = vim.trim(r.stderr or "") })

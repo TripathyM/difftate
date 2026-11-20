@@ -180,6 +180,21 @@ class Neovim:
               end
             end""")
 
+    def compose_float(self):
+        """The compose float the plugin opened (the current window): {"lines", "filetype", "title"}, or
+        None when the current window is not a float."""
+        return self.lua("""
+            local win = vim.api.nvim_get_current_win()
+            local config = vim.api.nvim_win_get_config(win)
+            if config.relative == "" then return nil end
+            local buf = vim.api.nvim_win_get_buf(win)
+            return { lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false), filetype = vim.bo[buf].filetype,
+                     title = config.title and config.title[1] and config.title[1][1] or "" }""")
+
+    def write_text(self, text):
+        """Make <text> the text of the current buffer, as typing it would."""
+        self.lua(f"vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(vim.json.decode([==[{json.dumps(text)}]==]), '\\n'))")
+
     def quit(self):
         if self.process.poll() is None:
             self.process.kill()
@@ -440,7 +455,9 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
         self.assertEqual(added, [[{"1": "<leader>r", "group": "review", "mode": ["n", "x"]}]])
 
     def test_with_no_key_under_leader_r_it_adds_no_group_to_which_key(self):
-        nvim = self.nvim(extra_rtp=[FAKE_WHICH_KEY], opts={"keys": {"toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT"}})
+        nvim = self.nvim(extra_rtp=[FAKE_WHICH_KEY], opts={"keys": {
+            "toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT", "comment": "<leader>gC", "reply": "<leader>gA",
+            "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -450,7 +467,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
         before, after = nvim.lua("return T.before"), nvim.lua("return T.after_setup")
 
         self.assertEqual(after["options"], before["options"])
-        self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt"})
+        self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -947,3 +964,423 @@ class WrappingText(NeovimHarness, unittest.TestCase):
         self.assertEqual(self.wrap(nvim, "日本語 日本語", 6), ["日本語", "日本語"])
         self.assertEqual(self.wrap(nvim, "abcdefghij", 4), ["abcd", "efgh", "ij"])
         self.assertEqual(self.wrap(nvim, "", 10), [""])
+
+
+@needs(MISSING_GITSIGNS)
+class CommentingOnLines(NeovimHarness, unittest.TestCase):
+    def a_review(self):
+        """The review open in Neovim on app.py, batched: no coding agent answers; the Neovim."""
+        nvim = self.an_open_review()
+        self.batched()
+        return nvim
+
+    def anchors(self):
+        return [(t["anchor"] and (t["anchor"]["file"], t["anchor"]["side"], t["anchor"]["startLine"],
+                                  t["anchor"]["endLine"], t["anchor"]["code"]), t["comments"][0]["body"])
+                for t in self.api("GET", "/api/threads")]
+
+    def test_leader_rc_on_a_line_opens_a_markdown_float_and_w_posts_the_thread_anchored_to_the_code_on_disk(self):
+        nvim = self.a_review()
+        nvim.command("2")
+
+        nvim.keys("<leader>rc")
+
+        wait_for("the compose float", lambda: nvim.compose_float())
+        self.assertEqual(nvim.compose_float()["filetype"], "markdown")
+        self.assertIn("app.py:2", nvim.compose_float()["title"])
+        nvim.write_text("Name the greeting first")
+        nvim.command("write")
+        wait_for("the thread", lambda: self.api("GET", "/api/threads"))
+        self.assertEqual(self.anchors(), [(("app.py", "new", 2, 2, "    return f'hello {name}'"), "Name the greeting first")])
+        self.assertEqual(self.api("GET", "/api/threads")[0]["comments"][0]["by"], "Test", "the API's default reviewer name")
+        self.assertIsNone(nvim.compose_float(), "the float closed once it was sent")
+
+    def test_the_thread_shows_inline_as_soon_as_it_is_posted_not_at_the_next_poll(self):
+        nvim = self.an_open_review(); self.batched()
+        nvim.command("2")
+        nvim.keys("<leader>rc")
+        wait_for("the compose float", lambda: nvim.compose_float())
+        nvim.write_text("Name the greeting first")
+
+        nvim.command("write")
+
+        threads = self.drawn(nvim, rows=[2])
+        self.assertIn("Name the greeting first", "\n".join(threads[0]["lines"]))
+
+    def test_a_visual_range_is_anchored_to_all_its_lines(self):
+        nvim = self.a_review()
+        nvim.command("1")
+
+        nvim.keys("Vj<leader>rc")
+        wait_for("the compose float", lambda: nvim.compose_float())
+        nvim.write_text("Both lines")
+        nvim.command("write")
+
+        wait_for("the thread", lambda: self.api("GET", "/api/threads"))
+        self.assertEqual(self.anchors(), [(("app.py", "new", 1, 2, "def greet(name):\n    return f'hello {name}'"), "Both lines")])
+        self.drawn(nvim, rows=[2])
+
+    def test_a_multi_line_comment_keeps_its_breaks(self):
+        nvim = self.a_review()
+        nvim.command("2")
+        nvim.keys("<leader>rc")
+        wait_for("the compose float", lambda: nvim.compose_float())
+        text = "First paragraph.\n\n- one\n- two\n    indented"
+
+        nvim.write_text(text)
+        nvim.command("write")
+
+        wait_for("the thread", lambda: self.api("GET", "/api/threads"))
+        self.assertEqual(self.api("GET", "/api/threads")[0]["comments"][0]["body"], text)
+
+
+@needs(MISSING_GITSIGNS)
+class TheComposeFloat(NeovimHarness, unittest.TestCase):
+    def a_review(self, **kwargs):
+        nvim = self.an_open_review(**kwargs)
+        self.batched()
+        return nvim
+
+    def compose(self, nvim, text, keys="<leader>rc", line="2"):
+        """Open compose with <keys> on <line> and write <text> in it."""
+        nvim.command(line)
+        nvim.keys(keys)
+        wait_for("the compose float", lambda: nvim.compose_float())
+        nvim.write_text(text)
+
+    def test_q_keeps_the_unsent_text_and_the_same_compose_brings_it_back_until_it_is_sent(self):
+        nvim = self.a_review()
+        self.compose(nvim, "A long thought\nin two lines")
+
+        nvim.keys("<Esc>")
+        nvim.keys("q")
+
+        self.assertIsNone(nvim.compose_float())
+        self.assertEqual(self.api("GET", "/api/threads"), [], "q sends nothing")
+        nvim.keys("<leader>rc")
+        wait_for("the float", lambda: nvim.compose_float())
+        self.assertEqual(nvim.compose_float()["lines"], ["A long thought", "in two lines"])
+        nvim.command("write")
+        wait_for("the thread", lambda: self.api("GET", "/api/threads"))
+        nvim.keys("<leader>rc")
+        wait_for("the float", lambda: nvim.compose_float())
+        self.assertEqual(nvim.compose_float()["lines"], [""], "sending cleared it")
+
+    def test_another_line_has_its_own_text_and_a_blank_float_keeps_nothing(self):
+        nvim = self.a_review()
+        self.compose(nvim, "For line two")
+        nvim.keys("<Esc>q")
+        nvim.command("1")
+        nvim.keys("<leader>rc")
+        wait_for("the float", lambda: nvim.compose_float())
+        self.assertEqual(nvim.compose_float()["lines"], [""])
+        nvim.keys("<Esc>q")
+
+        nvim.command("2")
+        nvim.keys("<leader>rc")
+        wait_for("the float", lambda: nvim.compose_float())
+
+        self.assertEqual(nvim.compose_float()["lines"], ["For line two"])
+
+    def test_closing_the_float_by_leaving_it_keeps_the_text_too(self):
+        nvim = self.a_review()
+        self.compose(nvim, "Half written")
+
+        nvim.keys("<Esc>")
+        nvim.command("wincmd p")
+
+        wait_for("the float to close", lambda: nvim.compose_float() is None)
+        nvim.keys("<leader>rc")
+        wait_for("the float", lambda: nvim.compose_float())
+        self.assertEqual(nvim.compose_float()["lines"], ["Half written"])
+
+    def test_c_s_sends_from_insert_mode_and_the_float_closes(self):
+        nvim = self.a_review()
+        self.compose(nvim, "Sent with a key")
+
+        nvim.keys("<C-s>")
+
+        wait_for("the thread", lambda: self.api("GET", "/api/threads"))
+        self.assertIsNone(nvim.compose_float())
+        self.assertEqual(self.bodies(self.api("GET", "/api/threads")[0]["id"]), ["Sent with a key"])
+
+    def test_c_s_stays_the_save_key_in_every_other_buffer_and_after_composing(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        nvim = self.nvim(before="vim.keymap.set({'i', 'x', 'n', 's'}, '<C-s>', '<cmd>w<cr><esc>', { desc = 'Save File' })")
+        self.attached(nvim)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        save = "return vim.fn.maparg('<C-s>', 'n', false, true).rhs .. vim.fn.maparg('<C-s>', 'n', false, true).desc"
+        before = nvim.lua(save)
+        self.compose(nvim, "Sent with a key")
+        nvim.keys("<C-s>")
+        wait_for("the thread", lambda: self.api("GET", "/api/threads"))
+
+        self.assertEqual(nvim.lua(save), before)
+        nvim.command("2")
+        nvim.lua("vim.api.nvim_buf_set_lines(0, 1, 2, false, { '    return 1' })")
+        nvim.keys("<C-s>")
+        wait_for("the file to be saved", lambda: "return 1" in self.read("app.py"))
+        self.assertEqual(nvim.lua("return vim.bo.modified"), False)
+
+    def test_an_empty_float_sends_nothing_and_stays_open(self):
+        nvim = self.a_review()
+        self.compose(nvim, "  \n ")
+
+        nvim.command("write")
+
+        wait_for("the message", lambda: "Nothing to send" in nvim.messages())
+        self.assertTrue(nvim.compose_float())
+        self.assertEqual(self.api("GET", "/api/threads"), [])
+
+    def test_a_buffer_with_unsaved_changes_is_refused_and_nothing_opens_or_is_posted(self):
+        nvim = self.a_review()
+        nvim.command("2")
+        nvim.lua("vim.api.nvim_buf_set_lines(0, 1, 2, false, { '    return 1' })")
+
+        nvim.keys("<leader>rc")
+        nvim.keys("Vj<leader>rc")
+
+        wait_for("the message", lambda: "Save the file to comment on it" in nvim.messages())
+        self.assertIsNone(nvim.compose_float())
+        self.assertEqual(self.api("GET", "/api/threads"), [])
+        nvim.command("write")
+        nvim.keys("<leader>rc")
+        wait_for("the float once saved", lambda: nvim.compose_float())
+
+    def test_with_no_review_open_it_says_so(self):
+        self.commit()
+        nvim = self.nvim()
+        for keys in ("<leader>rc", "<leader>ra", "<leader>rR", "<leader>rO", "<leader>rG"):
+            nvim.keys(keys)
+        self.assertIsNone(nvim.compose_float())
+        self.assertEqual(nvim.messages().count("No review is open: open it to"), 5)
+
+    def test_a_buffer_that_is_not_a_file_of_the_review_is_refused(self):
+        nvim = self.a_review()
+        nvim.command("enew")
+        nvim.keys("<leader>rc")
+        nvim.command("edit " + os.path.join(self.tmp, "elsewhere.txt"))
+        nvim.keys("<leader>rc")
+
+        self.assertIsNone(nvim.compose_float())
+        self.assertIn("This buffer is not a file", nvim.messages())
+        self.assertIn("is not in", nvim.messages())
+
+    def test_a_key_another_plugin_took_in_visual_mode_stays_theirs_and_normal_mode_still_works(self):
+        nvim = self.nvim(before="vim.keymap.set('x', '<leader>rc', '<cmd>echo \"mine\"<cr>', { desc = 'Mine' })")
+
+        self.assertIn("<leader>rc is already mapped (Mine): set opts.keys.comment to another key", nvim.messages())
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rc', 'x')"), '<Cmd>echo "mine"<CR>')
+        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>rc', 'n')"), "")
+
+    def test_composing_changes_no_option_or_key_of_the_reviewers_window_or_buffer(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        # LazyVim sets wrap and spell on every markdown buffer, in the current window
+        nvim = self.nvim(before="vim.api.nvim_create_autocmd('FileType', { pattern = 'markdown', callback = function() "
+                                "vim.opt_local.wrap = true; vim.opt_local.spell = true end })")
+        self.attached(nvim)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+
+        self.compose(nvim, "One")
+        nvim.keys("<Esc>q")
+        self.compose(nvim, "Two", keys="Vj<leader>rc", line="1")
+        nvim.command("write")
+        self.drawn(nvim)
+        nvim.command("2")
+        nvim.keys("<leader>ra")
+        wait_for("the float", lambda: nvim.compose_float())
+        nvim.keys("<Esc>q")
+        nvim.keys("<leader>rG")
+        wait_for("the float", lambda: nvim.compose_float())
+        nvim.keys("<Esc>q")
+        nvim.keys("<leader>rR")
+        wait_for("resolved", lambda: self.api("GET", "/api/threads")[0]["status"] == "resolved")
+        nvim.keys("<leader>rO")
+        wait_for("reopened", lambda: self.api("GET", "/api/threads")[0]["status"] == "open")
+        nvim.command("DifftateClose")
+
+        wait_for("gitsigns on the index", lambda: nvim.gitsigns_base() is None)
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+
+
+@needs(MISSING_GITSIGNS)
+class RepliesAndStatus(NeovimHarness, unittest.TestCase):
+    def a_review_with_a_thread_on_line_two(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.tid = self.a_thread("Why not an f-string?")
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+        nvim.command("2")
+        return nvim
+
+    def test_leader_ra_replies_to_the_thread_on_the_cursors_line_and_it_shows_inline(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+
+        nvim.keys("<leader>ra")
+        wait_for("the float", lambda: nvim.compose_float())
+        self.assertIn("reply", nvim.compose_float()["title"])
+        nvim.write_text("Because of the diff\n\nand the tests")
+        nvim.command("write")
+
+        wait_for("the reply", lambda: len(self.thread(self.tid)["comments"]) == 2)
+        self.assertEqual(self.comments(self.tid)[1], ("comment", "Because of the diff\n\nand the tests"))
+        self.assertEqual(len(self.api("GET", "/api/threads")), 1, "a reply, not a new thread")
+        wait_for("the reply drawn", lambda: "and the tests" in "\n".join(nvim.threads()[0]["lines"]))
+
+    def test_the_reply_keeps_its_unsent_text_apart_from_a_new_comment_on_the_same_line(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+        nvim.keys("<leader>ra")
+        wait_for("the float", lambda: nvim.compose_float())
+        nvim.write_text("my reply")
+        nvim.keys("<Esc>q")
+
+        nvim.keys("<leader>rc")
+        wait_for("the float", lambda: nvim.compose_float())
+        self.assertEqual(nvim.compose_float()["lines"], [""])
+        nvim.keys("<Esc>q")
+        nvim.keys("<leader>ra")
+        wait_for("the float", lambda: nvim.compose_float())
+        self.assertEqual(nvim.compose_float()["lines"], ["my reply"])
+
+    def test_leader_rR_resolves_and_leader_rO_reopens_the_thread_on_the_line(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+
+        nvim.keys("<leader>rR")
+        wait_for("resolved", lambda: self.thread(self.tid)["status"] == "resolved")
+        wait_for("drawn as one line", lambda: len(nvim.threads()[0]["lines"]) == 1)
+        nvim.keys("<leader>rR")
+        nvim.keys("<leader>rO")
+
+        wait_for("reopened", lambda: self.thread(self.tid)["status"] == "open")
+        self.assertIn("No open thread on this line", nvim.messages())
+        nvim.keys("<leader>rO")
+        self.assertIn("No resolved or dismissed thread on this line", nvim.messages())
+
+    def test_on_a_line_with_no_thread_each_says_so_and_opens_nothing(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+        nvim.command("1")
+
+        for keys in ("<leader>ra", "<leader>rR", "<leader>rO"):
+            nvim.keys(keys)
+
+        self.assertEqual(nvim.messages().count("No thread on this line"), 3)
+        self.assertIsNone(nvim.compose_float())
+        self.assertEqual(self.thread(self.tid)["status"], "open")
+
+    def test_with_two_threads_on_a_line_it_asks_which_to_reply_to_or_resolve(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+        second = self.a_thread("Second opinion")
+        wait_for("both threads", lambda: len(nvim.threads()) == 2)
+        nvim.lua("vim.ui.select = function(items, _, choose) for _, t in ipairs(items) do if t.id == '%s' then return choose(t) end end end" % second)
+
+        nvim.keys("<leader>rR")
+        wait_for("resolved", lambda: self.thread(second)["status"] == "resolved")
+        self.assertEqual(self.thread(self.tid)["status"], "open")
+        nvim.keys("<leader>rO")
+        wait_for("reopened", lambda: self.thread(second)["status"] == "open")
+        nvim.keys("<leader>ra")
+        wait_for("the float", lambda: nvim.compose_float())
+        nvim.write_text("To the second")
+        nvim.command("write")
+        wait_for("the reply", lambda: len(self.thread(second)["comments"]) == 2)
+        self.assertEqual(len(self.thread(self.tid)["comments"]), 1)
+
+
+@needs(MISSING_GITSIGNS)
+class GeneralThreads(NeovimHarness, unittest.TestCase):
+    def test_leader_rG_writes_a_general_thread_with_no_anchor(self):
+        nvim = self.an_open_review()
+        self.batched()
+
+        nvim.keys("<leader>rG")
+        wait_for("the float", lambda: nvim.compose_float())
+        self.assertIn("general", nvim.compose_float()["title"])
+        nvim.write_text("The tests need a case for an empty name")
+        nvim.command("write")
+
+        wait_for("the thread", lambda: self.api("GET", "/api/threads"))
+        thread = self.api("GET", "/api/threads")[0]
+        self.assertIsNone(thread["anchor"])
+        self.assertEqual(thread["comments"][0]["body"], "The tests need a case for an empty name")
+
+    def test_a_general_thread_keeps_its_unsent_text_too(self):
+        nvim = self.an_open_review()
+        nvim.keys("<leader>rG")
+        wait_for("the float", lambda: nvim.compose_float())
+        nvim.write_text("Later")
+        nvim.keys("<Esc>q")
+
+        nvim.keys("<leader>rG")
+
+        wait_for("the float", lambda: nvim.compose_float())
+        self.assertEqual(nvim.compose_float()["lines"], ["Later"])
+
+    def test_it_works_from_a_buffer_that_is_not_a_file(self):
+        nvim = self.an_open_review()
+        self.batched()
+        nvim.command("enew")
+
+        nvim.keys("<leader>rG")
+        wait_for("the float", lambda: nvim.compose_float())
+        nvim.write_text("From an empty buffer")
+        nvim.command("write")
+
+        wait_for("the thread", lambda: self.api("GET", "/api/threads"))
+
+
+@needs(MISSING_GITSIGNS)
+class WhenTheReviewApiFails(NeovimHarness, unittest.TestCase):
+    def test_a_stopped_watcher_shows_an_error_and_keeps_the_float_and_its_text(self):
+        nvim = self.an_open_review()
+        nvim.command("2")
+        nvim.keys("<leader>rc")
+        wait_for("the float", lambda: nvim.compose_float())
+        nvim.write_text("Do not lose me")
+        self.stop_watcher()
+
+        nvim.command("write")
+
+        wait_for("the error", lambda: "No difftate is running for" in nvim.messages())
+        self.assertEqual(nvim.compose_float()["lines"], ["Do not lose me"], "the float stays, with its text")
+        nvim.keys("<Esc>q")
+        nvim.keys("<leader>rc")
+        wait_for("the float", lambda: nvim.compose_float())
+        self.assertEqual(nvim.compose_float()["lines"], ["Do not lose me"])
+
+    def test_a_refusal_from_the_api_is_shown_as_it_says_and_the_float_and_text_stay(self):
+        self.commit()
+        self.start_watcher()
+        tid = self.a_thread_in_a_run()
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        # The branch changes under the review while a run keeps the watcher on it: the API refuses new threads
+        git(self.repo, self.env, "checkout", "-q", "-b", "other", "main")
+        nvim.command("2")
+        nvim.keys("<leader>rc")
+        wait_for("the float", lambda: nvim.compose_float())
+        nvim.write_text("Refused")
+
+        nvim.command("write")
+
+        wait_for("the API's own words", lambda: "another branch is checked out" in nvim.messages())
+        self.assertEqual(nvim.compose_float()["lines"], ["Refused"])
+        self.assertEqual([t["id"] for t in self.api("GET", "/api/threads")], [tid], "nothing was posted")
+        self.release_agent()
+
+    def a_thread_in_a_run(self):
+        """A live thread whose run is still going (the fake agent waits to be released)."""
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
+        return tid
