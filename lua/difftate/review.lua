@@ -2,6 +2,7 @@
 -- was in when it opened.
 local api = require("difftate.api")
 local compose = require("difftate.compose")
+local diff = require("difftate.diff")
 local draw = require("difftate.draw")
 local float = require("difftate.float")
 local git = require("difftate.git")
@@ -407,7 +408,7 @@ local function snapshot(review, then_)
       end
       if current == review then
         local diff_text = changeset.diff or ""
-        then_(listed, nav.files(diff_text), require("difftate.diff").parse(diff_text))
+        then_(listed, nav.files(diff_text), diff.parse(diff_text))
       end
     end)
   end)
@@ -418,6 +419,7 @@ end
 -- why) when it can't be opened, such as with unsaved changes in the way.
 local function open_file(review, path)
   float.close()
+  review.visited = nil
   if path_in_review(review, vim.api.nvim_get_current_buf()) == path then
     return true
   end
@@ -523,6 +525,9 @@ function M.pick_file()
     return
   end
   api.request(review.watcher, "GET", "/api/viewed", function(answer, err)
+    if current ~= review then
+      return
+    end
     if not answer then
       say(err.missing and no_watcher(review.watcher.top) or err.message, vim.log.levels.ERROR)
       return
@@ -540,6 +545,9 @@ function M.pick_file()
         return { text = nav.file_row(file, viewed[file.path]), value = file }
       end, files)
       pick.choose(entries, "Changed files", function(file)
+        if current ~= review then
+          return
+        end
         if file.deleted then
           say(("%s was deleted: there is no file to open"):format(file.path))
           return
