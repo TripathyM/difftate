@@ -13,7 +13,7 @@
   --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --border: #d0d7de; --panel: #f6f8fa;
   --add-bg: #dafbe1; --add-num: #ccffd8; --del-bg: #ffebe9; --del-num: #ffd7d5; --hunk: #ddf4ff;
   --sel: #fff8c5; --accent: #0969da; --card: #ffffff; --note: #f6f8fa;
-  --waiting: #9a6700; --queued: #8250df; --working: #0969da; --replied: #1a7f37; --failed: #cf222e; --closed: #656d76;
+  --held: #bc4c00; --waiting: #9a6700; --queued: #8250df; --working: #0969da; --replied: #1a7f37; --failed: #cf222e; --closed: #656d76;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
@@ -21,7 +21,7 @@
     --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --border: #30363d; --panel: #161b22;
     --add-bg: #12261e; --add-num: #1b4721; --del-bg: #25171c; --del-num: #542426; --hunk: #121d2f;
     --sel: #3b2e00; --accent: #4493f8; --card: #0d1117; --note: #161b22;
-    --waiting: #d29922; --queued: #ab7df8; --working: #4493f8; --replied: #3fb950; --failed: #f85149; --closed: #8d96a0;
+    --held: #f0883e; --waiting: #d29922; --queued: #ab7df8; --working: #4493f8; --replied: #3fb950; --failed: #f85149; --closed: #8d96a0;
   }
 }
 * { box-sizing: border-box; }
@@ -40,6 +40,9 @@ header { position: sticky; top: 0; z-index: 3; display: flex; flex-wrap: wrap; g
   padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
 header .brand { font-weight: 600; }
 header .what { color: var(--muted); }
+header .mode { display: flex; gap: 6px; align-items: center; }
+header #submit-box { display: flex; gap: 6px; align-items: center; }
+header #submit-box[hidden] { display: none; }
 header .views { display: flex; gap: 6px; align-items: center; margin-left: auto; }
 header #commit { width: 110px; }
 #message { flex-basis: 100%; color: var(--failed); }
@@ -92,7 +95,7 @@ tr.below > td { padding: 6px 10px; background: var(--panel); border-top: 1px sol
 .thread.closed > .head { border-bottom: 0; }
 .thread .where { font: 12px var(--mono); }
 .badge { font-size: 12px; border: 1px solid currentColor; border-radius: 10px; padding: 0 7px; white-space: nowrap; }
-.s-waiting { color: var(--waiting); } .s-queued { color: var(--queued); } .s-working { color: var(--working); }
+.s-held { color: var(--held); } .s-waiting { color: var(--waiting); } .s-queued { color: var(--queued); } .s-working { color: var(--working); }
 .s-replied { color: var(--replied); } .s-failed { color: var(--failed); } .s-resolved, .s-dismissed { color: var(--closed); }
 .badge.outdated { color: var(--waiting); }
 .badge.elsewhere { color: var(--muted); }
@@ -126,6 +129,17 @@ section.elsewhere > h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted); 
 <header>
   <span class="brand">difftate</span>
   <span class="what" id="what">loading…</span>
+  <span class="mode">
+    <label for="mode">Review</label>
+    <select id="mode" title="Live: each comment goes to the coding agent as you write it. Batched: comments are held until you submit.">
+      <option value="live">Live</option>
+      <option value="batched">Batched</option>
+    </select>
+    <span id="submit-box" hidden>
+      <span id="held" class="s-held"></span>
+      <button id="submit" class="primary">Submit</button>
+    </span>
+  </span>
   <span class="views">
     <label for="view">View</label>
     <select id="view">
