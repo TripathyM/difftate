@@ -1131,6 +1131,16 @@ class TheComposeFloat(NeovimHarness, unittest.TestCase):
         wait_for("the file to be saved", lambda: "return 1" in self.read("app.py"))
         self.assertEqual(nvim.lua("return vim.bo.modified"), False)
 
+    def test_completion_is_off_in_the_float_only_so_enter_always_means_a_new_line(self):
+        nvim = self.a_review()
+        reviewers_buffer = nvim.lua("return vim.api.nvim_get_current_buf()")
+        self.compose(nvim, "Too short")
+
+        self.assertIs(nvim.lua("return vim.b.completion"), False, "the float's buffer: blink.cmp and nvim-cmp setups honour it")
+        self.assertIsNone(nvim.lua(f"return vim.b[{reviewers_buffer}].completion"), "the reviewer's buffer is as it was")
+        nvim.keys("<Esc>q")
+        self.assertIsNone(nvim.lua("return vim.b.completion"))
+
     def test_an_empty_float_sends_nothing_and_stays_open(self):
         nvim = self.a_review()
         self.compose(nvim, "  \n ")
