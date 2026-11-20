@@ -157,6 +157,29 @@ class Neovim:
             end
             return out""")
 
+    def threads(self, buf=0):
+        """The threads drawn in buffer <buf> (0: the current one), as the reviewer sees them:
+        [{"row": the line (1-based) it is drawn under, "above": drawn above that line, "lines":
+        its virtual lines as text}], top to bottom."""
+        return self.lua(f"return T.drawn({buf}).threads")
+
+    def signs(self, buf=0):
+        """The signs the plugin placed in buffer <buf>: [(line, sign text)], top to bottom."""
+        return [tuple(s) for s in self.lua(f"return T.drawn({buf}).signs")]
+
+    def text_columns(self):
+        """The columns of the current window's text: its width without the signs and numbers."""
+        return self.lua("return vim.api.nvim_win_get_width(0) - vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].textoff")
+
+    def float_lines(self):
+        """The lines of the float the plugin opened, or None when none is open."""
+        return self.lua("""
+            for _, win in ipairs(vim.api.nvim_list_wins()) do
+              if vim.api.nvim_win_get_config(win).relative ~= "" then
+                return vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false)
+              end
+            end""")
+
     def quit(self):
         if self.process.poll() is None:
             self.process.kill()
@@ -198,6 +221,22 @@ class NeovimHarness(Harness):
         wait_for("the review to open", lambda: nvim.status() != "")
         wait_for("the review's hunk", lambda: nvim.hunks() == [[1, 1]])
         return nvim
+
+
+    def a_thread(self, body, line=2, **kwargs):
+        """A thread of the reviewer's on app.py's line <line> (a batched review holds it:
+        no coding agent answers); its id."""
+        return self.open_thread(body, line=line, **kwargs)["id"]
+
+    def batched(self):
+        self.api("PUT", "/api/mode", {"mode": "batched"})
+
+    def drawn(self, nvim, rows=None):
+        """Wait until the current buffer shows the threads (on <rows>, when given); them."""
+        def shown():
+            threads = nvim.threads()
+            return threads if threads and (rows is None or [t["row"] for t in threads] == rows) else None
+        return wait_for("the threads to be drawn", shown)
 
 
 @needs(MISSING_GITSIGNS)
@@ -401,7 +440,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
         self.assertEqual(added, [[{"1": "<leader>r", "group": "review", "mode": ["n", "x"]}]])
 
     def test_with_no_key_under_leader_r_it_adds_no_group_to_which_key(self):
-        nvim = self.nvim(extra_rtp=[FAKE_WHICH_KEY], opts={"keys": {"toggle": "<leader>gR"}})
+        nvim = self.nvim(extra_rtp=[FAKE_WHICH_KEY], opts={"keys": {"toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -411,7 +450,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
         before, after = nvim.lua("return T.before"), nvim.lua("return T.after_setup")
 
         self.assertEqual(after["options"], before["options"])
-        self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr"})
+        self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -427,3 +466,484 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
 
         wait_for("gitsigns on the index", lambda: nvim.gitsigns_base() is None)
         self.assertEqual(nvim.lua("return T.snapshot()"), before)
+
+    def test_threads_drawn_expanded_read_in_the_float_and_removed_change_no_option_or_key(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("Add a docstring")
+        self.a_thread("Is it a style?", line=1)
+        tid = self.a_thread("Done already", line=2)
+        self.api("PATCH", f"/api/threads/{tid}/status", {"status": "resolved"})
+        # LazyVim sets wrap and spell on every markdown buffer, in the current window
+        nvim = self.nvim(before="vim.api.nvim_create_autocmd('FileType', { pattern = 'markdown', callback = function() "
+                                "vim.opt_local.wrap = true; vim.opt_local.spell = true end })")
+        self.attached(nvim)
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+
+        nvim.keys("<leader>re")
+        wait_for("them expanded", lambda: max(len(t["lines"]) for t in nvim.threads()) > 2)
+        nvim.command("vsplit")
+        nvim.command("2")
+        nvim.keys("<leader>rt")  # two threads on the line: a choice
+        nvim.lua("vim.ui.select = function(items, _, choose) choose(items[1]) end")
+        nvim.keys("<leader>rt")
+        wait_for("the float", lambda: nvim.float_lines())
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before, "the float is open: the reviewer's window is as it was")
+        nvim.keys("q")
+        nvim.command("close")
+        nvim.keys("<leader>re")
+        nvim.command("DifftateClose")
+
+        wait_for("gitsigns on the index", lambda: nvim.gitsigns_base() is None)
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+
+
+@needs(MISSING_GITSIGNS)
+class ThreadsUnderTheirLines(NeovimHarness, unittest.TestCase):
+    def test_an_open_thread_is_drawn_in_full_under_its_last_line_with_a_sign_at_its_first(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        tid = self.a_thread("Why not name this `who`?", line=1, end=2)
+        self.api("POST", f"/api/threads/{tid}/comments", {"kind": "reply", "body": "It matches the callers."})
+        self.api("POST", f"/api/threads/{tid}/comments", {"body": "Then rename the callers.", "reviewer": "security-bot"})
+        nvim = self.nvim()
+
+        nvim.command("DifftateOpen")
+
+        self.assertEqual(self.drawn(nvim), [{"row": 2, "above": False, "lines": [
+            "│ ● open · held until you submit · lines 1-2",
+            "│ Test",
+            "│   Why not name this `who`?",
+            "│ agent",
+            "│   It matches the callers.",
+            "│ security-bot",
+            "│   Then rename the callers."]}])
+        self.assertEqual(nvim.signs(), [(1, "●")])
+
+
+LONG = ("The greeting would read better with the name first, and a short comment above explains why the "
+        "f-string replaced the concatenation: callers who search for it find the reason at once.")
+
+
+def words(lines):
+    """The words of <lines>, as a reader reads them across line breaks."""
+    return " ".join(lines).split()
+
+
+@needs(MISSING_GITSIGNS)
+class WrappingThreads(NeovimHarness, unittest.TestCase):
+    def test_a_long_comment_wraps_to_the_window_and_wraps_again_after_a_resize(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread(LONG)
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+
+        wide = self.drawn(nvim)[0]["lines"]
+        nvim.command("vsplit")
+        wait_for("the thread to wrap narrower", lambda: nvim.threads()[0]["lines"] != wide)
+        narrow = nvim.threads()[0]["lines"]
+        nvim.command("only")
+        wait_for("the thread to wrap wide again", lambda: nvim.threads()[0]["lines"] == wide)
+
+        self.assertEqual(words(line[len("│   "):] for line in wide[2:]), LONG.split())
+        self.assertTrue(all(len(line) <= 80 for line in wide), wide)
+        self.assertGreater(len(wide), 4, "wide enough to need more than one line")
+        self.assertEqual(words(line[len("│   "):] for line in narrow[2:]), LONG.split())
+        self.assertGreater(len(narrow), len(wide))
+        self.assertTrue(all(len(line) <= 40 for line in narrow), narrow)
+
+    def test_a_word_longer_than_the_window_is_broken_and_nothing_is_lost(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("see " + "x" * 200 + " there")
+        nvim = self.nvim()
+
+        nvim.command("DifftateOpen")
+
+        lines = self.drawn(nvim)[0]["lines"]
+        self.assertTrue(all(len(line) <= 80 for line in lines), lines)
+        self.assertEqual("".join(line[len("│   "):] for line in lines[2:]).replace(" ", ""), "see" + "x" * 200 + "there")
+
+
+@needs(MISSING_GITSIGNS)
+class OneLineThreads(NeovimHarness, unittest.TestCase):
+    def a_review_of_a_resolved_a_dismissed_and_an_outdated_thread(self):
+        self.write("notes.md", "# Notes\nGreeting style\nLine three\n")
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        resolved = self.a_thread("Use a clearer name here, please: `who` reads better than `name`", line=1)
+        dismissed = self.a_thread("Add a docstring", line=2)
+        outdated = self.a_thread("Is this the style we want?", line=2, file="notes.md", anchor_code="Another style")
+        self.api("PATCH", f"/api/threads/{resolved}/status", {"status": "resolved", "reviewer": "security-bot"})
+        self.api("PATCH", f"/api/threads/{dismissed}/status", {"status": "dismissed"})
+        self.api("POST", f"/api/threads/{resolved}/comments", {"kind": "reply", "body": "Renamed."})
+        return self.nvim()
+
+    def test_resolved_dismissed_and_outdated_threads_are_one_line_each(self):
+        nvim = self.a_review_of_a_resolved_a_dismissed_and_an_outdated_thread()
+
+        nvim.command("DifftateOpen")
+
+        threads = self.drawn(nvim, rows=[1, 2])
+        self.assertEqual([t["lines"] for t in threads], [
+            ["│ ○ resolved by security-bot · 2 comments · “Use a clearer name here, plea…”"],
+            ["│ ○ dismissed by Test · 1 comment · “Add a docstring”"]])
+        nvim.command("edit notes.md")
+        self.assertEqual([t["lines"] for t in self.drawn(nvim)], [
+            ["│ ● open · held until you submit · outdated · 1 comment · “Is this the style…”"]])
+
+    def test_the_toggle_expands_every_one_and_collapses_them_again(self):
+        nvim = self.a_review_of_a_resolved_a_dismissed_and_an_outdated_thread()
+        nvim.command("DifftateOpen")
+        collapsed = self.drawn(nvim, rows=[1, 2])
+
+        nvim.keys("<leader>re")
+
+        wait_for("the threads to expand", lambda: len(nvim.threads()[0]["lines"]) > 1)
+        self.assertEqual([t["lines"] for t in nvim.threads()], [
+            ["│ ○ resolved by security-bot",
+             "│ Test",
+             "│   Use a clearer name here, please: `who` reads better than `name`",
+             "│ agent",
+             "│   Renamed."],
+            ["│ ○ dismissed by Test", "│ Test", "│   Add a docstring"]])
+        nvim.command("edit notes.md")
+        self.assertEqual([t["lines"] for t in self.drawn(nvim)], [
+            ["│ ● open · held until you submit · outdated",
+             "│ code when written (it changed since)",
+             "│ > Another style",
+             "│ Test",
+             "│   Is this the style we want?"]])
+        nvim.command("edit app.py")
+        nvim.keys("<leader>re")
+        wait_for("the threads to collapse", lambda: nvim.threads() == collapsed)
+
+    def test_a_thread_that_gets_resolved_shrinks_by_itself(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        tid = self.a_thread("Add a docstring")
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.assertEqual(len(self.drawn(nvim)[0]["lines"]), 3)
+
+        self.api("PATCH", f"/api/threads/{tid}/status", {"status": "resolved", "reviewer": "reviewer-two"})
+
+        wait_for("the one line", lambda: nvim.threads()[0]["lines"] == [
+            "│ ○ resolved by reviewer-two · 1 comment · “Add a docstring”"])
+        self.assertEqual(nvim.signs(), [(2, "○")])
+
+
+@needs(MISSING_GITSIGNS)
+class ThreadsThatMove(NeovimHarness, unittest.TestCase):
+    def test_a_reply_the_agent_posts_appears_without_a_key_press(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        tid = self.a_thread("Add a docstring")
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.assertEqual(len(self.drawn(nvim)[0]["lines"]), 3)
+
+        self.api("POST", f"/api/threads/{tid}/comments", {"kind": "reply", "body": "Added one."})
+
+        wait_for("the reply", lambda: nvim.threads()[0]["lines"][-2:] == ["│ agent", "│   Added one."])
+
+    def test_a_new_thread_in_another_viewer_appears_too(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        self.assertEqual(nvim.threads(), [])
+
+        self.a_thread("Fresh from the browser", line=1)
+
+        self.assertEqual(self.drawn(nvim, rows=[1])[0]["lines"][-1], "│   Fresh from the browser")
+
+    def test_an_edit_above_a_thread_moves_it_before_the_file_is_saved_and_a_poll_keeps_it_there(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("Add a docstring")
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.drawn(nvim, rows=[2])
+
+        nvim.lua("vim.api.nvim_buf_set_lines(0, 0, 0, false, { '# greeting', '' })")
+
+        self.assertEqual([t["row"] for t in nvim.threads()], [4])
+        self.assertEqual(nvim.signs(), [(4, "●")])
+        time.sleep(1)  # five polls
+        self.assertEqual([t["row"] for t in nvim.threads()], [4], "a poll puts it back where the file has it")
+        self.assertEqual(nvim.signs(), [(4, "●")])
+
+        nvim.command("write")
+        wait_for("the watcher to move the thread", lambda: self.thread(self.api("GET", "/api/threads")[0]["id"])
+                 ["anchor"]["endLine"] == 4)
+        time.sleep(1)
+        self.assertEqual([t["row"] for t in nvim.threads()], [4])
+        self.assertEqual(nvim.signs(), [(4, "●")], "one thread, one sign")
+
+    def test_reloading_the_buffer_draws_each_thread_once(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("Add a docstring")
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        first = self.drawn(nvim)
+
+        nvim.command("edit!")
+        time.sleep(0.6)  # a poll or two
+
+        self.assertEqual(self.drawn(nvim), first)
+        self.assertEqual(nvim.signs(), [(2, "●")])
+
+    def test_a_general_thread_has_no_line_and_is_not_drawn(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.api("POST", "/api/threads", {"anchor": None, "body": "Overall: nice"})
+        self.a_thread("Add a docstring")
+        nvim = self.nvim()
+
+        nvim.command("DifftateOpen")
+
+        self.assertEqual([t["row"] for t in self.drawn(nvim)], [2])
+
+    def test_a_buffer_opened_after_the_review_gets_its_threads(self):
+        self.write("notes.md", "# Notes\nGreeting style\n")
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("Is this the style we want?", line=2, file="notes.md")
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+
+        nvim.command("edit notes.md")
+
+        self.assertEqual(self.drawn(nvim)[0]["row"], 2)
+
+
+@needs(MISSING_GITSIGNS)
+class ThreadsOnDeletedLines(NeovimHarness, unittest.TestCase):
+    def an_old_side_thread(self, line, code, body="Why drop this?"):
+        return self.api("POST", "/api/threads", {
+            "anchor": {"file": "app.py", "side": "old", "startLine": line, "endLine": line, "code": code},
+            "body": body})["id"]
+
+    def test_it_is_drawn_where_the_line_was_deleted_with_the_deleted_code_quoted(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.an_old_side_thread(2, "    return 'hi ' + name")
+        nvim = self.nvim()
+
+        nvim.command("DifftateOpen")
+
+        self.assertEqual(self.drawn(nvim), [{"row": 1, "above": False, "lines": [
+            "│ ● open · held until you submit · deleted line 2",
+            "│ -     return 'hi ' + name",
+            "│ Test",
+            "│   Why drop this?"]}])
+        self.assertEqual(nvim.signs(), [(1, "●")])
+
+    def test_a_deletion_at_the_top_of_the_file_is_drawn_above_its_first_line(self):
+        git(self.repo, self.env, "stash", "-q")  # app.py's change waits while main gets its notes
+        git(self.repo, self.env, "checkout", "-q", "main")
+        self.write("notes.md", "# Notes\nGreeting style\n")
+        self.commit("Add notes")
+        git(self.repo, self.env, "checkout", "-q", "feature")
+        git(self.repo, self.env, "merge", "-q", "main")
+        git(self.repo, self.env, "stash", "pop", "-q")
+        self.write("notes.md", "Greeting style\n")
+        self.commit("Drop the heading")
+        self.start_watcher()
+        self.batched()
+        self.api("POST", "/api/threads", {"anchor": {"file": "notes.md", "side": "old", "startLine": 1, "endLine": 1,
+                                                    "code": "# Notes"}, "body": "Keep it"})
+        nvim = self.nvim(None, "notes.md")
+
+        nvim.command("DifftateOpen")
+
+        thread = self.drawn(nvim)[0]
+        self.assertEqual((thread["row"], thread["above"]), (1, True))
+        self.assertEqual(thread["lines"][:2], ["│ ● open · held until you submit · deleted line 1", "│ - # Notes"])
+
+
+@needs(MISSING_GITSIGNS)
+class ReadingAThreadInAFloat(NeovimHarness, unittest.TestCase):
+    def a_review_with_a_thread_on_line_two(self, **kwargs):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        tid = self.a_thread(LONG, **kwargs)
+        self.api("POST", f"/api/threads/{tid}/comments", {"kind": "reply", "body": "Added a comment.\n\nSee below."})
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+        nvim.command("2")
+        return nvim
+
+    def test_leader_rt_opens_the_thread_on_the_cursors_line_in_full_as_read_only_markdown(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+
+        nvim.keys("<leader>rt")
+
+        wait_for("the float", lambda: nvim.float_lines())
+        lines = nvim.float_lines()
+        self.assertEqual(lines[:4], ["# ● open · agent replied", "", "`app.py` line 2", ""])
+        self.assertRegex(lines[4], r"^## Test · \d{4}-\d\d-\d\d \d\d:\d\d UTC$")
+        self.assertEqual(lines[6], LONG, "long lines are not cut: the float wraps them")
+        self.assertRegex(lines[7:][lines[7:].index("") + 1], r"^## agent · \d{4}-\d\d-\d\d \d\d:\d\d UTC$")
+        self.assertEqual(lines[-3:], ["Added a comment.", "", "See below."])
+        self.assertEqual(nvim.lua("return { vim.bo.filetype, vim.bo.modifiable, vim.wo.wrap, vim.wo.linebreak }"),
+                         ["markdown", False, True, True])
+
+    def test_it_can_be_yanked_from_and_searched_and_q_closes_it(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+        nvim.keys("<leader>rt")
+        wait_for("the float", lambda: nvim.float_lines())
+
+        nvim.keys("/callers<cr>")
+        nvim.keys("yiw")
+
+        self.assertEqual(nvim.lua("return vim.fn.getreg('\"')"), "callers")
+        nvim.keys("q")
+        self.assertIsNone(nvim.float_lines())
+        self.assertEqual(nvim.lua("return vim.api.nvim_buf_get_name(0):match('app.py$')"), "app.py")
+
+    def test_an_outdated_thread_shows_the_code_it_was_written_on(self):
+        nvim = self.a_review_with_a_thread_on_line_two(anchor_code="    return 'bye ' + name")
+
+        nvim.keys("<leader>rt")
+
+        wait_for("the float", lambda: nvim.float_lines())
+        lines = nvim.float_lines()
+        self.assertIn("Code when written (it changed since):", lines)
+        at = lines.index("Code when written (it changed since):")
+        self.assertEqual(lines[at + 1:at + 4], ["```python", "    return 'bye ' + name", "```"])
+
+    def test_on_a_line_with_no_thread_it_says_so_and_opens_nothing(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+        nvim.command("1")
+
+        nvim.keys("<leader>rt")
+
+        wait_for("the message", lambda: "No thread on this line" in nvim.messages())
+        self.assertIsNone(nvim.float_lines())
+
+    def test_with_two_threads_on_a_line_it_asks_which(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+        self.a_thread("Second opinion")
+        wait_for("both threads", lambda: len(nvim.threads()) == 2)
+        nvim.lua("vim.ui.select = function(items, _, choose) choose(items[2]) end")
+
+        nvim.keys("<leader>rt")
+
+        wait_for("the float", lambda: nvim.float_lines())
+        self.assertIn("Second opinion", nvim.float_lines())
+
+    def test_k_stays_what_it_was_and_the_float_has_no_k(self):
+        nvim = self.nvim(before="vim.keymap.set('n', 'K', function() vim.g.hover = true end, { desc = 'Hover' })")
+        before = nvim.lua("return vim.fn.maparg('K', 'n', false, true).desc")
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("Add a docstring")
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+        nvim.command("2")
+        nvim.keys("<leader>rt")
+        wait_for("the float", lambda: nvim.float_lines())
+
+        self.assertEqual(nvim.lua("return vim.fn.maparg('K', 'n', false, true).buffer"), 0, "no K of the float's own")
+        self.assertEqual(nvim.lua("return vim.fn.maparg('K', 'n', false, true).desc"), before)
+        nvim.keys("q")
+        self.assertEqual(nvim.lua("return vim.fn.maparg('K', 'n', false, true).desc"), before)
+
+    def test_reading_threads_over_and_over_leaves_no_buffer_behind(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+        buffers = nvim.lua("return #vim.fn.getbufinfo()")
+
+        for _ in range(3):
+            nvim.keys("<leader>rt")
+            wait_for("the float", lambda: nvim.float_lines())
+            nvim.keys("q")
+
+        self.assertEqual(nvim.lua("return #vim.fn.getbufinfo()"), buffers)
+
+    def test_closing_the_review_closes_the_float(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+        nvim.keys("<leader>rt")
+        wait_for("the float", lambda: nvim.float_lines())
+
+        nvim.command("DifftateClose")
+
+        self.assertIsNone(nvim.float_lines())
+
+
+@needs(MISSING_GITSIGNS)
+class ClosingRemovesTheThreads(NeovimHarness, unittest.TestCase):
+    def test_closing_the_review_removes_every_thread_and_sign_from_every_buffer(self):
+        self.write("notes.md", "# Notes\nGreeting style\n")
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("Add a docstring")
+        self.a_thread("Is this the style we want?", line=2, file="notes.md")
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+        nvim.command("edit notes.md")
+        self.drawn(nvim)
+
+        nvim.command("DifftateClose")
+
+        for buffer in ("app.py", "notes.md"):
+            nvim.command(f"edit {buffer}")
+            self.assertEqual((nvim.threads(), nvim.signs()), ([], []), buffer)
+        time.sleep(0.6)
+        self.assertEqual((nvim.threads(), nvim.signs()), ([], []), "nothing comes back with a poll")
+
+    def test_opening_again_draws_them_again(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("Add a docstring")
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        first = self.drawn(nvim)
+        nvim.command("DifftateClose")
+        self.assertEqual(nvim.threads(), [])
+
+        nvim.command("DifftateOpen")
+
+        self.assertEqual(self.drawn(nvim), first)
+
+
+class WrappingText(NeovimHarness, unittest.TestCase):
+    def wrap(self, nvim, text, columns):
+        return nvim.lua(f"return require('difftate.wrap').wrap({json.dumps(text, ensure_ascii=False)}, {columns})")
+
+    @unittest.skipIf(MISSING_NVIM is not None, MISSING_NVIM or "")
+    def test_wrapping_keeps_breaks_blank_lines_and_indentation_and_counts_wide_characters(self):
+        nvim = self.nvim(None, gitsigns=False)
+
+        self.assertEqual(self.wrap(nvim, "one two three\n\n  - a list item that wraps", 12),
+                         ["one two", "three", "", "  - a list", "  item that", "  wraps"])
+        self.assertEqual(self.wrap(nvim, "日本語 日本語", 6), ["日本語", "日本語"])
+        self.assertEqual(self.wrap(nvim, "abcdefghij", 4), ["abcd", "efgh", "ij"])
+        self.assertEqual(self.wrap(nvim, "", 10), [""])

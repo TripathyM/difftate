@@ -21,16 +21,18 @@ end
 
 -- Options and global keys, for the tests that check the plugin only adds
 _G.T = {}
-function T.snapshot()
+function T.snapshot(win)
+  win = win or 0
+  local buf = vim.api.nvim_win_get_buf(win)
   local options = {}
   for name, info in pairs(vim.api.nvim_get_all_options_info()) do
     if info.scope == "global" or info.global_local then
       options[name] = vim.api.nvim_get_option_value(name, { scope = "global" })
     end
     if info.scope == "win" then
-      options["w:" .. name] = vim.api.nvim_get_option_value(name, { win = 0 })
+      options["w:" .. name] = vim.api.nvim_get_option_value(name, { win = win })
     elseif info.scope == "buf" then
-      options["b:" .. name] = vim.api.nvim_get_option_value(name, { buf = 0 })
+      options["b:" .. name] = vim.api.nvim_get_option_value(name, { buf = buf })
     end
   end
   local keys = {}
@@ -40,6 +42,33 @@ function T.snapshot()
     end
   end
   return { options = options, keys = keys }
+end
+
+-- What the plugin drew in buffer <buf>: its virtual lines as text and its signs
+function T.drawn(buf)
+  local ns = vim.api.nvim_get_namespaces()["difftate_threads"]
+  local out = { threads = {}, signs = {} }
+  if not ns then
+    return out
+  end
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+    local d = m[4]
+    if d.virt_lines then
+      local lines = {}
+      for _, chunks in ipairs(d.virt_lines) do
+        local text = {}
+        for _, chunk in ipairs(chunks) do
+          table.insert(text, chunk[1])
+        end
+        table.insert(lines, table.concat(text))
+      end
+      table.insert(out.threads, { row = m[2] + 1, above = d.virt_lines_above or false, lines = lines })
+    end
+    if d.sign_text then
+      table.insert(out.signs, { m[2] + 1, vim.trim(d.sign_text) })
+    end
+  end
+  return out
 end
 
 -- Run <code> (a Lua chunk) and answer {"ok", "value"} as JSON, for the test to read

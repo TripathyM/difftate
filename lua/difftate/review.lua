@@ -1,8 +1,11 @@
 -- The review open in this Neovim: at most one, of the checked-out folder Neovim
 -- was in when it opened.
 local api = require("difftate.api")
+local draw = require("difftate.draw")
+local float = require("difftate.float")
 local git = require("difftate.git")
 local gitsigns = require("difftate.gitsigns")
+local threads = require("difftate.threads")
 
 local M = {}
 
@@ -35,9 +38,47 @@ local function follow_base(review, on_done)
   end)
 end
 
+-- Read the threads of the open <review> (and, for threads on deleted lines, the
+-- changeset's diff) and draw them in the buffers, when they changed since the last
+-- time; then on_done(). A failed read leaves what is drawn, and says nothing: the
+-- review request of the same poll says it when difftate stopped answering.
+local function read_threads(review, on_done)
+  api.request(review.watcher, "GET", "/api/threads?view=", function(listed)
+    if current ~= review then
+      return
+    end
+    if not listed then
+      on_done()
+      return
+    end
+    local function draw_them(diff_text)
+      if current ~= review then
+        return
+      end
+      local key = vim.json.encode(listed) .. (diff_text or "")
+      if key ~= review.drawn_key then
+        review.drawn_key = key
+        draw.show(review.watcher.top, listed, diff_text)
+      end
+      on_done()
+    end
+    local on_deleted_lines = vim.iter(listed):any(threads.is_old)
+    if not on_deleted_lines then
+      draw_them()
+      return
+    end
+    api.request(review.watcher, "GET", "/api/changeset?view=", function(changeset)
+      if not changeset then
+        on_done() -- without the diff the deleted lines can't be placed: leave what is drawn
+        return
+      end
+      draw_them(changeset.diff or "")
+    end)
+  end)
+end
+
 -- One poll of the open <review>: the review API (the base may change after a
--- checkout), then the merge-base. One at a time: a slow one is skipped over.
--- Later tickets read the threads here too.
+-- checkout), the merge-base, then the threads. One at a time: a slow one is skipped over.
 local function poll(review)
   if review.polling or current ~= review then
     return
@@ -59,11 +100,13 @@ local function poll(review)
     review.lost = false
     review.base = answer.base
     follow_base(review, function(why)
-      review.polling = false
       if why and why ~= review.base_error then
         say(why, vim.log.levels.WARN) -- once, not every poll
       end
       review.base_error = why
+      read_threads(review, function()
+        review.polling = false
+      end)
     end)
   end)
 end
@@ -118,7 +161,9 @@ function M.open(cwd, opts)
           return
         end
         say(M.status())
-        start_polling(review, opts.poll_ms)
+        read_threads(review, function()
+          start_polling(review, opts.poll_ms)
+        end)
       end)
     end)
   end)
@@ -132,13 +177,48 @@ function M.close()
   end
   stop_polling(current)
   current = nil
+  float.close()
+  draw.clear()
   local base = gitsigns.restore()
   say(("Review closed: git signs show changes since %s again"):format(base or "the index"))
 end
 
+--- Expand every resolved, dismissed and outdated thread to full, or shrink them to
+--- one line again.
+function M.toggle_expanded()
+  if not (current and current.watcher) then
+    say("No review is open: open it to expand its threads")
+    return
+  end
+  say(draw.toggle_expanded() and "Every thread is expanded" or "Resolved, dismissed and outdated threads are one line")
+end
+
+--- Open the thread on the cursor's line in the read float (a choice when several are).
+function M.read_thread()
+  if not (current and current.watcher) then
+    say("No review is open: open it to read a thread")
+    return
+  end
+  local found = draw.threads_at(vim.api.nvim_get_current_buf(), vim.api.nvim_win_get_cursor(0)[1])
+  if #found == 0 then
+    say("No thread on this line")
+  elseif #found == 1 then
+    float.open(found[1])
+  else
+    vim.ui.select(found, { prompt = "Which thread?", format_item = function(thread)
+      return threads.summary(thread, 80)
+    end }, function(thread)
+      if thread then
+        float.open(thread)
+      end
+    end)
+  end
+end
+
 --- Say whether the review is open, and what git signs show.
 function M.say_status()
-  say(M.status() ~= "" and M.status() or (current and "The review is opening" or "No review is open"))
+  local note = M.status()
+  say(note ~= "" and note or (current and "The review is opening" or "No review is open"))
 end
 
 --- Whether a review is open (or opening).

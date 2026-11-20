@@ -124,7 +124,7 @@ return {
   {
     "TripathyM/difftate", -- or, from a clone: dir = "~/difftate", name = "difftate",
     main = "difftate",
-    opts = {}, -- keys = { toggle = "<leader>rr" } is the default; false maps none
+    opts = {}, -- keys = { toggle = "<leader>rr", expand = "<leader>re", thread = "<leader>rt" } is the default; false maps none
   },
   -- The note "review open · git signs show changes since <base>" in the statusline,
   -- while a review is open (it shows nothing otherwise)
@@ -139,6 +139,8 @@ return {
 ```
 
 **Use:** start `difftate` in the repository or worktree, then in Neovim in that folder press `<leader>rr` (or `:DifftateOpen`; `nvim +DifftateOpen` opens it at start-up). It finds the folder's watcher as `dt-export` does; with none running, it says so and changes nothing. While the review is open, gitsigns compares every buffer against where the branch left the review's base (`git merge-base <base> HEAD`, computed again at every poll, so it follows a new commit), so `]h`, `[h` and hunk preview move through the review's changes, committed ones too. `<leader>rr` again (or `:DifftateClose`) puts gitsigns back on the index. `:DifftateStatus` says whether a review is open.
+
+**Threads:** while the review is open, every thread whose file is in a buffer is drawn under its lines, with a sign at its first line (below the signs of git and diagnostics, so it never hides one; the line number is coloured too). An open thread is drawn in full: its thread status and thread state, each comment, reply and note with the reviewer name. Resolved, dismissed and outdated threads are one line (their comment count and the first words); `<leader>re` expands them all, and collapses them again. Text wraps to the window and wraps again when it resizes, a thread moves with its code as you edit before saving, and a reply or note the coding agent writes appears at the next poll, with no key press. A thread on a deleted line is drawn where the line was deleted, with the deleted code quoted. `<leader>rt` opens the thread on the cursor's line in a read-only markdown float (with the code it was written on when it is outdated) that you can yank from and search; `q` or `<Esc>` closes it. `K` is still LSP hover. Closing the review removes every thread from every buffer.
 
 The plugin only adds: it maps no key that is mapped already (it says which option to change instead), sets no option, and changes nothing but gitsigns' base, and only while the review is open. Its keys are under `<leader>r`, a "review" group in which-key (added only while a key is mapped under it); LazyVim's core doesn't use it, only its refactoring extra: with that extra, pick other keys in `opts.keys`.
 
