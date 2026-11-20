@@ -154,7 +154,7 @@ The plugin only adds: it maps no key that is mapped already (it says which optio
 
 **The Herdr viewer is frozen** ([ADR 0007](docs/adr/0007-reviews-happen-in-the-reviewers-own-editor.md)): it still works as described here, and `--open herdr` opens it, but it gets no new features. For new work use the [Neovim viewer](#review-in-neovim).
 
-If you use the [Herdr](https://herdr.dev) app, the review can open in a Herdr tab instead of the browser: a small code editor with vim keys, comment threads under the lines, go to definition, fuzzy file open, and quick edits you save yourself. The tab reads and writes through difftate's [review API](#review-api), like the browser viewer, so the coding agent answers its comments as it does in the browser, and both stay in sync. The tab shows the review's view (all changes unless the argument or `Space V` picks another).
+If you use the [Herdr](https://herdr.dev) app, the frozen Herdr viewer can open the review in a Herdr tab instead of the browser: a small code editor with vim keys, comment threads under the lines, go to definition, fuzzy file open, and quick edits you save yourself. The tab reads and writes through difftate's [review API](#review-api), like the browser viewer, so the coding agent answers its comments as it does in the browser, and both stay in sync. The tab shows the review's view (all changes unless the argument or `Space V` picks another).
 
 ![The Review tab in Herdr](herdr/preview.png)
 

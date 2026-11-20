@@ -23,8 +23,8 @@ Optional:
   --cmd <binary>         Override the CLI binary or shell alias (e.g. a wrapper around claude)
   --model <model>        Model for the coding agent (default: the coding agent's own default)
   --open <where>         browser, nvim, herdr or both (default: $DT_OPEN, else browser).
-                         The viewer to open, not the host. nvim: the Neovim viewer, in a Review
-                         tab running nvim when difftate runs where Herdr is reachable (or
+                         The viewer to open, not the host. nvim: the Neovim viewer, in a
+                         "Review · <folder>" tab running nvim when difftate runs where Herdr is reachable (or
                          switches to it), else the command to run is printed.
                          herdr: the Herdr viewer, frozen: a Review tab in the Herdr app, or
                          the browser if Herdr can't be reached

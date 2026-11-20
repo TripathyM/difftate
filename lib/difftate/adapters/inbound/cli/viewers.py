@@ -85,7 +85,7 @@ NVIM_COMMAND = ["nvim", "+DifftateOpen"]
 
 def _nvim_in_herdr(root):
     """The Neovim viewer's host when difftate runs where Herdr is reachable:
-    a Review tab running nvim in <root>."""
+    a `Review · <folder>` tab running nvim in <root>."""
     def nvim_tab(name):
         return {"name": name, "folder": root, "argv": NVIM_COMMAND}
 
