@@ -32,6 +32,7 @@ function M.open(thread)
   local lines = threads.markdown(thread, file_type)
 
   local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf }) -- the float's own buffer: gone with it
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor", style = "minimal", border = "rounded", focusable = true,
     width = width, height = 1, row = math.floor((vim.o.lines - 1 - max_height) / 2), col = math.floor((vim.o.columns - width) / 2),

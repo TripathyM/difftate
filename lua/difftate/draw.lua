@@ -49,11 +49,17 @@ local function buffers_by_path()
   return out
 end
 
--- The text columns the thread has in <buf>: those of the narrowest window showing it, so
--- that it never needs a sideways scroll
+-- The text columns the thread has in <buf>: those of the narrowest window showing it in
+-- this tab page (any tab page, when it isn't shown here), so that it never needs a
+-- sideways scroll
 local function columns_of(buf)
   local columns
-  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+  local here = vim.api.nvim_tabpage_list_wins(0)
+  local shown = vim.fn.win_findbuf(buf)
+  local nearby = vim.tbl_filter(function(win)
+    return vim.tbl_contains(here, win)
+  end, shown)
+  for _, win in ipairs(#nearby > 0 and nearby or shown) do
     if vim.api.nvim_win_get_config(win).relative == "" then
       local info = vim.fn.getwininfo(win)[1]
       local text = vim.api.nvim_win_get_width(win) - (info and info.textoff or 0)
@@ -141,12 +147,13 @@ end
 --- Draw every thread of the open review in the buffers of its files, again: after a
 --- change of the threads, of a window's size, or of the buffers. Threads that went
 --- are removed.
-function M.redraw()
+function M.redraw(again)
   if not drawn then
     return
   end
   local buffers = buffers_by_path()
   local wanted = {} -- buf -> { thread id = true }
+  local used = {} -- buf -> the columns it was drawn in
   for _, thread in ipairs(drawn.threads) do
     local where = placement(thread, drawn.files)
     local buf = where and buffers[real(drawn.top .. "/" .. where.path)]
@@ -154,7 +161,8 @@ function M.redraw()
       drawn.marks[buf] = drawn.marks[buf] or {}
       wanted[buf] = wanted[buf] or {}
       wanted[buf][thread.id] = true
-      draw_thread(buf, thread, where, columns_of(buf))
+      used[buf] = used[buf] or columns_of(buf)
+      draw_thread(buf, thread, where, used[buf])
     end
   end
   for buf, marks in pairs(drawn.marks) do
@@ -164,6 +172,14 @@ function M.redraw()
           pcall(vim.api.nvim_buf_del_extmark, buf, ns, extmark)
         end
         marks[id] = nil
+      end
+    end
+  end
+  -- The first sign of a buffer may have widened its sign column (signcolumn=auto): once more
+  if not again then
+    for buf, columns in pairs(used) do
+      if columns_of(buf) ~= columns then
+        return M.redraw(true)
       end
     end
   end
@@ -184,16 +200,15 @@ end
 
 local function watch_the_editor()
   local id = vim.api.nvim_create_augroup(group, { clear = true })
-  vim.api.nvim_create_autocmd({ "WinResized", "VimResized", "WinNew", "WinClosed", "BufWinEnter", "BufReadPost" }, {
+  vim.api.nvim_create_autocmd({ "WinResized", "VimResized", "WinNew", "WinClosed", "TabEnter", "BufWinEnter", "BufReadPost" }, {
     group = id,
     callback = redraw_soon,
   })
   vim.api.nvim_create_autocmd({ "BufUnload", "BufWipeout" }, {
     group = id,
     callback = function(event)
-      if drawn then
-        drawn.marks[event.buf] = nil
-      end
+      -- A reloaded buffer keeps its extmarks: the redraw would draw its threads twice
+      clear_buffer(event.buf)
     end,
   })
 end

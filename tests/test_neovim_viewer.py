@@ -695,6 +695,21 @@ class ThreadsThatMove(NeovimHarness, unittest.TestCase):
         self.assertEqual([t["row"] for t in nvim.threads()], [4])
         self.assertEqual(nvim.signs(), [(4, "●")], "one thread, one sign")
 
+    def test_reloading_the_buffer_draws_each_thread_once(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("Add a docstring")
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        first = self.drawn(nvim)
+
+        nvim.command("edit!")
+        time.sleep(0.6)  # a poll or two
+
+        self.assertEqual(self.drawn(nvim), first)
+        self.assertEqual(nvim.signs(), [(2, "●")])
+
     def test_a_general_thread_has_no_line_and_is_not_drawn(self):
         self.commit()
         self.start_watcher()
@@ -858,6 +873,17 @@ class ReadingAThreadInAFloat(NeovimHarness, unittest.TestCase):
         self.assertEqual(nvim.lua("return vim.fn.maparg('K', 'n', false, true).desc"), before)
         nvim.keys("q")
         self.assertEqual(nvim.lua("return vim.fn.maparg('K', 'n', false, true).desc"), before)
+
+    def test_reading_threads_over_and_over_leaves_no_buffer_behind(self):
+        nvim = self.a_review_with_a_thread_on_line_two()
+        buffers = nvim.lua("return #vim.fn.getbufinfo()")
+
+        for _ in range(3):
+            nvim.keys("<leader>rt")
+            wait_for("the float", lambda: nvim.float_lines())
+            nvim.keys("q")
+
+        self.assertEqual(nvim.lua("return #vim.fn.getbufinfo()"), buffers)
 
     def test_closing_the_review_closes_the_float(self):
         nvim = self.a_review_with_a_thread_on_line_two()

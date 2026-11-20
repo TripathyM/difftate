@@ -18,7 +18,16 @@ local QUOTED_MAX = 8 -- lines of quoted code
 local NOTE_MAX = 6 -- lines of a note: its steps while it works can be long
 local MIN_COLUMNS = 20
 
-M.BAR = BAR
+-- Who wrote a comment, as a thread shows it, and how: the reviewer's name (or "reviewer"
+-- for a comment written before reviewer names), "agent", or "note" for difftate's own
+local function who_of(comment)
+  if comment.author == "agent" then
+    return "agent", "DifftateAgent"
+  elseif comment.author == "difftate" then
+    return "note", "DifftateNote"
+  end
+  return comment.by or "reviewer", "DifftateReviewer"
+end
 
 --- Whether the thread is on a deleted line (the old side).
 function M.is_old(thread)
@@ -125,12 +134,14 @@ function M.lines(thread, columns, expanded)
     vim.list_extend(out, quoted(anchor.code, ">", columns))
   end
   for _, c in ipairs(thread.comments or {}) do
-    local who, hl, body = c.by or "reviewer", "DifftateReviewer", c.body or ""
-    if c.author == "agent" then
-      who, hl = "agent", "DifftateAgent"
-    elseif c.author == "difftate" then
-      who, hl = "note", "DifftateNote"
-      body = table.concat(vim.list_slice(vim.split(body, "\n", { plain = true }), 1, NOTE_MAX), "\n")
+    local who, hl = who_of(c)
+    local body = c.body or ""
+    if who == "note" then
+      local note = vim.split(body, "\n", { plain = true })
+      body = table.concat(vim.list_slice(note, 1, NOTE_MAX), "\n")
+      if #note > NOTE_MAX then
+        body = body .. ("\n… %d more lines"):format(#note - NOTE_MAX)
+      end
     end
     table.insert(out, { text = who, hl = hl })
     for _, text in ipairs(wrap.wrap(body, columns - #INDENT)) do
@@ -172,12 +183,7 @@ function M.markdown(thread, file_type)
     table.insert(out, "```")
   end
   for _, c in ipairs(thread.comments or {}) do
-    local who = c.by or "reviewer"
-    if c.author == "agent" then
-      who = "agent"
-    elseif c.author == "difftate" then
-      who = "note"
-    end
+    local who = who_of(c)
     table.insert(out, "")
     -- "2026-11-20T17:17:31.381Z" is written "2026-11-20 17:17 UTC"
     local day, minute = tostring(c.time or ""):match("^(%d+%-%d+%-%d+)T(%d+:%d+)")

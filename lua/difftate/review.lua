@@ -68,7 +68,11 @@ local function read_threads(review, on_done)
       return
     end
     api.request(review.watcher, "GET", "/api/changeset?view=", function(changeset)
-      draw_them(changeset and changeset.diff or "")
+      if not changeset then
+        on_done() -- without the diff the deleted lines can't be placed: leave what is drawn
+        return
+      end
+      draw_them(changeset.diff or "")
     end)
   end)
 end
@@ -213,7 +217,8 @@ end
 
 --- Say whether the review is open, and what git signs show.
 function M.say_status()
-  say(M.status() ~= "" and M.status() or (current and "The review is opening" or "No review is open"))
+  local note = M.status()
+  say(note ~= "" and note or (current and "The review is opening" or "No review is open"))
 end
 
 --- Whether a review is open (or opening).
