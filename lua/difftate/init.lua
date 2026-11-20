@@ -2,7 +2,9 @@
 -- (ADR 0007). A client of the review API, like the browser and the Herdr viewer.
 --
 -- Modules: review (the open review: opening, polling, closing), api (the review
--- API through curl), gitsigns (its base while the review is open), git.
+-- API through curl), gitsigns (its base while the review is open), git, draw (the
+-- threads in the buffers), threads (their text), wrap, diff (the changeset's diff),
+-- float (the read float).
 --
 -- Additive only (spec #124): it maps only the keys in opts.keys, never one that is
 -- mapped already, and sets no option. Keys are under <leader>r, which LazyVim's core
@@ -17,12 +19,16 @@ local defaults = {
   -- action = key (false: none). Later actions (comment, reply, ...) come here too.
   keys = {
     toggle = "<leader>rr",
+    expand = "<leader>re",
+    thread = "<leader>rt",
   },
 }
 
 -- What each key does: { function, description }
 local actions = {
   toggle = { function() M.toggle() end, "Open or close the review" },
+  expand = { function() review.toggle_expanded() end, "Expand or collapse all threads" },
+  thread = { function() review.read_thread() end, "Read the thread on this line" },
 }
 
 M.config = vim.deepcopy(defaults)
