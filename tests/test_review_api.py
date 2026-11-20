@@ -656,6 +656,14 @@ class TheModeRoutes(ServedOnFakes, unittest.TestCase):
         answer = self.ask("GET", "/api/review")[1]
         self.assertEqual((answer["mode"], answer["held"]), ("live", []))
 
+    def test_the_review_names_the_folder_the_watcher_runs_in_so_a_viewer_can_export_it(self):
+        self.serve()
+
+        folder = self.ask("GET", "/api/review")[1]["folder"]
+        status, text = self.ask("GET", f"/api/export?folder={urllib.parse.quote(folder)}")
+        self.assertEqual(status, 200)
+        self.assertIn(f"dt-reply --folder {folder}", text)
+
     def test_in_a_batched_review_a_comment_is_held_and_the_review_says_which(self):
         self.serve()
 

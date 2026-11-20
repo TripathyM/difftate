@@ -98,5 +98,17 @@ export class ReviewApi {
   // Submit the held threads of a batched review as one run: {mode, held, submitted}
   submit() { return this.call("POST", "/api/submit", {}); }
 
+  // The review's export as text, for an agent session; <folder> goes in its reply command so the session can reply from anywhere
+  async exportText(folder) {
+    const r = await fetch(`${this.base}/api/export${folder ? `?folder=${encodeURIComponent(folder)}` : ""}`, { headers: { Authorization: `Bearer ${this.token}` } });
+    const text = await r.text();
+    if (!r.ok) {
+      let said = null;
+      try { said = JSON.parse(text)?.error; } catch {}
+      throw new ApiError(r.status, said ?? `GET /api/export: ${r.status}`);
+    }
+    return text;
+  }
+
   setStatus(threadId, status) { return this.call("PATCH", `/api/threads/${encodeURIComponent(threadId)}/status`, { status }); }
 }

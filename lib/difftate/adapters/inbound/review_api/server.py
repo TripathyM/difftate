@@ -11,7 +11,8 @@ without it gets 401.
 
   GET   /api/review                     start or reuse the review of the checked-out
                                         branch: {"id", "branch", "base", "waitingForRun",
-                                        "checkedOut"}. The watcher follows the branch, so
+                                        "checkedOut", "folder" (the checked-out folder
+                                        the watcher runs in)}. The watcher follows the branch, so
                                         they change after a checkout; until a run in
                                         progress ends, "waitingForRun" is true and
                                         "checkedOut" names the branch it moves to
@@ -347,7 +348,7 @@ class ReviewApi:
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
         os.chmod(self.folder, 0o700)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(lambda: self.review, self.token, self.shown, self.login,
-                                                                  self.default_reviewer))
+                                                                  self.default_reviewer, self.root))
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         _write_private(self.token_file, self.token + "\n")
@@ -374,7 +375,7 @@ class ReviewApi:
                     pass
 
 
-def _handler(current, token, shown, login, default_reviewer):
+def _handler(current, token, shown, login, default_reviewer, root):
     """<current>() is the review the API serves now: the watcher follows the
     checked-out branch. <default_reviewer>(): see ReviewApi."""
     expected = f"Bearer {token}".encode()
@@ -403,7 +404,7 @@ def _handler(current, token, shown, login, default_reviewer):
     def get_review(q, p):
         review = current()
         about = {"id": review.about["id"], "branch": review.about["branch"], "base": review.about["base"]}
-        return dict(about, **waiting_for_run(review), **mode_json(review.read_mode()))
+        return dict(about, **waiting_for_run(review), **mode_json(review.read_mode()), folder=root)
 
     def switch_view(q, p):
         where = open_in(p)

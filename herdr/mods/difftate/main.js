@@ -17,6 +17,7 @@ import { tokenize, langOf } from "./syntax.js";
 import { Editing } from "./edit.js";
 import { isGeneral, threadPlace, openThreads, pickerThreads, stepThread } from "./threads.js";
 import { doneLabel, doneQuestion } from "./done.js";
+import { exportFailedMessage, exportProblem, exportedMessage } from "./exported.js";
 import { STATE_LABEL, commentMessage, modeChangedMessage, modeLabel, otherMode, submitProblem, submittedMessage } from "./batched.js";
 
 const MOD = "difftate";
@@ -353,6 +354,22 @@ export default class Review extends View {
         this.threadSig = null;
         await this.loadThreads();
       } catch (e) { this.msg = String(e.message ?? e); }
+      cx.notify();
+    });
+  }
+
+  // Export: copy the review's export to the clipboard, for an agent session the reviewer starts.
+  // It names this folder in its reply command, so the session can reply from anywhere. Changes no thread
+  exportReview(cx) {
+    if (!this.api) { this.msg = "Start difftate (or dto) in this repo to export."; return; }
+    cx.spawn(async (cx) => {
+      try {
+        const text = await this.api.exportText(this.root);
+        const problem = exportProblem(text);
+        if (problem) throw new Error(problem);
+        cx.write_to_clipboard(text);
+        this.msg = exportedMessage();
+      } catch (e) { this.msg = exportFailedMessage(e); }
       cx.notify();
     });
   }
@@ -797,7 +814,7 @@ export default class Review extends View {
       resolve: () => this.setThreadStatus("resolved", cx), reopen: () => this.setThreadStatus("open", cx),
       toggle_viewed: () => this.toggleViewed(cx),
       toggle_done: () => this.toggleDone(cx),
-      toggle_mode: () => this.toggleMode(cx), submit: () => this.submitHeld(cx),
+      toggle_mode: () => this.toggleMode(cx), submit: () => this.submitHeld(cx), export: () => this.exportReview(cx),
       goto_definition: () => this.gotoDefinition(cx), references: () => this.references(cx),
       jump_back: () => this.jump(-1, cx), jump_forward: () => this.jump(1, cx),
       find_files: () => this.findFiles(cx), changed_files: () => this.changedFiles(), threads: () => this.threadPicker(), views: () => this.viewPicker(cx),
