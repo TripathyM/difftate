@@ -16,13 +16,13 @@ local M = {}
 local defaults = {
   -- How often the open review asks the review API, as the Herdr viewer does
   poll_ms = 2000,
-  -- action = key (false: none). Later actions (comment, reply, ...) come here too.
+  -- action = key (false: none). Later actions (comment, ...) come here too.
   keys = {
     toggle = "<leader>rr",
     expand = "<leader>re",
     thread = "<leader>rt",
     comment = "<leader>rc", -- on the line, or on the visual selection
-    reply = "<leader>ra",
+    add_comment = "<leader>ra", -- a comment in the thread on the line
     resolve = "<leader>rR",
     reopen = "<leader>rO",
     general = "<leader>rG",
@@ -38,7 +38,7 @@ local actions = {
     { n = function() review.comment(false) end, x = function() review.comment(true) end },
     "Comment on this line or selection", { "n", "x" },
   },
-  reply = { function() review.reply() end, "Reply to the thread on this line" },
+  add_comment = { function() review.add_comment() end, "Comment on the thread" },
   resolve = { function() review.set_status("resolved") end, "Resolve the thread on this line" },
   reopen = { function() review.set_status("open") end, "Reopen the thread on this line" },
   general = { function() review.general() end, "Write a general thread" },

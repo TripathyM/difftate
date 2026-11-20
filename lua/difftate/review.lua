@@ -330,9 +330,10 @@ function M.comment(visual)
   })
 end
 
---- Write a reply to the thread on the cursor's line (a choice when several are).
-function M.reply()
-  local review = open_review("reply")
+--- Write a comment in the thread on the cursor's line (a choice when several are). A
+--- reply is the coding agent's answer (GLOSSARY.md), so this is a comment too.
+function M.add_comment()
+  local review = open_review("comment on a thread")
   if not review then
     return
   end
@@ -340,11 +341,11 @@ function M.reply()
   thread_here(nil, nil, function(thread)
     local a = thread.anchor
     compose.open({
-      title = a and ("reply on %s:%d"):format(a.file, a.endLine) or "reply on a general thread", win = win, line = line,
-      key = ("%s\0reply:%s"):format(review.watcher.top, thread.id),
+      title = a and ("comment on thread at %s:%d"):format(a.file, a.endLine) or "comment on a general thread", win = win, line = line,
+      key = ("%s\0thread:%s"):format(review.watcher.top, thread.id),
       send = poster(review, "POST", ("/api/threads/%s/comments"):format(vim.uri_encode(thread.id)), function(body)
         return { kind = "comment", body = body }
-      end, "Reply sent"),
+      end, "Comment sent"),
     })
   end)
 end

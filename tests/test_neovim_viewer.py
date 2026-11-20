@@ -456,7 +456,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
 
     def test_with_no_key_under_leader_r_it_adds_no_group_to_which_key(self):
         nvim = self.nvim(extra_rtp=[FAKE_WHICH_KEY], opts={"keys": {
-            "toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT", "comment": "<leader>gC", "reply": "<leader>gA",
+            "toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT", "comment": "<leader>gC", "add_comment": "<leader>gA",
             "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
@@ -1229,7 +1229,7 @@ class TheComposeFloat(NeovimHarness, unittest.TestCase):
 
 
 @needs(MISSING_GITSIGNS)
-class RepliesAndStatus(NeovimHarness, unittest.TestCase):
+class CommentsInThreadsAndStatus(NeovimHarness, unittest.TestCase):
     def a_review_with_a_thread_on_line_two(self):
         self.commit()
         self.start_watcher()
@@ -1241,25 +1241,25 @@ class RepliesAndStatus(NeovimHarness, unittest.TestCase):
         nvim.command("2")
         return nvim
 
-    def test_leader_ra_replies_to_the_thread_on_the_cursors_line_and_it_shows_inline(self):
+    def test_leader_ra_adds_a_comment_to_the_thread_on_the_cursors_line_and_it_shows_inline(self):
         nvim = self.a_review_with_a_thread_on_line_two()
 
         nvim.keys("<leader>ra")
         wait_for("the float", lambda: nvim.compose_float())
-        self.assertIn("reply", nvim.compose_float()["title"])
+        self.assertIn("comment on thread at app.py:2", nvim.compose_float()["title"])
         nvim.write_text("Because of the diff\n\nand the tests")
         nvim.command("write")
 
-        wait_for("the reply", lambda: len(self.thread(self.tid)["comments"]) == 2)
+        wait_for("the comment", lambda: len(self.thread(self.tid)["comments"]) == 2)
         self.assertEqual(self.comments(self.tid)[1], ("comment", "Because of the diff\n\nand the tests"))
-        self.assertEqual(len(self.api("GET", "/api/threads")), 1, "a reply, not a new thread")
-        wait_for("the reply drawn", lambda: "and the tests" in "\n".join(nvim.threads()[0]["lines"]))
+        self.assertEqual(len(self.api("GET", "/api/threads")), 1, "a comment in the thread, not a new thread")
+        wait_for("the comment drawn", lambda: "and the tests" in "\n".join(nvim.threads()[0]["lines"]))
 
-    def test_the_reply_keeps_its_unsent_text_apart_from_a_new_comment_on_the_same_line(self):
+    def test_a_comment_in_a_thread_keeps_its_unsent_text_apart_from_a_new_comment_on_the_same_line(self):
         nvim = self.a_review_with_a_thread_on_line_two()
         nvim.keys("<leader>ra")
         wait_for("the float", lambda: nvim.compose_float())
-        nvim.write_text("my reply")
+        nvim.write_text("my comment in the thread")
         nvim.keys("<Esc>q")
 
         nvim.keys("<leader>rc")
@@ -1268,7 +1268,7 @@ class RepliesAndStatus(NeovimHarness, unittest.TestCase):
         nvim.keys("<Esc>q")
         nvim.keys("<leader>ra")
         wait_for("the float", lambda: nvim.compose_float())
-        self.assertEqual(nvim.compose_float()["lines"], ["my reply"])
+        self.assertEqual(nvim.compose_float()["lines"], ["my comment in the thread"])
 
     def test_leader_rR_resolves_and_leader_rO_reopens_the_thread_on_the_line(self):
         nvim = self.a_review_with_a_thread_on_line_two()
@@ -1295,7 +1295,7 @@ class RepliesAndStatus(NeovimHarness, unittest.TestCase):
         self.assertIsNone(nvim.compose_float())
         self.assertEqual(self.thread(self.tid)["status"], "open")
 
-    def test_with_two_threads_on_a_line_it_asks_which_to_reply_to_or_resolve(self):
+    def test_with_two_threads_on_a_line_it_asks_which_to_comment_in_or_resolve(self):
         nvim = self.a_review_with_a_thread_on_line_two()
         second = self.a_thread("Second opinion")
         wait_for("both threads", lambda: len(nvim.threads()) == 2)
@@ -1310,7 +1310,7 @@ class RepliesAndStatus(NeovimHarness, unittest.TestCase):
         wait_for("the float", lambda: nvim.compose_float())
         nvim.write_text("To the second")
         nvim.command("write")
-        wait_for("the reply", lambda: len(self.thread(second)["comments"]) == 2)
+        wait_for("the comment", lambda: len(self.thread(second)["comments"]) == 2)
         self.assertEqual(len(self.thread(self.tid)["comments"]), 1)
 
 

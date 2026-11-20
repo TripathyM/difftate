@@ -1,4 +1,4 @@
--- The compose float: where the reviewer writes a comment, a reply or a general thread, as
+-- The compose float: where the reviewer writes a comment (new, or in a thread) or a general thread, as
 -- a floating markdown buffer the plugin owns, under the lines it is about.
 --
 -- :w (BufWriteCmd) and <C-s> send the text; q closes the float and keeps the unsent text,
