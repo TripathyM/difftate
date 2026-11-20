@@ -6,6 +6,8 @@ local draw = require("difftate.draw")
 local float = require("difftate.float")
 local git = require("difftate.git")
 local gitsigns = require("difftate.gitsigns")
+local nav = require("difftate.nav")
+local pick = require("difftate.pick")
 local threads = require("difftate.threads")
 
 local M = {}
@@ -52,6 +54,7 @@ local function read_threads(review, on_done)
       on_done()
       return
     end
+    float.refresh(listed) -- a thread read in the float shows what changed in it
     local function draw_them(diff_text)
       if current ~= review then
         return
@@ -226,7 +229,10 @@ end
 -- accepts: then_(thread) on the one the reviewer chooses. <none> says what is missing when
 -- threads are there but none is wanted.
 local function thread_here(wanted, none, then_)
-  local found = draw.threads_at(vim.api.nvim_get_current_buf(), vim.api.nvim_win_get_cursor(0)[1])
+  local buf = vim.api.nvim_get_current_buf()
+  -- In the read float the thread is the one it shows: that is how a general thread, which has no line, is acted on
+  local read = float.thread_in(buf)
+  local found = read and { read } or draw.threads_at(buf, vim.api.nvim_win_get_cursor(0)[1])
   if #found == 0 then
     say("No thread on this line")
     return
@@ -380,6 +386,167 @@ function M.set_status(status)
       function(ok, why)
         say(ok and (reopening and "Reopened" or "Resolved") or why, ok and vim.log.levels.INFO or vim.log.levels.ERROR)
       end)
+  end)
+end
+
+-- ]r, [r and the pickers ------------------------------------------------------
+
+-- The review's threads and its changeset's files as they are now: then_(threads, files, diff
+-- files) once both came; a request that failed says why and calls nothing.
+local function snapshot(review, then_)
+  local function failed(err)
+    say(err.missing and no_watcher(review.watcher.top) or err.message, vim.log.levels.ERROR)
+  end
+  api.request(review.watcher, "GET", "/api/threads?view=", function(listed, err)
+    if not listed then
+      return failed(err)
+    end
+    api.request(review.watcher, "GET", "/api/changeset?view=", function(changeset, why)
+      if not changeset then
+        return failed(why)
+      end
+      if current == review then
+        local diff_text = changeset.diff or ""
+        then_(listed, nav.files(diff_text), require("difftate.diff").parse(diff_text))
+      end
+    end)
+  end)
+end
+
+-- Open <path> (in the review's folder) in the current window, unless it is the one it
+-- shows: reloading it would run the reviewer's file autocmds again. False (and says
+-- why) when it can't be opened, such as with unsaved changes in the way.
+local function open_file(review, path)
+  float.close()
+  if path_in_review(review, vim.api.nvim_get_current_buf()) == path then
+    return true
+  end
+  local top = vim.uv.fs_realpath(review.watcher.top) or review.watcher.top
+  local ok, err = pcall(vim.cmd.edit, vim.fn.fnameescape(top .. "/" .. path))
+  if not ok then
+    say(tostring(err), vim.log.levels.ERROR)
+  end
+  return ok
+end
+
+-- Go to <thread>: where it is drawn (opening its file when the cursor is in another), or, for a
+-- thread with no line (a general one, or one whose code is on another branch), its read float
+local function go_to(review, thread, parsed)
+  local at = draw.where(thread, parsed)
+  review.visited = nil
+  if not at then
+    float.open(thread)
+    return
+  end
+  if not open_file(review, at.path) then
+    return
+  end
+  vim.cmd("normal! m'") -- the jump list: <C-o> goes back
+  local row = math.min(at.row, vim.api.nvim_buf_line_count(0))
+  vim.api.nvim_win_set_cursor(0, { row, 0 })
+  vim.cmd("normal! ^zvzz")
+  review.visited = { id = thread.id, path = at.path, row = row }
+end
+
+-- Where the cursor is, for a step: nil outside the review's files; the general thread the
+-- read float shows; else the file and line (and the thread last visited when it is still there)
+local function whereabouts(review, parsed)
+  local buf = vim.api.nvim_get_current_buf()
+  local read = float.thread_in(buf)
+  if read then
+    if not read.anchor then
+      return { general = read.id }
+    end
+    local at = draw.where(read, parsed)
+    return at and { path = at.path, line = at.row, thread = read.id } or nil
+  end
+  local path = path_in_review(review, buf)
+  if not path then
+    return nil
+  end
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+  local visited = review.visited
+  return { path = path, line = line,
+           thread = visited and visited.path == path and visited.row == line and visited.id or nil }
+end
+
+--- Go to the next (<direction> 1) or previous (-1) open thread: general threads first,
+--- then across the files, opening the next file; at the end it wraps round, and says so.
+function M.step_thread(direction)
+  local review = open_review("go to a thread")
+  if not review then
+    return
+  end
+  snapshot(review, function(listed, files, parsed)
+    local sequence = nav.sequence(listed, files, function(thread)
+      return draw.where(thread, parsed)
+    end)
+    local entry, wrapped = nav.step(sequence, files, whereabouts(review, parsed), direction)
+    if not entry then
+      say("No open threads")
+      return
+    end
+    go_to(review, entry.thread, parsed)
+    if wrapped then
+      say(("Wrapped to the %s open thread"):format(direction > 0 and "first" or "last"))
+    end
+  end)
+end
+
+--- The threads picker: every thread, outdated ones too, general threads at the top. A
+--- thread on a line is gone to; a general one opens in the read float.
+function M.pick_thread()
+  local review = open_review("list its threads")
+  if not review then
+    return
+  end
+  snapshot(review, function(listed, files, parsed)
+    if #listed == 0 then
+      say("No threads in this review")
+      return
+    end
+    local entries = vim.tbl_map(function(thread)
+      return { text = nav.thread_row(thread), value = thread }
+    end, nav.picker_threads(listed, files))
+    pick.choose(entries, "Review threads", function(thread)
+      if current == review then
+        go_to(review, thread, parsed)
+      end
+    end)
+  end)
+end
+
+--- The changed files picker: the changeset's files, viewed ones marked; the picked one opens.
+function M.pick_file()
+  local review = open_review("list its files")
+  if not review then
+    return
+  end
+  api.request(review.watcher, "GET", "/api/viewed", function(answer, err)
+    if not answer then
+      say(err.missing and no_watcher(review.watcher.top) or err.message, vim.log.levels.ERROR)
+      return
+    end
+    local viewed = {}
+    for _, path in ipairs(answer.files or {}) do
+      viewed[path] = true
+    end
+    snapshot(review, function(_, files)
+      if #files == 0 then
+        say("No changed files in this review")
+        return
+      end
+      local entries = vim.tbl_map(function(file)
+        return { text = nav.file_row(file, viewed[file.path]), value = file }
+      end, files)
+      pick.choose(entries, "Changed files", function(file)
+        if file.deleted then
+          say(("%s was deleted: there is no file to open"):format(file.path))
+          return
+        end
+        open_file(review, file.path)
+      end)
+    end)
   end)
 end
 

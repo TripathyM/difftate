@@ -191,6 +191,19 @@ class Neovim:
             return { lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false), filetype = vim.bo[buf].filetype,
                      title = config.title and config.title[1] and config.title[1][1] or "" }""")
 
+    def menu(self):
+        """The picker the plugin opened (see FAKE_SELECT, FAKE_SNACKS): {"title", "lines", "via"}, or None."""
+        return self.lua("return T.menu")
+
+    def pick(self, n):
+        """Choose the <n>th (1-based) entry of the open picker, as Enter does."""
+        # After the call returns, as a picker's Enter is: not inside the expression that presses it
+        self.lua(f"local choose = T.choose_menu; T.menu = nil; T.choose_menu = nil; vim.schedule(function() local ok, err = pcall(choose, {n}); T.err = not ok and tostring(err) or nil end)")
+
+    def at(self):
+        """Where the cursor is: [file name, line]."""
+        return self.lua("return { vim.fn.expand('%:t'), vim.fn.line('.') }")
+
     def write_text(self, text):
         """Make <text> the text of the current buffer, as typing it would."""
         self.lua(f"vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(vim.json.decode([==[{json.dumps(text)}]==]), '\\n'))")
@@ -410,6 +423,14 @@ class WhileTheReviewIsOpen(NeovimHarness, unittest.TestCase):
         self.assertNotIn("difftate stopped answering", nvim.messages())
 
 
+# Pickers that record what they were given (T.menu) and wait for the test to choose (T.choose_menu)
+FAKE_SELECT = ("vim.ui.select = function(items, opts, on_choice) T.menu = { via = 'ui.select', title = opts.prompt, "
+               "lines = vim.tbl_map(function(i) return opts.format_item and opts.format_item(i) or tostring(i) end, items) }; "
+               "T.choose_menu = function(n) on_choice(items[n], n) end end")
+FAKE_SNACKS = ("_G.Snacks = { picker = { pick = function(o) T.menu = { via = 'snacks', title = o.title, "
+               "lines = vim.tbl_map(function(i) return i.text end, o.items) }; "
+               "T.choose_menu = function(n) o.confirm({ close = function() end }, o.items[n]) end end } }")
+
 FAKE_WHICH_KEY = os.path.join(ROOT, "tests", "nvim", "fake-which-key")
 
 
@@ -457,7 +478,8 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
     def test_with_no_key_under_leader_r_it_adds_no_group_to_which_key(self):
         nvim = self.nvim(extra_rtp=[FAKE_WHICH_KEY], opts={"keys": {
             "toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT", "comment": "<leader>gC", "add_comment": "<leader>gA",
-            "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG"}})
+            "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG",
+            "threads": "<leader>gP", "files": "<leader>gF", "next": "<leader>gN", "previous": "<leader>gB"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -467,7 +489,8 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
         before, after = nvim.lua("return T.before"), nvim.lua("return T.after_setup")
 
         self.assertEqual(after["options"], before["options"])
-        self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG"})
+        self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG",
+                                                                 "n  rs", "n  rf", "n ]r", "n [r"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -1365,6 +1388,290 @@ class GeneralThreads(NeovimHarness, unittest.TestCase):
 
         wait_for("the thread", lambda: self.api("GET", "/api/threads"))
         self.assertIsNone(self.api("GET", "/api/threads")[0]["anchor"])
+
+
+class ReviewOfTwoFiles(NeovimHarness):
+    """app.py (changed on the branch: line 2) and util.py (new), with threads on both and a general one."""
+
+    def a_review_of_two_files(self, before=None):
+        self.write("util.py", "def shout(text):\n    return text.upper()\n\n\ndef whisper(text):\n    return text.lower()\n")
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.general = self.api("POST", "/api/threads", {"anchor": None, "body": "Overall: add tests"})["id"]
+        self.in_app = self.a_thread("Why not an f-string?", line=2)
+        self.in_util = self.a_thread("Name this better", line=1, file="util.py")
+        self.later_in_util = self.a_thread("Cover whisper", line=6, file="util.py")
+        nvim = self.nvim(before=before)
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+        return nvim
+
+    def settle(self, nvim, where):
+        wait_for(f"the cursor at {where}", lambda: nvim.at() == where)
+
+
+@needs(MISSING_GITSIGNS)
+class ThreadMotions(ReviewOfTwoFiles, unittest.TestCase):
+    def test_r_visits_every_open_thread_in_order_across_files_and_wraps_to_the_general_thread_first(self):
+        nvim = self.a_review_of_two_files()
+        nvim.command("1")
+
+        nvim.keys("]r")
+        self.settle(nvim, ["app.py", 2])
+        nvim.keys("]r")
+        self.settle(nvim, ["util.py", 1])
+        nvim.keys("]r")
+        self.settle(nvim, ["util.py", 6])
+        self.assertNotIn("Wrapped", nvim.messages())
+        nvim.keys("]r")
+
+        wait_for("the general thread", lambda: nvim.float_lines())
+        self.assertIn("Overall: add tests", nvim.float_lines())
+        self.assertIn("Wrapped to the first open thread", nvim.messages())
+        nvim.keys("]r")
+        self.settle(nvim, ["app.py", 2])
+        self.assertIsNone(nvim.float_lines(), "going to a line closes the general thread's float")
+        self.assertEqual(nvim.messages().count("Wrapped"), 1)
+
+    def test_the_other_way_goes_back_and_wraps_to_the_last_thread(self):
+        nvim = self.a_review_of_two_files()
+        nvim.command("edit util.py")
+        nvim.command("6")
+
+        nvim.keys("[r")
+        self.settle(nvim, ["util.py", 1])
+        nvim.keys("[r")
+        self.settle(nvim, ["app.py", 2])
+        nvim.keys("[r")
+        wait_for("the general thread", lambda: nvim.float_lines())
+        self.assertNotIn("Wrapped", nvim.messages())
+        nvim.keys("[r")
+
+        self.settle(nvim, ["util.py", 6])
+        self.assertIn("Wrapped to the last open thread", nvim.messages())
+
+    def test_from_a_buffer_that_is_not_a_file_it_starts_at_the_first_or_the_last_thread(self):
+        nvim = self.a_review_of_two_files()
+        nvim.command("enew")
+
+        nvim.keys("]r")
+        wait_for("the general thread", lambda: nvim.float_lines())
+        nvim.keys("q")
+        nvim.command("enew")
+        nvim.keys("[r")
+
+        self.settle(nvim, ["util.py", 6])
+        self.assertNotIn("Wrapped", nvim.messages())
+
+    def test_resolved_and_dismissed_threads_are_skipped_and_without_open_ones_it_says_so(self):
+        nvim = self.a_review_of_two_files()
+        self.api("PATCH", f"/api/threads/{self.in_util}/status", {"status": "resolved"})
+        self.api("PATCH", f"/api/threads/{self.later_in_util}/status", {"status": "dismissed"})
+        nvim.command("1")
+
+        nvim.keys("]r")
+        self.settle(nvim, ["app.py", 2])
+        nvim.keys("]r")
+        wait_for("the general thread", lambda: nvim.float_lines())
+        for tid in (self.general, self.in_app):
+            self.api("PATCH", f"/api/threads/{tid}/status", {"status": "resolved"})
+        nvim.keys("q")
+        nvim.keys("]r")
+
+        wait_for("the message", lambda: "No open threads" in nvim.messages())
+
+    def test_two_threads_on_one_line_are_both_visited(self):
+        nvim = self.a_review_of_two_files()
+        second = self.a_thread("Second opinion", line=2)
+        wait_for("both drawn", lambda: len(nvim.threads()) == 2)
+        nvim.command("1")
+
+        nvim.keys("]r")
+        self.settle(nvim, ["app.py", 2])
+        nvim.keys("]r")
+        self.settle(nvim, ["app.py", 2])
+        nvim.keys("]r")
+        self.settle(nvim, ["util.py", 1])
+
+        self.assertEqual(self.thread(second)["status"], "open")
+
+    def test_a_thread_moved_by_an_unsaved_edit_is_found_where_it_is_drawn(self):
+        nvim = self.a_review_of_two_files()
+        nvim.command("1")
+        nvim.lua("vim.api.nvim_buf_set_lines(0, 0, 0, false, { '# new', '# lines' })")  # the thread moves to line 4
+        wait_for("it moved", lambda: nvim.signs() == [(4, "●")])
+
+        nvim.keys("]r")
+
+        self.settle(nvim, ["app.py", 4])
+
+    def test_it_says_so_with_no_review_open_and_maps_the_keys_from_opts(self):
+        self.commit()
+        nvim = self.nvim(opts={"poll_ms": 200, "keys": {"next": "<leader>jn"}})
+
+        nvim.keys("<leader>jn")
+
+        self.assertIn("No review is open", nvim.messages())
+        self.assertEqual(nvim.lua("return vim.fn.maparg(']r', 'n')"), "")
+
+    def test_a_thread_on_code_another_branch_has_is_reached_through_its_float_not_a_line(self):
+        nvim = self.a_review_of_two_files()
+        nvim.command("1")
+        git(self.repo, self.env, "checkout", "-q", "-b", "other", "main")
+        wait_for("the threads not in view", lambda: all(t.get("inView") is False for t in self.api("GET", "/api/threads?view=") if t["anchor"]))
+
+        nvim.keys("]r")
+
+        wait_for("the general thread", lambda: nvim.float_lines())
+        self.assertIn("Overall: add tests", nvim.float_lines())
+
+
+@needs(MISSING_GITSIGNS)
+class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
+    def test_leader_rs_lists_every_thread_with_status_and_state_general_ones_at_the_top(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        self.api("PATCH", f"/api/threads/{self.in_util}/status", {"status": "resolved", "reviewer": "security-bot"})
+        outdated = self.a_thread("Is this the style we want?", line=3, anchor_code="Another style")
+        second_general = self.api("POST", "/api/threads", {"anchor": None, "body": "Also: a changelog"})["id"]
+        self.api("PATCH", f"/api/threads/{second_general}/status", {"status": "dismissed"})
+
+        nvim.keys("<leader>rs")
+
+        wait_for("the picker", lambda: nvim.menu())
+        menu = nvim.menu()
+        self.assertEqual(menu["via"], "ui.select")
+        self.assertEqual(menu["title"], "Review threads")
+        self.assertEqual(menu["lines"], [
+            "● general · open · held until you submit · Overall: add tests",
+            "○ general · dismissed by Test · Also: a changelog",
+            "● app.py:2 · open · held until you submit · Why not an f-string?",
+            "● app.py:3 · open · held until you submit · outdated · Is this the style we want?",
+            "● util.py:6 · open · held until you submit · Cover whisper",
+            "○ util.py:1 · resolved by security-bot · Name this better",
+        ])
+        self.assertIsNotNone(outdated)
+
+    def test_picking_a_line_thread_goes_to_it_in_its_file(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        nvim.keys("<leader>rs")
+        wait_for("the picker", lambda: nvim.menu())
+
+        nvim.pick(4)
+
+        self.settle(nvim, ["util.py", 6])
+
+    def test_picking_a_general_thread_opens_it_in_the_float_where_comment_resolve_and_reopen_act_on_it(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        nvim.keys("<leader>rs")
+        wait_for("the picker", lambda: nvim.menu())
+
+        nvim.pick(1)
+
+        wait_for("the float", lambda: nvim.float_lines())
+        self.assertIn("Overall: add tests", nvim.float_lines())
+        nvim.keys("<leader>rR")
+        wait_for("resolved", lambda: self.thread(self.general)["status"] == "resolved")
+        wait_for("the float says so", lambda: nvim.float_lines()[0].startswith("# ○ resolved"))
+        nvim.keys("<leader>rO")
+        wait_for("reopened", lambda: self.thread(self.general)["status"] == "open")
+        wait_for("the float says so", lambda: nvim.float_lines()[0].startswith("# ● open"))
+        nvim.keys("<leader>ra")
+        wait_for("the compose float", lambda: nvim.compose_float())
+        self.assertIn("comment on a general thread", nvim.compose_float()["title"])
+        nvim.write_text("Tests are in")
+        nvim.command("write")
+        wait_for("the comment", lambda: len(self.thread(self.general)["comments"]) == 2)
+        self.assertEqual(self.comments(self.general)[1], ("comment", "Tests are in"))
+
+    def test_leader_rf_lists_the_changed_files_with_viewed_ones_marked_and_opens_the_picked_one(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        self.api("PUT", "/api/viewed", {"file": "util.py"})
+
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        menu = nvim.menu()
+        self.assertEqual(menu["title"], "Changed files")
+        self.assertEqual(menu["lines"], ["  app.py  +1 −1", "✓ util.py  +6 −0 · viewed"])
+        nvim.pick(2)
+        self.settle(nvim, ["util.py", 1])
+
+    def test_a_deleted_file_is_listed_and_says_it_has_nothing_to_open(self):
+        os.remove(os.path.join(self.repo, "app.py"))
+        self.write("util.py", "x = 1\n")
+        self.commit("Drop app")
+        self.start_watcher()
+        nvim = self.nvim(self.repo, "util.py", before=FAKE_SELECT)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], ["  app.py  +0 −2", "  util.py  +1 −0"])
+        nvim.pick(1)
+
+        self.assertIn("app.py was deleted: there is no file to open", nvim.messages())
+        self.assertEqual(nvim.at()[0], "util.py")
+
+    def test_with_snacks_both_pickers_go_through_snacks_picker(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+
+        nvim.keys("<leader>rs")
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["via"], "snacks")
+        self.assertEqual(nvim.menu()["title"], "Review threads")
+        self.assertEqual(nvim.menu()["lines"][0], "● general · open · held until you submit · Overall: add tests")
+        nvim.pick(2)
+        self.settle(nvim, ["app.py", 2])
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+
+        self.assertEqual(nvim.menu()["title"], "Changed files")
+        self.assertEqual(nvim.menu()["via"], "snacks")
+        nvim.pick(2)
+        self.settle(nvim, ["util.py", 1])
+
+    def test_with_no_review_open_each_says_so(self):
+        self.commit()
+        nvim = self.nvim(before=FAKE_SELECT)
+
+        nvim.keys("<leader>rs")
+        nvim.keys("<leader>rf")
+
+        self.assertEqual(nvim.messages().count("No review is open"), 2)
+        self.assertIsNone(nvim.menu())
+
+    def test_with_no_threads_it_says_so_and_opens_no_picker(self):
+        nvim = self.an_open_review()
+        nvim.lua(FAKE_SELECT)
+
+        nvim.keys("<leader>rs")
+
+        wait_for("the message", lambda: "No threads in this review" in nvim.messages())
+        self.assertIsNone(nvim.menu())
+
+    def test_the_motions_and_pickers_change_no_option_or_key_of_the_reviewers_window_or_buffer(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        nvim.command("1")
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+
+        nvim.keys("]r")
+        self.settle(nvim, ["app.py", 2])
+        nvim.keys("<leader>rs")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.pick(1)
+        wait_for("the float", lambda: nvim.float_lines())
+        nvim.keys("q")
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.pick(1)
+        nvim.keys("[r")
+        wait_for("the float", lambda: nvim.float_lines())
+        nvim.keys("q")
+
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
 
 
 @needs(MISSING_GITSIGNS)

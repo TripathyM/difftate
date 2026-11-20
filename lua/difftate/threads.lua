@@ -51,8 +51,8 @@ function M.count(thread)
   return n
 end
 
--- "open · agent working", "resolved by security-bot", "dismissed"
-local function status_label(thread)
+--- "open · agent working", "resolved by security-bot", "dismissed"
+function M.status_label(thread)
   if thread.status == "open" then
     return "open · " .. (STATE_LABEL[thread.state or "waiting"] or thread.state or "waiting for agent")
   end
@@ -74,7 +74,7 @@ local function place(thread)
 end
 
 local function head_text(thread)
-  local parts = { (thread.status == "open" and "●" or "○") .. " " .. status_label(thread) }
+  local parts = { (thread.status == "open" and "●" or "○") .. " " .. M.status_label(thread) }
   if thread.outdated then
     table.insert(parts, "outdated")
   end

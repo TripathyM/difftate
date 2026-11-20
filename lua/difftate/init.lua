@@ -4,11 +4,13 @@
 -- Modules: review (the open review: opening, polling, closing, writing), api (the review
 -- API through curl), compose (the float comments are written in), gitsigns (its base while the review is open), git, draw (the
 -- threads in the buffers), threads (their text), wrap, diff (the changeset's diff),
--- float (the read float).
+-- float (the read float), nav (the order of the threads, the rows of the pickers), pick
+-- (Snacks.picker or vim.ui.select).
 --
 -- Additive only (spec #124): it maps only the keys in opts.keys, never one that is
 -- mapped already, and sets no option. Keys are under <leader>r, which LazyVim's core
--- doesn't use (only its refactoring extra does: pick other keys with it).
+-- doesn't use (only its refactoring extra does: pick other keys with it), and ]r and [r,
+-- which neither LazyVim nor its default plugins map.
 local review = require("difftate.review")
 
 local M = {}
@@ -26,6 +28,10 @@ local defaults = {
     resolve = "<leader>rR",
     reopen = "<leader>rO",
     general = "<leader>rG",
+    threads = "<leader>rs", -- the threads picker
+    files = "<leader>rf", -- the changed files picker
+    next = "]r", -- the next open thread
+    previous = "[r",
   },
 }
 
@@ -42,6 +48,10 @@ local actions = {
   resolve = { function() review.set_status("resolved") end, "Resolve the thread on this line" },
   reopen = { function() review.set_status("open") end, "Reopen the thread on this line" },
   general = { function() review.general() end, "Write a general thread" },
+  threads = { function() review.pick_thread() end, "Pick a thread of the review" },
+  files = { function() review.pick_file() end, "Pick a changed file" },
+  next = { function() review.step_thread(1) end, "Next open thread" },
+  previous = { function() review.step_thread(-1) end, "Previous open thread" },
 }
 
 M.config = vim.deepcopy(defaults)

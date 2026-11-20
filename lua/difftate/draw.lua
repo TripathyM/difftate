@@ -239,6 +239,23 @@ function M.clear()
   drawn = nil
 end
 
+--- Where <thread> is drawn now: { path, row } (the path in the review's folder, the line it is
+--- drawn under, 1 at least), or nil when it is on no line of a file we know. <files>: the
+--- changeset's parsed diff, for a thread on a deleted line. A buffer that is open and was
+--- edited says where the edit moved it.
+function M.where(thread, files)
+  local at = placement(thread, files)
+  if not (at and drawn) then
+    return nil
+  end
+  local buf = buffers_by_path()[real(drawn.top .. "/" .. at.path)]
+  local mark = buf and drawn.marks[buf] and drawn.marks[buf][thread.id]
+  if mark and mark_exists(buf, mark.virt) then
+    return { path = at.path, row = math.max(1, row_of(buf, mark.virt) + 1) }
+  end
+  return { path = at.path, row = math.max(1, at.row) }
+end
+
 --- Expand every collapsible thread, or collapse them again: whether they are expanded now.
 function M.toggle_expanded()
   if not drawn then
