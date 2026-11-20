@@ -1,8 +1,8 @@
 -- The Neovim viewer (GLOSSARY.md): difftate's review in the reviewer's own Neovim
 -- (ADR 0007). A client of the review API, like the browser and the Herdr viewer.
 --
--- Modules: review (the open review: opening, polling, closing), api (the review
--- API through curl), gitsigns (its base while the review is open), git, draw (the
+-- Modules: review (the open review: opening, polling, closing, writing), api (the review
+-- API through curl), compose (the float comments are written in), gitsigns (its base while the review is open), git, draw (the
 -- threads in the buffers), threads (their text), wrap, diff (the changeset's diff),
 -- float (the read float).
 --
@@ -16,19 +16,32 @@ local M = {}
 local defaults = {
   -- How often the open review asks the review API, as the Herdr viewer does
   poll_ms = 2000,
-  -- action = key (false: none). Later actions (comment, reply, ...) come here too.
+  -- action = key (false: none). Later actions (comment, ...) come here too.
   keys = {
     toggle = "<leader>rr",
     expand = "<leader>re",
     thread = "<leader>rt",
+    comment = "<leader>rc", -- on the line, or on the visual selection
+    add_comment = "<leader>ra", -- a comment in the thread on the line
+    resolve = "<leader>rR",
+    reopen = "<leader>rO",
+    general = "<leader>rG",
   },
 }
 
--- What each key does: { function, description }
+-- What each key does: { function, description, modes } (modes: where it is mapped, "n" when none)
 local actions = {
   toggle = { function() M.toggle() end, "Open or close the review" },
   expand = { function() review.toggle_expanded() end, "Expand or collapse all threads" },
   thread = { function() review.read_thread() end, "Read the thread on this line" },
+  comment = {
+    { n = function() review.comment(false) end, x = function() review.comment(true) end },
+    "Comment on this line or selection", { "n", "x" },
+  },
+  add_comment = { function() review.add_comment() end, "Comment on the thread" },
+  resolve = { function() review.set_status("resolved") end, "Resolve the thread on this line" },
+  reopen = { function() review.set_status("open") end, "Reopen the thread on this line" },
+  general = { function() review.general() end, "Write a general thread" },
 }
 
 M.config = vim.deepcopy(defaults)
@@ -47,13 +60,17 @@ local function map_keys(keys)
   for name, lhs in pairs(keys) do
     local action = actions[name]
     if action and lhs then
-      local taken = vim.fn.maparg(lhs, "n", false, true)
-      if taken.lhs then
-        say(("%s is already mapped (%s): set opts.keys.%s to another key"):format(
-          lhs, taken.desc or taken.rhs or "a function", name), vim.log.levels.WARN)
-      else
-        vim.keymap.set("n", lhs, action[1], { desc = action[2] })
-        table.insert(mapped, { lhs = lhs, mode = "n" })
+      -- Each mode is checked on its own: a key another plugin took in one mode stays theirs there
+      for _, mode in ipairs(action[3] or { "n" }) do
+        local taken = vim.fn.maparg(lhs, mode, false, true)
+        if taken.lhs then
+          say(("%s is already mapped (%s): set opts.keys.%s to another key"):format(
+            lhs, taken.desc or taken.rhs or "a function", name), vim.log.levels.WARN)
+        else
+          local run = type(action[1]) == "table" and action[1][mode] or action[1]
+          vim.keymap.set(mode, lhs, run, { desc = action[2] })
+          table.insert(mapped, { lhs = lhs, mode = mode })
+        end
       end
     end
   end
