@@ -33,6 +33,7 @@
     "R": "resolve", "<leader>cR": "reopen",
     "<leader>m": "toggle_viewed",
     "<leader>d": "toggle_done",
+    "<leader>M": "toggle_mode", "<leader>S": "submit",
 
     "gd": "goto_definition", "gr": "references",
     "<C-o>": "jump_back", "<Tab>": "jump_forward",

@@ -89,5 +89,14 @@ export class ReviewApi {
   // Mark the review Done at the commit its branch is at, or undo it (the reviewer's own action)
   setDone(done) { return this.call("PUT", "/api/done", { done }); }
 
+  // The review mode and the held threads: {mode: "live"|"batched", held: [thread ids]}
+  mode() { return this.call("GET", "/api/mode"); }
+
+  // Change the review mode (the reviewer's own action): {mode, held, submitted}. Changing to live submits what is held
+  setMode(mode) { return this.call("PUT", "/api/mode", { mode }); }
+
+  // Submit the held threads of a batched review as one run: {mode, held, submitted}
+  submit() { return this.call("POST", "/api/submit", {}); }
+
   setStatus(threadId, status) { return this.call("PATCH", `/api/threads/${encodeURIComponent(threadId)}/status`, { status }); }
 }
