@@ -33,9 +33,11 @@ GITSIGNS = os.environ.get("DIFFTATE_TEST_GITSIGNS", "")
 REQUIRED = os.environ.get("DIFFTATE_TEST_NVIM_REQUIRED") == "1"
 
 
-def xdg_folders(folder):
-    """Every XDG folder Neovim reads or writes, in <folder>."""
-    return {f"XDG_{name.upper()}_HOME": os.path.join(folder, name) for name in ("config", "data", "state", "cache")}
+def nvim_folders(folder):
+    """Every XDG folder Neovim reads or writes, and its log, in <folder>: never the
+    reviewer's, nor the folder a test runs in (Neovim falls back to ./nvim.log)."""
+    folders = {f"XDG_{name.upper()}_HOME": os.path.join(folder, name) for name in ("config", "data", "state", "cache")}
+    return dict(folders, NVIM_LOG_FILE=os.path.join(folder, "nvim.log"))
 
 
 def nvim_missing():
@@ -44,7 +46,7 @@ def nvim_missing():
         return "nvim is not on PATH: install Neovim 0.10 or later to test the Neovim viewer"
     with tempfile.TemporaryDirectory(prefix="difftate-nvim-") as tmp:
         # Neovim's own folders in <tmp>: its log never goes to the reviewer's ~/.local/state
-        env = dict(os.environ, HOME=tmp, **xdg_folders(tmp))
+        env = dict(os.environ, HOME=tmp, **nvim_folders(tmp))
         out = subprocess.run([NVIM, "--clean", "--headless", "-c", "lua io.write(vim.fn.has('nvim-0.10'))",
                               "-c", "qa!"], cwd=tmp, env=env, capture_output=True, text=True, timeout=30).stdout
     return None if out.strip() == "1" else "nvim is older than 0.10: the Neovim viewer needs vim.system"
@@ -91,7 +93,7 @@ class Neovim:
         xdg = os.path.join(test.tmp, "xdg")
         self.env = dict(test.env, DIFFTATE_ROOT=ROOT, DIFFTATE_TEST_OPTS=json.dumps(opts or {"poll_ms": 200}),
                         DIFFTATE_TEST_GITSIGNS=GITSIGNS if gitsigns else "",
-                        DIFFTATE_TEST_EXTRA_RTP=",".join(extra_rtp), **xdg_folders(xdg))
+                        DIFFTATE_TEST_EXTRA_RTP=",".join(extra_rtp), **nvim_folders(xdg))
         for name in ("NVIM", "NVIM_APPNAME", "NVIM_LISTEN_ADDRESS", "VIMINIT", "DIFFTATE_TEST_BEFORE"):
             self.env.pop(name, None)
         if before:
@@ -114,7 +116,7 @@ class Neovim:
 
     def expr(self, expr, timeout=10):
         r = subprocess.run([NVIM, "--clean", "--headless", "--server", self.socket, "--remote-expr", expr],
-                           env=self.env, capture_output=True, text=True, timeout=timeout)
+                           cwd=self.test.tmp, env=self.env, capture_output=True, text=True, timeout=timeout)
         if r.returncode != 0:
             raise AssertionError(f"--remote-expr {expr} failed: {r.stderr or r.stdout}")
         return r.stdout
