@@ -3,13 +3,20 @@ an inbound adapter: each route calls one of the core's use cases, and the
 core's errors become HTTP statuses.
 
 Viewers and scripts reach the review through it; Dispatch, inside the watcher,
-reaches it through the core (ADR 0003). Every
-request needs the token from the watcher's difftate folder, in the checked-out
-folder's own git folder (`<git dir>/difftate/token`, readable only by the
-user; for a worktree, its own git folder under the repository's); a request
-without it gets 401.
+reaches it through the core (ADR 0003). There is one watcher for the machine
+(ADR 0008), on one port with one token. Every request needs the token from the
+difftate folder of the home (`~/.difftate/token`, readable only by the user); a
+request without it gets 401.
 
-  GET   /api/review                     start or reuse the review of the checked-out
+Every request but POST /api/stop names its folder, as a query parameter,
+`?folder=<path>` (the checked-out folder it is about), and may name a base,
+`&base=<branch>` (the folder's own base when none is given; the repository's
+default branch for a folder the watcher serves for the first time). One without
+a folder gets 400, and so does a path that is in no checked-out folder of a git
+repository. The first request that names a checked-out folder adds it to what the
+watcher serves. Naming another base switches the folder's review to it.
+
+  GET   /api/review                     start or reuse the review of the folder's checked-out
                                         branch: {"id", "branch", "base", "waitingForRun",
                                         "checkedOut", "folder" (the checked-out folder
                                         the watcher runs in)}. The watcher follows the branch, so
@@ -17,8 +24,8 @@ without it gets 401.
                                         progress ends, "waitingForRun" is true and
                                         "checkedOut" names the branch it moves to
   GET   /api/view                       the view viewers show: {"view"}
-  PUT   /api/view                       show another view: {"view", "open"?: browser|nvim|both
-                                        (also open the viewer on it)}
+  PUT   /api/view                       show another view: {"view"}. The watcher never opens a
+                                        viewer: `difftate` does
   GET   /api/changeset[?view=<view>]    the review's changeset in the view (default: the
                                         one viewers show), from git: {"view", "base",
                                         "commit" (where the branch left the base), "diff",
@@ -51,11 +58,17 @@ without it gets 401.
   PUT   /api/mode                       change it: {"mode", "author"?}: {"mode", "held", "submitted"
                                         (the ids of the threads a change to live submitted: [] for
                                         none)}. "author" must be "reviewer", as for Done
-  GET   /api/export[?folder=<folder>]   the review as text (text/plain), for an agent session
+  GET   /api/export[?reply_folder=<folder>]
+                                        the review as text (text/plain), for an agent session
                                         the reviewer starts: its commit messages, every thread in
                                         full with its thread status and state, the threads that
                                         need an answer, and how to reply (with --folder <folder>
-                                        in the command when one is given). It writes no event
+                                        in the command when a reply_folder is given). It writes
+                                        no event
+  POST  /api/launch                     a link to difftate's own page on the folder's review, with a
+                                        new single-use launch code: {"url"}
+  POST  /api/stop                       stop the watcher, after answering {"stopping": true}. Names
+                                        no folder
   POST  /api/submit                     submit a batched review: {"author"?}: as PUT /api/mode, with
                                         the held threads "submitted" ([] when none was held: no
                                         run starts). They wait for one run, or queue while one is busy
@@ -115,13 +128,14 @@ view, after a reload and after a commit, until its diff in all changes changes
 (any edit to the file, even one that keeps its line counts or is inside a new
 untracked file). Then it is no longer listed.
 
-`<git dir>/difftate/api.json` says where the API runs: {"port", "pid", "root"}.
+`~/.difftate/api.json` says where the API runs: {"port", "pid"}.
 
 The same server serves difftate's own browser viewer (web/, beside this file), a client of
 this API like any other, which never sees the token (a coding agent can read the
-browser's history). The watcher opens it with a single-use launch code:
-GET /?launch=<code> trades the code for an HttpOnly, SameSite=Strict cookie and
-redirects to /, after which the code is refused. The page (/) and its scripts
+browser's history). `difftate` opens it with a single-use launch code:
+GET /?launch=<code>&folder=<path> trades the code for an HttpOnly, SameSite=Strict cookie and
+redirects to /?folder=<path> (the folder the link named: the page names it in every
+API request), after which the code is refused. The page (/) and its scripts
 (/app.js, /diff.js) need that cookie; API requests take it instead of the token only
 with the header "X-Difftate: page" (which another site's page can't send without
 asking) and, when the browser says, the API's own Origin. Anything else gets 401.
@@ -180,11 +194,11 @@ class ApiAddress(namedtuple("ApiAddress", "url token_file")):
 
 
 
-def running_watcher(folder):
-    """The pid of another live watcher serving the review API from <folder>
-    (a checked-out folder's own difftate folder), or None."""
+def running_watcher(home):
+    """The pid of the live watcher serving the review API from <home> (the
+    difftate folder of the machine), or None."""
     try:
-        with open(os.path.join(folder, "api.json")) as f:
+        with open(os.path.join(home, "api.json")) as f:
             info = json.load(f)
         pid, port = int(info["pid"]), int(info["port"])
     except (OSError, ValueError, KeyError, TypeError):
@@ -213,12 +227,12 @@ def _answer(response):
     return json.loads(data or b"null")
 
 
-def ask_running_watcher(folder, method, path, payload=None):
-    """Call the review API of the watcher serving from <folder>, as a viewer
+def ask_running_watcher(home, method, path, payload=None):
+    """Call the review API of the watcher serving from <home>, as a viewer
     would: (status, the JSON answer, or the text of a text/plain one)."""
-    with open(os.path.join(folder, "api.json")) as f:
+    with open(os.path.join(home, "api.json")) as f:
         port = int(json.load(f)["port"])
-    with open(os.path.join(folder, "token")) as f:
+    with open(os.path.join(home, "token")) as f:
         token = f.read().strip()
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", method=method,
                                  data=None if payload is None else json.dumps(payload).encode(),
@@ -234,12 +248,6 @@ def ask_running_watcher(folder, method, path, payload=None):
                 return e.code, None
 
 
-def one_of(names):
-    """("browser", "nvim", "both") as "browser, nvim or both"."""
-    names = list(names)
-    return " or ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else "".join(names)
-
-
 def _write_private(path, text):
     """Write <path> readable only by the user, replacing it atomically."""
     tmp = f"{path}.{os.getpid()}.tmp"
@@ -251,26 +259,24 @@ def _write_private(path, text):
 
 class ShownView:
     """The view viewers show. <check>(view) gives it as a view, or raises the
-    core's NotFound (the code reader has no such view); <on_switch>(view,
-    open_in) runs when a request switches the view. <open_in> names where a
-    request may ask to open the review as well (the viewers main.py picked)."""
+    core's NotFound (the code reader has no such view); <on_switch>(view) runs
+    when a request switches the view."""
 
-    def __init__(self, view, check, on_switch=None, *, open_in):
+    def __init__(self, view, check, on_switch=None):
         self.view = view
         self.check = check
-        self.on_switch = on_switch or (lambda view, open_in: None)
-        self.open_in = tuple(open_in)
+        self.on_switch = on_switch or (lambda view: None)
         self._lock = threading.Lock()
 
     def current(self):
         with self._lock:
             return self.view
 
-    def switch(self, view, open_in=None):
+    def switch(self, view):
         """Show <view>, a view already checked."""
         with self._lock:
             self.view = view
-        self.on_switch(view, open_in)
+        self.on_switch(view)
         return {"view": view}
 
 
@@ -309,50 +315,48 @@ class PageLogin:
 
 
 class ReviewApi:
-    """The review API on <review>: the use cases of one review, with its ports
-    bound (main.bind_review): about ({"id", "branch", "base"}),
-    list_threads, open_thread, add_comment, edit_note, set_status,
-    mark_viewed, list_viewed, set_done, read_done, set_mode, read_mode, submit,
-    changeset and checked_out.
+    """The review API of the one watcher: <folders>(folder, base) is what it
+    serves for a checked-out folder: an object with review (the use cases of
+    the review served now, with its ports bound: main.bind_review: about
+    ({"id", "branch", "base"}), list_threads, open_thread, add_comment,
+    edit_note, set_status, mark_viewed, list_viewed, set_done, read_done,
+    set_mode, read_mode, submit, export, changeset and checked_out), shown (a
+    ShownView) and root (the folder's top). It raises the core's NotFound for a
+    folder it won't serve, or a base that isn't one.
 
-    It writes its token and where it runs (api.json: port, pid, <root>) to
-    <folder>, the watcher's difftate folder in the checked-out folder's own
-    git folder. <default_reviewer>() is the reviewer name of a reviewer's
-    comment or status change that names none (None for no name)."""
+    It writes its token and where it runs (api.json: port, pid) to <home>, the
+    difftate folder of the machine. <default_reviewer>(root) is the reviewer
+    name of a reviewer's comment or status change that names none (None for no
+    name). <on_stop>() runs after POST /api/stop answers."""
 
-    def __init__(self, review, folder, root, shown, default_reviewer=None):
-        self.review = review
-        self.default_reviewer = default_reviewer or (lambda: None)
-        self.shown = shown
-        self.folder = folder
-        self.root = root
+    def __init__(self, folders, home, default_reviewer=None, on_stop=None):
+        self.folders = folders
+        self.default_reviewer = default_reviewer or (lambda root: None)
+        self.on_stop = on_stop or (lambda: None)
+        self.home = home
         self.token = secrets.token_urlsafe(32)
         self.login = PageLogin()
         self.server = None
-        self.token_file = token_file(folder)
-        self.api_file = os.path.join(folder, "api.json")
-
-    def switch_review(self, review):
-        """Serve <review> from now on: the watcher follows the checked-out branch."""
-        self.review = review
+        self.token_file = token_file(home)
+        self.api_file = os.path.join(home, "api.json")
 
     def address(self):
         return ApiAddress(f"http://127.0.0.1:{self.server.server_address[1]}", self.token_file)
 
-    def page_url(self):
-        """A link to the browser viewer, with a new single-use launch code."""
-        return f"{self.address().url}/?launch={self.login.new_code()}"
+    def page_url(self, root):
+        """A link to the browser viewer on the review of the folder <root>, with
+        a new single-use launch code."""
+        return f"{self.address().url}/?launch={self.login.new_code()}&folder={urllib.parse.quote(root, safe='')}"
 
     def start(self):
-        os.makedirs(self.folder, mode=0o700, exist_ok=True)
-        os.chmod(self.folder, 0o700)
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(lambda: self.review, self.token, self.shown, self.login,
-                                                                  self.default_reviewer, self.root))
+        os.makedirs(self.home, mode=0o700, exist_ok=True)
+        os.chmod(self.home, 0o700)
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self.folders, self.token, self.login, self.default_reviewer,
+                                                                  self.page_url, self.on_stop))
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         _write_private(self.token_file, self.token + "\n")
-        _write_private(self.api_file, json.dumps(
-            {"port": self.server.server_address[1], "pid": os.getpid(), "root": self.root}) + "\n")
+        _write_private(self.api_file, json.dumps({"port": self.server.server_address[1], "pid": os.getpid()}) + "\n")
 
     def stop(self):
         if not self.server:
@@ -374,17 +378,17 @@ class ReviewApi:
                     pass
 
 
-def _handler(current, token, shown, login, default_reviewer, root):
-    """<current>() is the review the API serves now: the watcher follows the
-    checked-out branch. <default_reviewer>(): see ReviewApi."""
+def _handler(folders, token, login, default_reviewer, page_url, on_stop):
+    """<folders>(folder, base): see ReviewApi. <default_reviewer>(root), <page_url>(root)
+    and <on_stop>(): see ReviewApi."""
     expected = f"Bearer {token}".encode()
 
-    def a_view(given):
+    def a_view(s, given):
         """<given> as a view. The code reader raises NotFound for one that isn't
         a view, and today's published language answers 400 for it: a bad view
         is the request's fault, not a missing thread."""
         try:
-            return shown.check(given)
+            return s.shown.check(given)
         except NotFound as e:
             raise BadRequest(str(e)) from e
 
@@ -394,108 +398,126 @@ def _handler(current, token, shown, login, default_reviewer, root):
         checkout = review.checked_out()
         return {"waitingForRun": not checkout.on_review_branch, "checkedOut": checkout.branch}
 
-    def open_in(payload):
-        where = fields(payload).get("open")
-        if where is not None and where not in shown.open_in:
-            raise BadRequest(f"open must be {one_of(shown.open_in)}")
-        return where
-
-    def get_review(q, p):
-        review = current()
+    def get_review(s, q, p):
+        review = s.review
         about = {"id": review.about["id"], "branch": review.about["branch"], "base": review.about["base"]}
-        return dict(about, **waiting_for_run(review), **mode_json(review.read_mode()), folder=root)
+        return dict(about, **waiting_for_run(review), **mode_json(review.read_mode()), folder=s.root)
 
-    def switch_view(q, p):
-        where = open_in(p)
-        return shown.switch(a_view(fields(p).get("view", "")), where)
+    def switch_view(s, q, p):
+        return s.shown.switch(a_view(s, fields(p).get("view", "")))
 
-    def get_changeset(q, p):
-        review = current()
-        view = a_view(q["view"][0]) if q.get("view") else shown.current()
+    def get_changeset(s, q, p):
+        review = s.review
+        view = a_view(s, q["view"][0]) if q.get("view") else s.shown.current()
         try:
             changeset = review.changeset(view)
         except NotFound as e:  # the view shown is no view now
             raise BadRequest(str(e)) from e
         return dict(changeset_json(changeset), **waiting_for_run(review))
 
-    def get_threads(q, p):
-        view = a_view(q["view"][0]) if "view" in q else None
+    def get_threads(s, q, p):
+        view = a_view(s, q["view"][0]) if "view" in q else None
         status = (q.get("status") or [None])[0]
         if status is not None:
             need_status(status)
-        return [thread_json(t) for t in current().list_threads(status, view)]
+        return [thread_json(t) for t in s.review.list_threads(status, view)]
 
-    def a_reviewer(p, has_name=True):
+    def a_reviewer(s, p, has_name=True):
         """The request's reviewer name; the default only for a reviewer's write."""
-        return reviewer_name(p, default_reviewer() if has_name else None)
+        return reviewer_name(p, default_reviewer(s.root) if has_name else None)
 
-    def post_thread(q, p):
+    def post_thread(s, q, p):
         given, body = fields(p).get("anchor"), need(p, "body")
         author = fields(p).get("author", "reviewer")
-        anchor = anchor_from_json(given, a_view(fields(p).get("view", "")))
-        by = a_reviewer(p, author == REVIEWER)
-        return thread_json(current().open_thread(author, need_text(body), anchor, by=by))
+        anchor = anchor_from_json(given, a_view(s, fields(p).get("view", "")))
+        by = a_reviewer(s, p, author == REVIEWER)
+        return thread_json(s.review.open_thread(author, need_text(body), anchor, by=by))
 
-    def post_comment(q, p, thread_id):
+    def post_comment(s, q, p, thread_id):
         kind, body = fields(p).get("kind", "comment"), need(p, "body")
         need_kind(kind)
         # A comment's kind says who wrote it
         author = AUTHOR_OF[kind]
-        by = a_reviewer(p, author == REVIEWER)
-        return comment_json(current().add_comment(author, thread_id, kind, need_text(body), by=by))
+        by = a_reviewer(s, p, author == REVIEWER)
+        return comment_json(s.review.add_comment(author, thread_id, kind, need_text(body), by=by))
 
-    def patch_note(q, p, note_id):
+    def patch_note(s, q, p, note_id):
         kind, body = need(p, "kind"), need(p, "body")
         need_kind(kind, NOTE_KINDS)
-        return comment_json(current().edit_note(DIFFTATE, note_id, kind, need_text(body)))
+        return comment_json(s.review.edit_note(DIFFTATE, note_id, kind, need_text(body)))
 
-    def patch_status(q, p, thread_id):
+    def patch_status(s, q, p, thread_id):
         status, author = need(p, "status"), fields(p).get("author", "reviewer")
-        by = a_reviewer(p, author == REVIEWER)
-        thread = current().set_status(author, thread_id, need_status(status), by=by)
+        by = a_reviewer(s, p, author == REVIEWER)
+        thread = s.review.set_status(author, thread_id, need_status(status), by=by)
         return {"id": thread.id, "status": thread.status, "statusBy": thread.status_by}
 
-    def put_viewed(q, p):
+    def put_viewed(s, q, p):
         file, viewed = need(p, "file"), fields(p).get("viewed", True)
-        return {"files": current().mark_viewed(need_text(file, "file"), need_bool(viewed, "viewed"))}
+        return {"files": s.review.mark_viewed(need_text(file, "file"), need_bool(viewed, "viewed"))}
 
-    def put_done(q, p):
+    def put_done(s, q, p):
         done, author = need_bool(need(p, "done"), "done"), fields(p).get("author", "reviewer")
-        return done_json(current().set_done(author, done))
+        return done_json(s.review.set_done(author, done))
 
-    def put_mode(q, p):
+    def put_mode(s, q, p):
         mode, author = need_mode(need(p, "mode")), fields(p).get("author", "reviewer")
-        return submitted_json(current().set_mode(author, mode))
+        return submitted_json(s.review.set_mode(author, mode))
 
-    def get_export(q, p):
-        folder = (q.get("folder") or [None])[0]
+    def get_export(s, q, p):
+        folder = (q.get("reply_folder") or [None])[0]
         if folder is not None and not folder.strip():
-            raise BadRequest("folder must be a path")
-        return PlainText(current().export(folder))
+            raise BadRequest("reply_folder must be a path")
+        return PlainText(s.review.export(folder))
 
-    def post_submit(q, p):
-        return submitted_json(current().submit(fields(p).get("author", "reviewer")))
+    def post_submit(s, q, p):
+        return submitted_json(s.review.submit(fields(p).get("author", "reviewer")))
 
+    def post_launch(s, q, p):
+        return {"url": page_url(s.root)}
+
+    def post_stop(s, q, p):
+        stopping.append(True)  # answered first, then the watcher stops
+        return {"stopping": True}
+
+    stopping = []
+
+    # (method, path, handler, whether it is about a folder)
     routes = [
-        ("GET", r"/api/review", get_review),
-        ("GET", r"/api/view", lambda q, p: {"view": shown.current()}),
-        ("PUT", r"/api/view", switch_view),
-        ("GET", r"/api/changeset", get_changeset),
-        ("GET", r"/api/threads", get_threads),
-        ("POST", r"/api/threads", post_thread),
-        ("POST", r"/api/threads/([^/]+)/comments", post_comment),
-        ("PATCH", r"/api/notes/([^/]+)", patch_note),
-        ("PATCH", r"/api/threads/([^/]+)/status", patch_status),
-        ("GET", r"/api/viewed", lambda q, p: {"files": current().list_viewed()}),
-        ("PUT", r"/api/viewed", put_viewed),
-        ("GET", r"/api/done", lambda q, p: done_json(current().read_done())),
-        ("PUT", r"/api/done", put_done),
-        ("GET", r"/api/mode", lambda q, p: mode_json(current().read_mode())),
-        ("PUT", r"/api/mode", put_mode),
-        ("POST", r"/api/submit", post_submit),
-        ("GET", r"/api/export", get_export),
+        ("GET", r"/api/review", get_review, True),
+        ("GET", r"/api/view", lambda s, q, p: {"view": s.shown.current()}, True),
+        ("PUT", r"/api/view", switch_view, True),
+        ("GET", r"/api/changeset", get_changeset, True),
+        ("GET", r"/api/threads", get_threads, True),
+        ("POST", r"/api/threads", post_thread, True),
+        ("POST", r"/api/threads/([^/]+)/comments", post_comment, True),
+        ("PATCH", r"/api/notes/([^/]+)", patch_note, True),
+        ("PATCH", r"/api/threads/([^/]+)/status", patch_status, True),
+        ("GET", r"/api/viewed", lambda s, q, p: {"files": s.review.list_viewed()}, True),
+        ("PUT", r"/api/viewed", put_viewed, True),
+        ("GET", r"/api/done", lambda s, q, p: done_json(s.review.read_done()), True),
+        ("PUT", r"/api/done", put_done, True),
+        ("GET", r"/api/mode", lambda s, q, p: mode_json(s.review.read_mode()), True),
+        ("PUT", r"/api/mode", put_mode, True),
+        ("POST", r"/api/submit", post_submit, True),
+        ("GET", r"/api/export", get_export, True),
+        ("POST", r"/api/launch", post_launch, True),
+        ("POST", r"/api/stop", post_stop, False),
     ]
-    routes = [(m, re.compile(f"^{path}$"), fn) for m, path, fn in routes]
+    routes = [(m, re.compile(f"^{path}$"), fn, about) for m, path, fn, about in routes]
+
+    def served(q):
+        """What the watcher serves for the folder (and base) the request names;
+        400 when it names none, or one that can't be served."""
+        folder = (q.get("folder") or [""])[0].strip()
+        if not folder:
+            raise BadRequest("folder is required: name the checked-out folder this request is about "
+                             "(?folder=<path>)")
+        base = (q.get("base") or [""])[0].strip()
+        try:
+            return folders(folder, base)
+        except NotFound as e:
+            raise BadRequest(str(e)) from e
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "difftate"
@@ -541,7 +563,9 @@ def _handler(current, token, shown, login, default_reviewer, root):
                 if not login.trade(code[0]):
                     return text(401, "text/plain; charset=utf-8", refused)
                 cookie = f"{self._cookie_name()}={login.secret}; Path=/; HttpOnly; SameSite=Strict"
-                return text(303, "text/plain; charset=utf-8", "", [("Location", "/"), ("Set-Cookie", cookie)])
+                folder = urllib.parse.parse_qs(url.query).get("folder", [""])[0]
+                where = "/?folder=" + urllib.parse.quote(folder, safe="") if folder else "/"
+                return text(303, "text/plain; charset=utf-8", "", [("Location", where), ("Set-Cookie", cookie)])
             if not self._page_cookie():
                 return text(401, "text/plain; charset=utf-8", refused)
             if url.path not in PAGE_FILES:
@@ -559,11 +583,11 @@ def _handler(current, token, shown, login, default_reviewer, root):
             given = (self.headers.get("Authorization") or "").encode()
             if not hmac.compare_digest(given, expected) and not self._from_page():
                 return self._send(401, {"error": "missing or wrong token"})
-            matches = [(m, rx.match(url.path), fn) for m, rx, fn in routes]
-            matches = [(m, match, fn) for m, match, fn in matches if match]
+            matches = [(m, rx.match(url.path), fn, about) for m, rx, fn, about in routes]
+            matches = [(m, match, fn, about) for m, match, fn, about in matches if match]
             if not matches:
                 return self._send(404, {"error": "not found"})
-            for method, match, fn in matches:
+            for method, match, fn, about in matches:
                 if method == self.command:
                     break
             else:
@@ -579,7 +603,8 @@ def _handler(current, token, shown, login, default_reviewer, root):
             except ValueError:
                 return self._send(400, {"error": "bad JSON"})
             try:
-                result = fn(urllib.parse.parse_qs(url.query, keep_blank_values=True), payload, *match.groups())
+                query = urllib.parse.parse_qs(url.query, keep_blank_values=True)
+                result = fn(served(query) if about else None, query, payload, *match.groups())
             except BadRequest as e:
                 return self._send(400, {"error": str(e)})
             except tuple(STATUS_OF) as e:
@@ -588,6 +613,8 @@ def _handler(current, token, shown, login, default_reviewer, root):
             if isinstance(result, PlainText):
                 return self._send_bytes(200, "text/plain; charset=utf-8", result.encode())
             self._send(200, result)
+            if stopping:
+                on_stop()
 
         do_GET = do_POST = do_PATCH = do_PUT = _handle
 

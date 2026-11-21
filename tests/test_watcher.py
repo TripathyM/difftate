@@ -1,8 +1,10 @@
 """Seam 1: the running watcher.
 
-Each test creates a temporary git repository, starts the real watcher with a
-fake agent swapped in through `--cmd`, and drives it through the review API.
-HOME points into the temporary folder, so the review history stays there too.
+Each test creates a temporary git repository, starts the real watcher with the
+`difftate` program (a fake agent swapped in through `--cmd`), and drives it
+through the review API. HOME and DIFFTATE_HOME point into the temporary
+folder, so the watcher's running files, its log and the review history stay
+there too.
 """
 import http.client
 import json
@@ -21,7 +23,7 @@ import urllib.parse
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WATCHER = os.path.join(ROOT, "difftate-watch.py")
+DIFFTATE = os.path.join(ROOT, "bin", "difftate")
 FAKE_AGENT = os.path.join(ROOT, "tests", "fake_agent.py")
 TIMEOUT_S = 30
 
@@ -63,6 +65,37 @@ def descendants(pid):
     return found
 
 
+class Background:
+    """The watcher, started in the background by `difftate`: not our child, so
+    it is known by its pid, and answers as a process would."""
+
+    def __init__(self, pid):
+        self.pid = pid
+        self.returncode = None
+
+    def poll(self):
+        if alive(self.pid):
+            return None
+        self.returncode = 0
+        return 0
+
+    def send_signal(self, sig):
+        os.kill(self.pid, sig)
+
+    def kill(self):
+        os.kill(self.pid, signal.SIGKILL)
+
+    def wait(self, timeout=None):
+        wait_for("the watcher to end", lambda: self.poll() is not None, timeout or TIMEOUT_S)
+        return self.returncode
+
+
+def with_folder(path, folder, base=""):
+    """<path> of the review API, naming the checked-out <folder>."""
+    query = [("folder", folder)] + ([("base", base)] if base else [])
+    return path + ("&" if "?" in path else "?") + urllib.parse.urlencode(query)
+
+
 def git(repo, env, *args):
     subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, env=env)
 
@@ -74,6 +107,7 @@ class Harness:
         self.tmp = tempfile.mkdtemp(prefix="difftate-test-")
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.home = os.path.join(self.tmp, "home")
+        self.difftate_home = os.path.join(self.tmp, "difftate-home")
         self.repo = os.path.join(self.tmp, "repo")
         self.agent_dir = os.path.join(self.tmp, "agent")
         bin_dir = os.path.join(self.tmp, "bin")
@@ -89,9 +123,11 @@ class Harness:
         with open(os.path.join(self.home, ".gitconfig"), "w") as f:
             f.write("[user]\n\tname = Test\n\temail = test@example.com\n")
         self.env = {k: v for k, v in os.environ.items()
-                    if k not in ("CLAUDE_CONFIG_DIR", "DT_OPEN", "DT_HERDR", "XDG_CONFIG_HOME")}
+                    if k not in ("CLAUDE_CONFIG_DIR", "DT_OPEN", "DT_HERDR", "XDG_CONFIG_HOME", "DIFFTATE_HOME",
+                                                           "DT_INTERVAL")}
         self.env.update(HOME=self.home, PATH=os.pathsep.join([bin_dir, os.environ["PATH"]]),
-                        GIT_CONFIG_NOSYSTEM="1", FAKE_AGENT_DIR=self.agent_dir)
+                        GIT_CONFIG_NOSYSTEM="1", FAKE_AGENT_DIR=self.agent_dir,
+                        DIFFTATE_HOME=self.difftate_home, DT_INTERVAL="0.2")
 
         git(self.repo, self.env, "init", "-q", "-b", "main")
         self.write("app.py", "def greet(name):\n    return 'hi ' + name\n")
@@ -99,52 +135,55 @@ class Harness:
         git(self.repo, self.env, "commit", "-q", "-m", "first")
         git(self.repo, self.env, "checkout", "-q", "-b", "feature")
         self.write("app.py", "def greet(name):\n    return f'hello {name}'\n")
-        self.output = []
         self.extra_args = []
         self.watcher = None
         self.agent_cmd = FAKE_AGENT
 
     def tearDown(self):
-        if self.watcher and self.watcher.poll() is None:
-            self.stop_watcher()
+        # The watcher a test started, and any other one in this test's difftate folder
+        pid = self.running_pid()
+        if pid:
+            os.kill(pid, signal.SIGINT)
+            try:
+                wait_for("the watcher to stop", lambda: not alive(pid), 15)
+            except AssertionError:
+                os.kill(pid, signal.SIGKILL)
 
     # ── Helpers ──────────────────────────────────────────────────────────────
     def write(self, path, text):
         with open(os.path.join(self.repo, path), "w") as f:
             f.write(text)
 
-    def watcher_command(self, folder=None):
-        return [sys.executable, WATCHER, "--tool", "claude", "--cmd", self.agent_cmd,
-                "--cwd", folder or self.repo, "--interval", "0.2", *self.extra_args]
+    def difftate(self, *args, folder=None):
+        """`difftate` run in <folder> (the repository) with <args>: the finished process."""
+        return subprocess.run([sys.executable, DIFFTATE, *args], cwd=folder or self.repo, env=self.env,
+                              stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
 
-    def launch_watcher(self):
-        self.watcher = subprocess.Popen(
-            self.watcher_command(), cwd=self.repo, env=self.env, stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        self.addCleanup(self.watcher.stdout.close)
-        threading.Thread(target=self._read_output, daemon=True).start()
+    def agent_args_for_difftate(self):
+        return ["--tool", "claude", "--cmd", self.agent_cmd, *self.extra_args]
+
+    def running_pid(self):
+        """The pid in the difftate folder's api.json, or None."""
+        try:
+            with open(os.path.join(self.difftate_home, "api.json")) as f:
+                pid = json.load(f)["pid"]
+        except (OSError, ValueError, KeyError):
+            return None
+        return pid if alive(pid) else None
 
     def start_watcher(self):
-        self.launch_watcher()
-        api_file = os.path.join(self.repo, ".git", "difftate", "api.json")
-        def served():
-            # This watcher's own api.json: one killed earlier leaves its own behind
-            try:
-                with open(api_file) as f:
-                    info = json.load(f)
-            except (OSError, ValueError):
-                return None
-            return info if info.get("pid") == self.watcher.pid else None
+        """`difftate` in the repository, which starts the watcher in the background."""
+        run = self.difftate(*self.agent_args_for_difftate())
+        self.difftate_output = run.stdout + run.stderr
+        self.assertEqual(run.returncode, 0, self.difftate_output + self.terminal())
+        self.read_running_files()
 
-        wait_for("the review API", lambda: served() or self.watcher.poll() is not None)
-        self.assertIsNone(self.watcher.poll(), "watcher exited:\n" + self.terminal())
-        self.port = served()["port"]
-        with open(os.path.join(self.repo, ".git", "difftate", "token")) as f:
+    def read_running_files(self):
+        with open(os.path.join(self.difftate_home, "api.json")) as f:
+            info = json.load(f)
+        self.watcher, self.port = Background(info["pid"]), info["port"]
+        with open(os.path.join(self.difftate_home, "token")) as f:
             self.token = f.read().strip()
-
-    def _read_output(self):
-        for line in self.watcher.stdout:
-            self.output.append(line)
 
     def add_worktree(self, branch):
         """A worktree of the repository on a new <branch> from main, with a change
@@ -167,30 +206,6 @@ class Harness:
         settings = json.loads(args[args.index("--settings") + 1])
         return settings["sandbox"]["filesystem"], settings["permissions"]["deny"]
 
-    def start_watcher_in(self, folder, *args):
-        """A watcher started in <folder>, beside self.watcher: (its process, its
-        port, its token, its checked-out folder's own git folder)."""
-        process = subprocess.Popen(self.watcher_command(folder) + list(args), cwd=folder, env=self.env, stdin=subprocess.DEVNULL,
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        self.addCleanup(process.stdout.close)
-        self.addCleanup(lambda: process.poll() is None and (process.send_signal(signal.SIGINT), process.wait(15)))
-        git_dir = self.git_dir(folder)
-
-        def served():
-            try:
-                with open(os.path.join(git_dir, "difftate", "api.json")) as f:
-                    info = json.load(f)
-            except (OSError, ValueError):
-                return None
-            return info if info.get("pid") == process.pid else None
-
-        wait_for("the worktree's review API", lambda: served() or process.poll() is not None)
-        if process.poll() is not None:
-            self.fail("watcher exited:\n" + process.stdout.read())
-        with open(os.path.join(git_dir, "difftate", "token")) as f:
-            token = f.read().strip()
-        return process, served()["port"], token, git_dir
-
     def api_at(self, port, token, method, path, payload=None):
         """A call to the review API on <port>, with <token> (None: without one)."""
         headers = {"Content-Type": "application/json"}
@@ -202,18 +217,29 @@ class Harness:
             return json.loads(r.read() or b"null")
 
     def terminal(self):
-        return "".join(self.output)
+        """What the watcher said: its log."""
+        try:
+            with open(os.path.join(self.difftate_home, "log")) as f:
+                return f.read()
+        except FileNotFoundError:
+            return ""
+
+    def clear_terminal(self):
+        with open(os.path.join(self.difftate_home, "log"), "w"):
+            pass
 
     def stop_watcher(self):
         self.watcher.send_signal(signal.SIGINT)
         try:
             self.watcher.wait(timeout=15)
-        except subprocess.TimeoutExpired:
+        except AssertionError:
             self.watcher.kill()
             raise
 
-    def api(self, method, path, payload=None, token=True):
-        return self.api_at(self.port, self.token if token else None, method, path, payload)
+    def api(self, method, path, payload=None, token=True, folder=None):
+        """A call to the review API about <folder> (the repository)."""
+        return self.api_at(self.port, self.token if token else None, method,
+                           with_folder(path, folder or self.repo), payload)
 
     def read(self, path):
         with open(os.path.join(self.repo, path)) as f:
@@ -342,57 +368,38 @@ class WatcherTest(Harness, unittest.TestCase):
             run_dir = f.read()
         store = os.path.realpath(os.path.join(self.repo, ".git", "difftate"))
         self.assertTrue(run_dir and os.path.isdir(run_dir), "the run has its own folder")
+        home, token = self.difftate_home, os.path.join(self.difftate_home, "token")
         self.assertEqual(sandbox["allowWrite"], [run_dir])
-        self.assertEqual(sandbox["denyWrite"], [store])
-        self.assertEqual(sandbox["denyRead"], [os.path.join(store, "token")])
+        self.assertEqual(sandbox["denyWrite"], [store, home], "the repository's difftate folder, and the watcher's")
+        self.assertEqual(sandbox["denyRead"], [token, home], "the one token file, and the watcher's folder")
         # The sandbox binds only Bash: Claude's own file tools need permission rules
         self.assertEqual(settings["permissions"]["deny"],
-                         [f"Edit(/{store}/**)", f"Read(/{os.path.join(store, 'token')})"])
+                         [f"Edit(/{store}/**)", f"Edit(/{home}/**)", f"Read(/{token})", f"Read(/{home})"])
         self.assertFalse(os.path.realpath(run_dir).startswith(store + os.sep), "the run's folder is outside the store")
 
         self.release_agent()
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertFalse(os.path.exists(run_dir), "the run's folder goes when the run ends")
 
-    def test_a_run_from_a_worktree_may_not_write_any_difftate_folder_or_read_any_watchers_token(self):
+    def test_a_run_from_a_worktree_works_there_and_may_not_write_the_shared_store_or_read_the_one_token(self):
         worktree = self.add_worktree("other")
-        _, port, token, git_dir = self.start_watcher_in(worktree)
-        sibling = self.add_worktree("sibling")  # added after the watcher started
-        thread = self.api_at(port, token, "POST", "/api/threads", {
+        self.start_watcher()
+        self.assertEqual(self.difftate(*self.agent_args_for_difftate(), folder=worktree).returncode, 0)
+        thread = self.api("POST", "/api/threads", {
             "anchor": {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2, "code": "    return 'hey ' + name"},
-            "body": "Why concatenate?"})
+            "body": "Why concatenate?"}, folder=worktree)
         wait_for("the run", lambda: os.path.exists(os.path.join(self.agent_dir, "args")))
 
         sandbox, deny = self.run_settings()
         store = os.path.realpath(os.path.join(self.repo, ".git", "difftate"))
-        own = os.path.realpath(os.path.join(git_dir, "difftate"))
-        theirs = os.path.realpath(os.path.join(self.git_dir(sibling), "difftate"))
-        token_file = os.path.join(own, "token")
-        self.assertTrue(os.path.isfile(token_file), "the token is in the worktree's own git folder")
-        # Nor the main checkout's or a sibling worktree's: with a token, the run could resolve that watcher's threads
-        tokens = [token_file, os.path.join(store, "token"), os.path.join(theirs, "token")]
-        self.assertEqual(sandbox["denyWrite"], [store, own, theirs])
-        self.assertEqual(sandbox["denyRead"], tokens)
-        self.assertEqual(deny, [f"Edit(/{f}/**)" for f in (store, own, theirs)] + [f"Read(/{t})" for t in tokens])
+        home, token = self.difftate_home, os.path.join(self.difftate_home, "token")
+        self.assertEqual(sandbox["denyWrite"], [store, home])
+        self.assertEqual(sandbox["denyRead"], [token, home])
+        with open(os.path.join(self.agent_dir, "cwd")) as f:
+            self.assertEqual(os.path.realpath(f.read()), os.path.realpath(worktree), "the run works in the worktree")
         self.release_agent()
         wait_for("the replied state", lambda: next(
-            t for t in self.api_at(port, token, "GET", "/api/threads") if t["id"] == thread["id"])["state"] == "replied")
-
-    def test_a_run_from_the_main_checkout_may_not_write_a_worktrees_difftate_folder_or_read_its_token(self):
-        self.start_watcher()
-        worktree = self.add_worktree("other")  # added after the watcher started
-        tid = self.open_thread("Why an f-string here?")["id"]
-        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
-
-        sandbox, deny = self.run_settings()
-        store = os.path.realpath(os.path.join(self.repo, ".git", "difftate"))
-        theirs = os.path.realpath(os.path.join(self.git_dir(worktree), "difftate"))
-        tokens = [os.path.join(store, "token"), os.path.join(theirs, "token")]
-        self.assertEqual(sandbox["denyWrite"], [store, theirs])
-        self.assertEqual(sandbox["denyRead"], tokens)
-        self.assertEqual(deny, [f"Edit(/{f}/**)" for f in (store, theirs)] + [f"Read(/{t})" for t in tokens])
-        self.release_agent()
-        wait_for("the replied state", lambda: self.state(tid) == "replied")
+            t for t in self.api("GET", "/api/threads", folder=worktree) if t["id"] == thread["id"])["state"] == "replied")
 
     def test_a_coding_agent_that_cant_start_fails_its_threads_and_the_watcher_keeps_going(self):
         self.agent_cmd = os.path.join(self.tmp, "agent.py")
@@ -571,7 +578,7 @@ class WatcherTest(Harness, unittest.TestCase):
         wait_for("the failed progress note", lambda: self.note(tid, "progress", "no reply"))
         self.stop_watcher()
 
-        self.output.clear()
+        self.clear_terminal()
         self.start_watcher()
         time.sleep(1.5)  # several polls
 
@@ -590,100 +597,59 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertTrue(final.startswith("❌ **Failed** after "), final)
         self.assertRegex(final, r"[Nn]o reply \(the watcher stopped\)")
 
-    def test_closing_the_terminal_stops_the_run_and_every_process_it_started(self):
+    def test_closing_the_terminal_leaves_the_watcher_and_its_run_going(self):
         self.start_watcher()
         tid = self.open_thread("Why an f-string here?")["id"]
         wait_for("a working progress note", lambda: any("Working" in b for b in self.bodies(tid)))
-        started = descendants(self.watcher.pid)
 
-        self.watcher.send_signal(signal.SIGHUP)
-        self.watcher.wait(timeout=15)
+        self.watcher.send_signal(signal.SIGHUP)  # what a closed terminal sends its programs
+        time.sleep(1)
 
-        wait_for("every started process to stop", lambda: not [p for p in started if alive(p)], timeout=10)
+        self.assertIsNone(self.watcher.poll(), "the watcher keeps going:\n" + self.terminal())
+        self.assertEqual(self.state(tid), "working", "and so does the run")
+        self.release_agent()
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
 
-    def second_watcher(self, *args):
-        command = self.watcher_command()
-        command[command.index("--tool"):command.index("--tool")] = list(args)
-        return subprocess.run(command, cwd=self.repo, env=self.env, stdin=subprocess.DEVNULL,
-                              capture_output=True, text=True, timeout=60)
-
-    def test_a_second_watcher_start_switches_the_running_watchers_view_and_exits(self):
+    def test_a_second_difftate_uses_the_running_watcher_and_switches_its_view(self):
         git(self.repo, self.env, "commit", "-q", "-am", "Say hello")
         self.start_watcher()
-        first = (self.watcher, self.port, self.token)
+        first = (self.watcher.pid, self.port, self.token)
 
-        second = self.second_watcher("--ref", "HEAD~1")
+        second = self.difftate("HEAD~1")
 
-        self.assertEqual(second.returncode, 0, second.stdout)
-        self.assertIn(f"difftate is already running for this checked-out folder (pid {self.watcher.pid})", second.stdout)
-        self.assertIn("switched it to the commits after HEAD~1", second.stdout)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn(f"difftate is running (pid {self.watcher.pid})", second.stdout)
+        self.assertIn("showing the commits after HEAD~1", second.stdout)
         self.assertEqual(self.api("GET", "/api/view"), {"view": "HEAD~1"})
         self.assertEqual(self.api("GET", "/api/changeset")["view"], "HEAD~1")
-        wait_for("the switch in the terminal", lambda: "Showing the commits after HEAD~1" in self.terminal())
+        wait_for("the switch in the log", lambda: "Showing the commits after HEAD~1" in self.terminal())
         self.assertIsNone(self.watcher.poll(), "the running watcher keeps going")
-        self.assertEqual((self.watcher, self.port, self.token), first)
-        with open(os.path.join(self.repo, ".git", "difftate", "token")) as f:
-            self.assertEqual(f.read().strip(), self.token, "the first watcher's token is kept")
+        self.read_running_files()
+        self.assertEqual((self.watcher.pid, self.port, self.token), first, "no other watcher started")
         self.assertEqual(self.api("GET", "/api/threads"), [])
 
-        # No view: all changes. A view that isn't one changes nothing
-        self.assertEqual(self.second_watcher().returncode, 0)
-        started = {"view": ""}
-        self.assertEqual(self.api("GET", "/api/view"), started)
-        bad = self.second_watcher("--ref", "nope")
+        # No view: it leaves the view as it is. A view that isn't one changes nothing
+        self.assertEqual(self.difftate().returncode, 0)
+        shown = {"view": "HEAD~1"}
+        self.assertEqual(self.api("GET", "/api/view"), shown)
+        bad = self.difftate("nope")
         self.assertEqual(bad.returncode, 1, bad.stdout)
         self.assertIn("no view 'nope'", bad.stdout)
-        self.assertEqual(self.api("GET", "/api/view"), started)
-
-    def test_a_watcher_started_in_a_worktree_runs_beside_the_main_checkouts_with_its_own_port_and_token(self):
-        self.start_watcher()
-        worktree = self.add_worktree("other")
-
-        other, port, token, git_dir = self.start_watcher_in(worktree)
-
-        self.assertNotEqual(port, self.port)
-        self.assertNotEqual(token, self.token)
-        self.assertIsNone(self.watcher.poll(), "the main checkout's watcher keeps going")
-        self.assertEqual(self.api("GET", "/api/review")["branch"], "feature")
-        self.assertEqual(self.api_at(port, token, "GET", "/api/review")["branch"], "other")
-        self.assertIn("hey", self.api_at(port, token, "GET", "/api/changeset")["diff"])
-        # The lock and the running files are the worktree's; its review is in the shared folder
-        self.assertEqual(sorted(os.listdir(os.path.join(git_dir, "difftate"))), ["api.json", "token", "watcher.lock"])
-        shared = os.path.join(self.repo, ".git", "difftate")
-        self.assertEqual(len(os.listdir(os.path.join(shared, "reviews"))), 2, "both reviews are kept in the shared folder")
-
-    def test_a_second_watcher_start_in_a_worktree_switches_that_worktrees_watcher_and_exits(self):
-        self.start_watcher()
-        worktree = self.add_worktree("other")
-        git(worktree, self.env, "commit", "-q", "-am", "Say hey")
-        other, port, token, _ = self.start_watcher_in(worktree)
-
-        second = subprocess.run(self.watcher_command(worktree) + ["--ref", "HEAD"], cwd=worktree, env=self.env, stdin=subprocess.DEVNULL,
-                                capture_output=True, text=True, timeout=60)
-
-        self.assertEqual(second.returncode, 0, second.stdout)
-        self.assertIn(f"difftate is already running for this checked-out folder (pid {other.pid})", second.stdout)
-        self.assertEqual(self.api_at(port, token, "GET", "/api/view"), {"view": "HEAD"})
-        self.assertEqual(self.api("GET", "/api/view"), {"view": ""}, "the main checkout's watcher is not switched")
-        self.assertIsNone(other.poll())
-        self.assertIsNone(self.watcher.poll())
+        self.assertEqual(self.api("GET", "/api/view"), shown)
 
     def test_an_interval_that_is_not_a_positive_finite_number_is_refused(self):
-        for value in ["-1", "0", "inf", "nan"]:
+        for value in ["-1", "0", "inf", "nan", "soon"]:
             with self.subTest(value=value):
-                command = self.watcher_command()
-                command[command.index("--interval") + 1] = value
-                run = subprocess.run(command, cwd=self.repo, env=self.env, stdin=subprocess.DEVNULL,
-                                     capture_output=True, text=True, timeout=60)
+                self.env["DT_INTERVAL"] = value
+                run = self.difftate(*self.agent_args_for_difftate())
                 self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
-                self.assertIn(f"Error: --interval must be a number of seconds, not '{value}'",
-                              run.stdout + run.stderr)
+                self.assertIn(f"Error: the interval must be a number of seconds, not '{value}'", run.stdout + run.stderr)
+                self.assertIsNone(self.running_pid(), "no watcher started")
 
     def test_session_options_are_unknown(self):
         for args in (["--session", "3f1c9a20-aaaa"], ["--no-session"]):
             with self.subTest(args=args):
-                run = subprocess.run(self.watcher_command() + args, cwd=self.repo, env=self.env,
-                                     stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+                run = self.difftate(*self.agent_args_for_difftate(), *args)
                 self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
                 self.assertIn(f"Unknown flag: {args[0]}", run.stdout + run.stderr)
 
@@ -695,7 +661,7 @@ class WatcherTest(Harness, unittest.TestCase):
 
         out = self.terminal()
         self.assertIn(f"Coding agent: claude (cmd: {FAKE_AGENT})", out)
-        self.assertIn("each run starts a fresh agent session", out)
+        self.assertIn("starts a fresh agent session", out)
         for gone in ("Session:", "resume mode", "Headless"):
             self.assertNotIn(gone, out)
         self.assertNotIn("--resume", self.agent_args())
@@ -746,7 +712,7 @@ class WatcherTest(Harness, unittest.TestCase):
 
     def test_review_api_refuses_requests_without_the_token(self):
         self.start_watcher()
-        token_file = os.path.join(self.repo, ".git", "difftate", "token")
+        token_file = os.path.join(self.difftate_home, "token")
         self.assertEqual(os.stat(token_file).st_mode & 0o777, 0o600, "only the user can read the token")
 
         for headers in ({}, {"Authorization": "Bearer wrong"}, {"Authorization": self.token}):
@@ -774,7 +740,7 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertIn("Stopping watcher...", out)
         self.assertIn("Stopping running agent (pid ", out)
         self.assertTrue(out.rstrip().endswith("Done."), out)
-        self.assertFalse(os.path.exists(os.path.join(self.repo, ".git", "difftate", "api.json")))
+        self.assertFalse(os.path.exists(os.path.join(self.difftate_home, "api.json")))
 
     def test_a_thread_the_agent_answered_stays_replied_when_ctrl_c_stops_the_run(self):
         os.makedirs(self.agent_dir, exist_ok=True)
@@ -787,7 +753,7 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertEqual(self.state(tid), "working", "the run hasn't ended")
 
         self.stop_watcher()
-        self.output.clear()
+        self.clear_terminal()
         self.start_watcher()
         time.sleep(1.5)  # several polls
 
@@ -819,7 +785,7 @@ class WatcherTest(Harness, unittest.TestCase):
         wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
 
         self.kill_watcher()
-        self.output.clear()
+        self.clear_terminal()
         self.release_agent()
         self.start_watcher()
         time.sleep(1.5)  # several polls
@@ -844,7 +810,7 @@ class WatcherTest(Harness, unittest.TestCase):
         wait_for("the reply", lambda: self.note(tid, "reply"))
 
         self.kill_watcher()
-        self.output.clear()
+        self.clear_terminal()
         self.start_watcher()
         time.sleep(1.5)  # several polls
 
@@ -872,7 +838,7 @@ class WatcherTest(Harness, unittest.TestCase):
     def launch_page(self, link):
         """Open <link> as the browser would: its launch code for the page's cookie."""
         status, headers, _ = self.page(link[len(f"http://127.0.0.1:{self.port}"):])
-        self.assertEqual((status, headers["Location"]), (303, "/"))
+        self.assertEqual((status, headers["Location"]), (303, "/?folder=" + urllib.parse.quote(os.path.realpath(self.repo), safe="")))
         cookie = headers["Set-Cookie"]
         for attribute in ("HttpOnly", "SameSite=Strict", "Path=/"):
             self.assertIn(attribute, cookie)
@@ -886,9 +852,10 @@ class WatcherTest(Harness, unittest.TestCase):
         self.start_watcher()
 
         [link] = wait_for("the browser to open", self.opened_urls)
-        self.assertRegex(link, rf"^http://127\.0\.0\.1:{self.port}/\?launch=[\w-]+$")
+        self.assertRegex(link, rf"^http://127\.0\.0\.1:{self.port}/\?launch=[\w-]+&folder=[\w%.-]+$")
+        self.assertIn("folder=" + urllib.parse.quote(os.path.realpath(self.repo), safe=""), link, "the link names the folder")
         self.assertNotIn(self.token, link, "the review token never leaves its file")
-        self.assertIn(link, self.terminal(), "the terminal shows the link too")
+        self.assertIn(link, self.difftate_output, "difftate shows the link too")
         cookie = self.launch_page(link)
         self.assertNotIn(self.token, cookie)
 
@@ -901,11 +868,11 @@ class WatcherTest(Harness, unittest.TestCase):
             status, headers, _ = self.page("/" + src, cookie)
             self.assertEqual((status, headers["Content-Type"]), (200, "text/javascript; charset=utf-8"), src)
         # The page calls the API with its cookie, and a header no other site's page can send
-        status, _, body = self.page("/api/view", cookie, {"X-Difftate": "page"})
+        status, _, body = self.page(with_folder("/api/view", self.repo), cookie, {"X-Difftate": "page"})
         self.assertEqual((status, json.loads(body)), (200, {"view": ""}))
 
         # A second `difftate --open browser` opens it again, with a new launch code
-        self.assertEqual(self.second_watcher("--open", "browser").returncode, 0)
+        self.assertEqual(self.difftate("--open", "browser").returncode, 0)
         links = wait_for("the browser to open again", lambda: len(self.opened_urls()) == 2 and self.opened_urls())
         self.assertNotEqual(links[1], link)
         self.launch_page(links[1])
@@ -943,7 +910,7 @@ class WatcherTest(Harness, unittest.TestCase):
         self.extra_args = ["--open", "nvim"]
         self.start_watcher()
 
-        wait_for("the command", lambda: re.search(r"cd \S+/repo && nvim \+DifftateOpen", self.terminal()))
+        self.assertRegex(self.difftate_output, r"cd \S+/repo && nvim \+DifftateOpen")
         self.assertEqual(self.opened_urls(), [])
 
     def test_a_used_launch_code_is_refused(self):
@@ -975,7 +942,7 @@ class WatcherTest(Harness, unittest.TestCase):
                 self.assertNotIn("<script", body, path)
         # The API takes the cookie only with the page's header, and only from its own origin
         for headers in ({}, {"X-Difftate": "page", "Origin": "http://127.0.0.1:1"}):
-            status, _, _ = self.page("/api/view", cookie, headers)
+            status, _, _ = self.page(with_folder("/api/view", self.repo), cookie, headers)
             self.assertEqual(status, 401, headers)
 
     def test_a_thread_survives_a_commit(self):
@@ -1100,7 +1067,7 @@ class WatcherTest(Harness, unittest.TestCase):
     def test_threads_written_in_the_head_1_view_are_in_the_all_changes_view_too(self):
         self.two_commits_then_edits()
         self.release_agent()
-        self.extra_args = ["--ref", "HEAD~1"]
+        self.extra_args = ["HEAD~1"]
         self.start_watcher()
 
         tid = self.open_thread("Why two?", line=1, file="two.py", view="HEAD~1")["id"]
@@ -1149,31 +1116,23 @@ class WatcherTest(Harness, unittest.TestCase):
 
     def test_the_watchers_argument_is_its_starting_view(self):
         self.two_commits_then_edits()
-        self.extra_args = ["--ref", "staged"]
+        self.extra_args = ["staged"]
         self.start_watcher()
 
         self.assertEqual(self.files_in(), ("staged", ["staged.py"]))
         self.assertEqual(self.api("GET", "/api/view"), {"view": "staged"})
 
-    def test_two_watchers_started_at_the_same_moment_cant_both_run(self):
-        first, second = (subprocess.Popen(self.watcher_command(), cwd=self.repo, env=self.env, stdin=subprocess.DEVNULL,
-                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                         for _ in range(2))
-        watchers = [first, second]
-        for w in watchers:
-            self.addCleanup(w.stdout.close)
-            self.addCleanup(lambda w=w: w.poll() is None and (w.kill(), w.wait()))
+    def test_two_difftates_started_at_the_same_moment_start_one_watcher(self):
+        runs = [subprocess.Popen([sys.executable, DIFFTATE, *self.agent_args_for_difftate()], cwd=self.repo,
+                                 env=self.env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, text=True) for _ in range(3)]
+        outputs = [run.communicate(timeout=60)[0] for run in runs]
 
-        ended = wait_for("one watcher to exit", lambda: [w for w in watchers if w.poll() is not None])
-        time.sleep(1)  # the other keeps running
-        self.assertEqual(len(ended), 1, "exactly one exits")
-        [running] = [w for w in watchers if w.poll() is None]
-        self.assertEqual(ended[0].returncode, 0)
-        self.assertIn(f"already running for this checked-out folder (pid {running.pid})", ended[0].stdout.read())
-        with open(os.path.join(self.repo, ".git", "difftate", "api.json")) as f:
-            self.assertEqual(json.load(f)["pid"], running.pid)
-        running.send_signal(signal.SIGINT)
-        running.wait(timeout=15)
+        self.assertEqual([run.returncode for run in runs], [0, 0, 0], outputs)
+        pids = {re.search(r"difftate is running \(pid (\d+)\)", out).group(1) for out in outputs}
+        self.assertEqual(len(pids), 1, f"one watcher: {outputs}")
+        self.assertEqual(str(self.running_pid()), pids.pop())
+        self.assertEqual(self.terminal().count("difftate watcher started"), 1)
 
     def test_stored_lines_go_to_the_review_history_with_repository_and_branch(self):
         self.release_agent()
@@ -1185,7 +1144,7 @@ class WatcherTest(Harness, unittest.TestCase):
             with open(self.events_file()) as f:
                 return [json.loads(line) for line in f]
         stored = wait_for("the run's final note stored", lambda: (lines := stored_lines())[-1]["type"] == "note" and lines)
-        history_dir = os.path.join(self.home, ".difftate", "history")
+        history_dir = os.path.join(self.difftate_home, "history")
 
         def history_lines():
             # The review history is recorded just after the store keeps the lines
@@ -1557,7 +1516,7 @@ class WatcherTest(Harness, unittest.TestCase):
             self.write(f"f{n}.py", f"n = {n}\n")
             git(self.repo, self.env, "add", ".")
             git(self.repo, self.env, "commit", "-q", "-m", f"commit {n}")
-        self.extra_args = ["--ref", "HEAD~3"]
+        self.extra_args = ["HEAD~3"]
         self.start_watcher()
         git(self.repo, self.env, "checkout", "-q", "--orphan", "lone")
         git(self.repo, self.env, "commit", "-q", "-m", "only one")
@@ -1675,7 +1634,7 @@ class BatchedReviewTest(Harness, unittest.TestCase):
         tid = self.open_thread("Why an f-string here?")["id"]
 
         self.stop_watcher()
-        self.output.clear()
+        self.clear_terminal()
         self.start_watcher()
         self.polls()
 

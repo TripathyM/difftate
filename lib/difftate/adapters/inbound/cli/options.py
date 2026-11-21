@@ -2,46 +2,47 @@
 import math
 import os
 
-USAGE = """difftate-watch.py — Open the review and poll for comments, dispatching them to the coding agent.
-(Normally run via the difftate / dtc / dto shell functions.)
+USAGE = """difftate — Open the review of this folder, starting the watcher (once for the machine) if none runs.
 
 Usage:
-  difftate-watch.py --tool <claude|opencode> [options]
+  difftate [<view>] [--base <branch>] [--open browser|nvim|both]
+  difftate stop
+  difftate status [--json] [--branch <branch>] [--base <branch>] [--cwd <path>]
 
-Required:
-  --tool <tool>          AI tool to dispatch to (claude, opencode)
+The watcher serves the review of every checked-out folder that a request names, in the
+background, and dispatches waiting threads to the coding agent in that folder. `difftate` starts
+it when none runs, adds this folder, opens its review, and ends. `difftate stop` stops it.
 
-Optional:
+Options:
+  <view>                 The view to show (default: leave it). HEAD~2: the commits after it;
+                         HEAD: uncommitted; staged; unstaged. Viewers switch views
   --base <branch>        The branch the review compares against (default: the repository's
                          default branch, origin/HEAD; else main or master)
-  --ref <view>           The starting view of the review (default: all changes). HEAD~2: the
-                         commits after it; HEAD: uncommitted; staged; unstaged. Viewers
-                         switch views
-  --cwd <path>           The repository's folder the coding agent works in (default: current
-                         directory)
-  --interval <seconds>   Polling interval in seconds (default: 1)
-  --cmd <binary>         Override the CLI binary or shell alias (e.g. a wrapper around claude)
-  --model <model>        Model for the coding agent (default: the coding agent's own default)
   --open <where>         browser, nvim or both (default: $DT_OPEN, else browser).
                          The viewer to open, not the host. nvim: the Neovim viewer, in a
                          "Review · <folder>" tab running nvim when difftate runs where Herdr is reachable (or
                          switches to it), else the command to run is printed.
+  --cwd <path>           A folder of the repository (default: current directory)
   --help                 Show this help
+
+Until the list of coding agents exists, these choose the agent for every review, and count
+only for the `difftate` that starts the watcher:
+  --tool <tool>          claude (default) or opencode
+  --cmd <binary>         Override the CLI binary or shell alias (e.g. a wrapper around claude)
+  --model <model>        Model for the coding agent (default: the coding agent's own default)
 
 Each run starts a fresh agent session of the coding agent.
 
-Examples:
-  # Claude Code
-  difftate-watch.py --tool claude --interval 1
+Where it keeps things: the difftate folder in your home (~/.difftate, or $DIFFTATE_HOME): the
+watcher's port, pid and token, its log, and the review history."""
 
-  # Claude Code on Opus, against the develop branch
-  difftate-watch.py --base develop --tool claude --model claude-opus-5-5 --interval 1
+WATCHER_USAGE = """difftate-watch.py — The watcher: one for the machine, started in the background by `difftate`.
 
-  # OpenCode, the last 3 commits
-  difftate-watch.py --ref HEAD~3 --tool opencode --interval 1"""
+Usage:
+  difftate-watch.py [--tool <claude|opencode>] [--cmd <binary>] [--model <model>] [--interval <seconds>]"""
 
-FLAGS = {"--ref": "ref", "--base": "base", "--tool": "tool", "--model": "model", "--cwd": "cwd",
-         "--interval": "interval", "--cmd": "cmd", "--open": "open"}
+FLAGS = {"--base": "base", "--tool": "tool", "--model": "model", "--cwd": "cwd", "--cmd": "cmd", "--open": "open"}
+WATCHER_FLAGS = {"--tool": "tool", "--model": "model", "--cmd": "cmd", "--interval": "interval"}
 
 
 class Exit(Exception):
@@ -59,32 +60,64 @@ def one_of(names):
     return " or ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else "".join(names)
 
 
-def parse(argv, coding_agents, open_in):
-    """The options in <argv>. --tool names one of <coding_agents>, and --open
-    one of <open_in>. Raises Exit for --help and for a wrong option."""
-    opts = {"ref": "", "base": "", "tool": "", "model": "", "cwd": "", "interval": "1", "cmd": "",
-            "open": os.environ.get("DT_OPEN") or "browser"}
+def interval_of(text):
+    """<text> as the watcher's interval in seconds; raises Exit when it isn't a
+    positive, finite number."""
+    try:
+        interval = float(text)
+    except ValueError:
+        interval = None
+    if interval is None or not math.isfinite(interval) or interval <= 0:
+        raise Exit(1, f"Error: the interval must be a number of seconds, not '{text}'")
+    return interval
+
+
+def parse(argv, coding_agents, open_in, env=None):
+    """The options of `difftate` in <argv>. --tool names one of <coding_agents>,
+    and --open one of <open_in>. Raises Exit for --help and for a wrong option."""
+    env = os.environ if env is None else env
+    opts = {"view": "", "base": "", "tool": "claude", "model": "", "cwd": "", "cmd": "",
+            "open": env.get("DT_OPEN") or "browser", "interval": env.get("DT_INTERVAL") or "1"}
+    positional = []
     i = 0
     while i < len(argv):
         arg = argv[i]
         if arg in ("--help", "-h"):
             raise Exit(0, USAGE)
-        if arg not in FLAGS or i + 1 >= len(argv):
-            raise Exit(1, f"Unknown flag: {arg}\n{USAGE}" if arg not in FLAGS else f"Error: {arg} needs a value")
-        opts[FLAGS[arg]] = argv[i + 1]
-        i += 2
-    if not opts["tool"]:
-        raise Exit(1, "Error: --tool is required")
+        if arg.startswith("--"):
+            if arg not in FLAGS or i + 1 >= len(argv):
+                raise Exit(1, f"Unknown flag: {arg}\n{USAGE}" if arg not in FLAGS else f"Error: {arg} needs a value")
+            opts[FLAGS[arg]] = argv[i + 1]
+            i += 2
+        else:
+            positional.append(arg)
+            i += 1
+    if len(positional) > 1:
+        raise Exit(1, f"Error: one view at most, not {' and '.join(repr(p) for p in positional)}\n{USAGE}")
+    opts["view"] = positional[0] if positional else ""
     opts["cwd"] = opts["cwd"] or os.getcwd()
     if opts["open"] not in open_in:
         raise Exit(1, f"Error: --open (or DT_OPEN) must be {one_of(open_in)}, not '{opts['open']}'")
     if opts["tool"] not in coding_agents:
         raise Exit(1, f"Error: unsupported tool '{opts['tool']}'. Supported: {' '.join(coding_agents)}")
-    try:
-        interval = float(opts["interval"])
-    except ValueError:
-        interval = None
-    if interval is None or not math.isfinite(interval) or interval <= 0:
-        raise Exit(1, f"Error: --interval must be a number of seconds, not '{opts['interval']}'")
-    opts["interval"] = interval
+    opts["interval"] = interval_of(opts["interval"])
+    return opts
+
+
+def parse_watcher(argv, coding_agents):
+    """The options of the watcher process itself, which `difftate` starts."""
+    opts = {"tool": "claude", "model": "", "cmd": "", "interval": "1"}
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in ("--help", "-h"):
+            raise Exit(0, WATCHER_USAGE)
+        if arg not in WATCHER_FLAGS or i + 1 >= len(argv):
+            raise Exit(1, f"Unknown flag: {arg}\n{WATCHER_USAGE}" if arg not in WATCHER_FLAGS
+                       else f"Error: {arg} needs a value")
+        opts[WATCHER_FLAGS[arg]] = argv[i + 1]
+        i += 2
+    if opts["tool"] not in coding_agents:
+        raise Exit(1, f"Error: unsupported tool '{opts['tool']}'. Supported: {' '.join(coding_agents)}")
+    opts["interval"] = interval_of(opts["interval"])
     return opts

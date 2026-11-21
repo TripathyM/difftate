@@ -33,6 +33,7 @@ import unittest
 import urllib.error
 import urllib.parse
 import urllib.request
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,8 +50,6 @@ from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
 from difftate.core.review.model import CouldNotRead, NotFound  # noqa: E402
 from difftate.main import bind_review  # noqa: E402
 
-OPEN_IN = ("browser", "nvim", "both")  # where a request may open the review (main.py's viewers)
-
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "review_api_script.json")
 LONG = "".join(f"line_{n} = {n}\n" for n in range(1, 21))
 
@@ -64,8 +63,11 @@ def serve(repo, folder, history):
     about = store.review()
     review = bind_review(store, git.GitCodeReader(repo, "main", "feature", about["id"]),
                          HistoryFiles({"review": about["id"]}, history), about)
-    shown = ShownView("", lambda view: git.need_view(repo, view), open_in=OPEN_IN)
-    api = ReviewApi(review, folder, repo, shown, default_reviewer=lambda: git.user_name(repo))
+    shown = ShownView("", lambda view: git.need_view(repo, view))
+    entry = SimpleNamespace(review=review, shown=shown, root=repo)
+    api = ReviewApi(lambda given, base: entry, os.path.join(os.path.dirname(history), "watcher-home"),
+                    default_reviewer=git.user_name)
+    api.test_folder = repo
 
     class Served:
         def start_run(self, thread_ids):
@@ -90,8 +92,24 @@ def answer_of(response):
     return json.loads(data or b"null")
 
 
-def ask(api, method, path, payload=None, token=True, body=None):
-    """Call the review API as a viewer would: (status, the JSON answer, or the text of the export)."""
+def wait_until(check, timeout=10):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if check():
+            return
+        time.sleep(0.05)
+    raise AssertionError("timed out")
+
+
+def with_folder(path, folder):
+    return path + ("&" if "?" in path else "?") + "folder=" + urllib.parse.quote(folder, safe="")
+
+
+def ask(api, method, path, payload=None, token=True, body=None, folder=True):
+    """Call the review API as a viewer would, about the folder it serves (<folder> False: naming none,
+    or a string: that one): (status, the JSON answer, or the text of the export)."""
+    if folder:
+        path = with_folder(path, api.test_folder if folder is True else folder)
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {api.token}"
@@ -306,7 +324,7 @@ class TheReviewApi(unittest.TestCase):
         call("PUT", "/api/view", {"view": "HEAD"})
         call("GET", "/api/view")
         call("GET", "/api/changeset")
-        for refused in ({"view": "nope"}, {"view": 5}, {"view": "", "open": "elsewhere"}):
+        for refused in ({"view": "nope"}, {"view": 5}):
             call("PUT", "/api/view", refused)
         call("PUT", "/api/view", {})
         call("GET", "/api/view")
@@ -348,7 +366,7 @@ class TheReviewApi(unittest.TestCase):
         call("POST", "/api/threads", {"anchor": None, "body": "Held, then live"})
         # The export: held threads by their state, the folder in the reply command when one was given
         call("GET", "/api/export")
-        call("GET", f"/api/export?folder={urllib.parse.quote(self.repo)}")
+        call("GET", f"/api/export?reply_folder={urllib.parse.quote(self.repo)}")
         call("PUT", "/api/mode", {"mode": "live", "author": "reviewer"})
         call("GET", "/api/mode")
         call("GET", "/api/export")
@@ -400,8 +418,17 @@ class ServedOnFakes:
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         self.review = bind_review(store or MemoryStore(), code or FakeCode({"app.py": "x = 1\n"}),
                                   FakeHistory(), {"id": "r", "branch": "feature", "base": "main"})
-        self.api = ReviewApi(self.review, tmp, tmp, ShownView(view, a_fake_view, open_in=OPEN_IN),
-                             default_reviewer=default_reviewer)
+        entry = SimpleNamespace(review=self.review, shown=ShownView(view, a_fake_view), root=tmp)
+
+        def folders(folder, base):
+            if folder != tmp:
+                raise NotFound(f"{folder} is not a checked-out folder of a git repository")
+            self.asked_base = base
+            return entry
+
+        self.stopped = []
+        self.api = ReviewApi(folders, tmp, default_reviewer=default_reviewer, on_stop=lambda: self.stopped.append(1))
+        self.api.test_folder = tmp
         self.api.start()
         self.addCleanup(self.api.stop)
 
@@ -410,6 +437,59 @@ class ServedOnFakes:
 
 
 class TheReviewApiOnFakes(ServedOnFakes, unittest.TestCase):
+    def test_every_request_must_name_its_folder(self):
+        self.serve()
+
+        for method, path in (("GET", "/api/review"), ("GET", "/api/threads"), ("PUT", "/api/view"),
+                             ("POST", "/api/submit"), ("GET", "/api/export")):
+            with self.subTest(path=path):
+                status, answer = self.ask(method, path, {} if method != "GET" else None, folder=False)
+                self.assertEqual(status, 400)
+                self.assertIn("folder is required", answer["error"])
+        status, answer = self.ask("GET", "/api/threads?folder=", folder=False)
+        self.assertEqual((status, "folder is required" in answer["error"]), (400, True), "an empty folder names none")
+
+    def test_a_path_the_watcher_wont_serve_is_refused(self):
+        self.serve()
+
+        status, answer = self.ask("GET", "/api/threads", folder="/not/a/checkout")
+
+        self.assertEqual(status, 400)
+        self.assertIn("/not/a/checkout is not a checked-out folder", answer["error"])
+
+    def test_a_base_the_request_names_goes_to_the_watcher_and_none_means_the_folders_own(self):
+        self.serve()
+
+        self.assertEqual(self.ask("GET", "/api/review?base=develop")[0], 200)
+        self.assertEqual(self.asked_base, "develop")
+        self.assertEqual(self.ask("GET", "/api/review")[0], 200)
+        self.assertEqual(self.asked_base, "")
+
+    def test_a_view_request_no_longer_opens_a_viewer(self):
+        self.serve()
+
+        status, answer = self.ask("PUT", "/api/view", {"view": "", "open": "browser"})
+
+        self.assertEqual((status, answer), (200, {"view": ""}), "the watcher never opens a viewer: open is ignored")
+
+    def test_stop_asks_the_watcher_to_stop_after_it_answers_and_names_no_folder(self):
+        self.serve()
+
+        self.assertEqual(self.ask("POST", "/api/stop", {}, token=False, folder=False)[0], 401)
+        self.assertEqual(self.stopped, [])
+        status, answer = self.ask("POST", "/api/stop", {}, folder=False)
+
+        self.assertEqual((status, answer), (200, {"stopping": True}))
+        wait_until(lambda: self.stopped)
+
+    def test_a_launch_gives_a_link_to_the_page_naming_the_folder_with_a_single_use_code(self):
+        self.serve()
+
+        status, answer = self.ask("POST", "/api/launch", {})
+
+        self.assertEqual(status, 200)
+        self.assertRegex(answer["url"], rf"^http://127\.0\.0\.1:\d+/\?launch=[\w-]+&folder={urllib.parse.quote(self.api.test_folder, safe='')}$")
+
     def test_code_that_cannot_be_read_is_502(self):
         self.serve(code=UnreadableCode())
         anchor = {"file": "app.py", "side": "new", "startLine": 1, "endLine": 1}
@@ -603,7 +683,7 @@ class TheExportRoute(ServedOnFakes, unittest.TestCase):
     def test_names_the_folder_in_the_reply_command_when_one_is_given(self):
         self.serve()
 
-        text = self.ask("GET", "/api/export?folder=" + urllib.parse.quote("/work/my demo"))[1]
+        text = self.ask("GET", "/api/export?reply_folder=" + urllib.parse.quote("/work/my demo"))[1]
 
         self.assertRegex(text, r"dt-reply --folder '/work/my demo' <thread> ")
 
@@ -660,7 +740,7 @@ class TheModeRoutes(ServedOnFakes, unittest.TestCase):
         self.serve()
 
         folder = self.ask("GET", "/api/review")[1]["folder"]
-        status, text = self.ask("GET", f"/api/export?folder={urllib.parse.quote(folder)}")
+        status, text = self.ask("GET", f"/api/export?reply_folder={urllib.parse.quote(folder)}")
         self.assertEqual(status, 200)
         self.assertIn(f"dt-reply --folder {folder}", text)
 
@@ -734,7 +814,7 @@ class TheReviewerName(ServedOnFakes, unittest.TestCase):
     """The reviewer name the review API takes ("reviewer"), and gives back on
     each comment ("by") and on a thread's last status change ("statusBy")."""
 
-    def serve(self, default_reviewer=lambda: "Ada"):
+    def serve(self, default_reviewer=lambda root: "Ada"):
         super().serve(default_reviewer=default_reviewer)
 
     def thread(self, tid):
@@ -755,7 +835,7 @@ class TheReviewerName(ServedOnFakes, unittest.TestCase):
         self.assertEqual(thread["statusBy"], "docs-bot")
 
     def test_without_a_name_the_reviewer_is_the_default_reviewer(self):
-        self.serve(default_reviewer=lambda: "Ada")
+        self.serve(default_reviewer=lambda root: "Ada")
         tid = self.ask("POST", "/api/threads", {"body": "Is this ready?"})[1]["id"]
         self.ask("POST", f"/api/threads/{tid}/comments", {"body": "Tests?"})
         self.ask("PATCH", f"/api/threads/{tid}/status", {"status": "dismissed"})
@@ -766,7 +846,7 @@ class TheReviewerName(ServedOnFakes, unittest.TestCase):
         self.assertEqual(thread["statusBy"], "Ada")
 
     def test_with_no_name_and_no_default_a_comment_has_none(self):
-        self.serve(default_reviewer=lambda: None)
+        self.serve(default_reviewer=lambda root: None)
         tid = self.ask("POST", "/api/threads", {"body": "Is this ready?"})[1]["id"]
 
         thread = self.thread(tid)

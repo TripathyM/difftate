@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""difftate's watcher (latest Python, standard library only).
+"""difftate's watcher (latest Python, standard library only): the one watcher for the machine.
 
-The difftate / dtc / dto shell functions start it. Run with --help for its options.
+`difftate` starts it in the background; run it yourself only to debug. --help lists its options.
 """
 import os
 import sys

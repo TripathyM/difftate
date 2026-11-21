@@ -1,7 +1,9 @@
 -- A client of difftate's review API (lib/difftate/adapters/inbound/review_api/server.py),
--- served by the watcher of one checked-out folder: the repository, or one of its
--- worktrees. The watcher writes where it runs to <that folder's own git dir>/difftate/api.json
--- ({port, pid, root}) and its token to .../difftate/token, as dt-export reads them.
+-- served by the one watcher of the machine (ADR 0008). The watcher writes where it runs to
+-- api.json ({port, pid}) and its token to token, in the difftate folder of the home
+-- ($DIFFTATE_HOME, else ~/.difftate), as dt-export reads them. Every request names the
+-- checked-out folder it is about, which the watcher serves from the first request that
+-- names it. Neovim never starts the watcher: `difftate` does.
 --
 -- Requests go through curl in vim.system, so Neovim never waits for one. The token
 -- goes to curl on stdin (a config file, -K -), never in its arguments, which any
@@ -10,20 +12,22 @@ local git = require("difftate.git")
 
 local M = {}
 
+--- What to say when no watcher answers
+M.NOT_RUNNING = "No difftate is running: run `difftate` in a terminal"
+
 -- How long a request may take before it counts as failed
 local MAX_S = 10
 
---- The watcher of the checked-out folder <cwd> is in: on_found({ top, git_dir })
---- (its top folder and its own git dir), or on_found(nil, why) outside a git
---- repository. It doesn't say whether a watcher runs there: a request does.
+--- The review of the checked-out folder <cwd> is in: on_found({ top }) (its top
+--- folder, which requests name), or on_found(nil, why) outside a git repository.
+--- It doesn't say whether the watcher runs: a request does.
 function M.find(cwd, on_found)
-  git.run(cwd, { "rev-parse", "--absolute-git-dir", "--show-toplevel" }, function(out)
-    local lines = out and vim.split(out, "\n") or {}
-    if #lines < 2 then
+  git.run(cwd, { "rev-parse", "--show-toplevel" }, function(out)
+    if not out or out == "" then
       on_found(nil, cwd .. " is not in a git repository")
       return
     end
-    on_found({ git_dir = lines[1], top = lines[2] })
+    on_found({ top = vim.split(out, "\n")[1] })
   end)
 end
 
@@ -37,10 +41,19 @@ local function read(path)
   return text
 end
 
--- Where the watcher of <watcher> serves the API now: (port, token), or nil when none
--- wrote it. Read for every request, so a restarted watcher's new port and token are used.
-local function address(watcher)
-  local folder = watcher.git_dir .. "/difftate"
+-- The difftate folder of the machine: $DIFFTATE_HOME, else ~/.difftate
+local function home()
+  local given = vim.env.DIFFTATE_HOME
+  if given and given ~= "" then
+    return given
+  end
+  return (vim.uv.os_homedir() or vim.env.HOME or "") .. "/.difftate"
+end
+
+-- Where the watcher serves the API now: (port, token), or nil when none wrote it. Read
+-- for every request, so a restarted watcher's new port and token are used.
+local function address()
+  local folder = home()
   local ok, info = pcall(vim.json.decode, read(folder .. "/api.json") or "")
   local token = vim.trim(read(folder .. "/token") or "")
   if not ok or type(info) ~= "table" or not tonumber(info.port) or token == "" then
@@ -55,20 +68,21 @@ local function quoted(text)
   return '"' .. text:gsub('[\\"]', "\\%0") .. '"'
 end
 
---- Call the review API of <watcher> (from M.find): on_answer(answer) on the main
+--- Call the review API about the folder of <watcher> (from M.find): on_answer(answer) on the main
 --- loop with the decoded JSON, or on_answer(nil, err) where err.missing says no
 --- watcher answered (none wrote where it runs, or it doesn't answer there), and
 --- err.message what went wrong. <payload> (a Lua table, sent as JSON) is the body of a
 --- POST or PATCH, as the browser sends it. With <raw> true the answer is the body as it came (an
 --- answer that is text, not JSON: the export); an error is JSON as always.
 function M.request(watcher, method, path, on_answer, payload, raw)
-  local port, token = address(watcher)
+  local port, token = address()
   if not port then
     vim.schedule(function()
-      on_answer(nil, { missing = true, message = "no difftate is running for " .. watcher.top })
+      on_answer(nil, { missing = true, message = M.NOT_RUNNING })
     end)
     return
   end
+  path = path .. (path:find("?", 1, true) and "&" or "?") .. "folder=" .. vim.uri_encode(watcher.top, "rfc3986")
   local cmd = { "curl", "-sS", "--max-time", tostring(MAX_S), "-K", "-", "-X", method,
     "-w", "\n%{http_code}", ("http://127.0.0.1:%d%s"):format(port, path) }
   local config = ('header = "Authorization: Bearer %s"\n'):format(token)

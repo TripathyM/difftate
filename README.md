@@ -7,7 +7,7 @@ Review a diff in the browser (or in your own [Neovim](#review-in-neovim)), comme
 ## Requirements
 
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`) or [OpenCode](https://opencode.ai) (`opencode`)
-- `zsh`, `python3` (standard library only), `git`
+- `python3` (standard library only), `git`
 - Optional: the [Herdr](https://herdr.dev) app, as the host of the Neovim viewer's **Review · ‹folder›** tab (see [Review in Neovim](#review-in-neovim))
 
 ## Install
@@ -24,18 +24,18 @@ It checks requirements, clones the repo, and asks before editing `~/.zshrc`. See
 
 ```bash
 git clone https://github.com/TripathyM/difftate.git ~/difftate   # any folder works
-echo 'source ~/difftate/difftate.zsh' >> ~/.zshrc
+echo 'export PATH="$HOME/difftate/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-`difftate.zsh` finds the watcher next to itself. After editing it, run `source ~/.zshrc` (or open a new terminal).
+`difftate`, `dt-export` and `dt-reply` are programs in the repository's `bin/`, so the board and scripts run them as well as your shell. `difftate` finds the watcher next to itself.
 
 ## Quick start
 
 Run from inside the repo, **on the branch you want reviewed**:
 
 ```bash
-difftate                    # Claude Code, whole branch vs the default branch, origin/HEAD (short: dtc)
+difftate                    # whole branch vs the default branch, origin/HEAD
 difftate --base develop     # whole branch vs develop
 difftate main               # the commits after main (a view of the same review)
 difftate HEAD~1             # the last commit
@@ -43,18 +43,21 @@ difftate HEAD~3             # the last 3 commits
 difftate HEAD               # only uncommitted changes (capital HEAD: `head` breaks in worktrees on macOS)
 difftate unstaged           # only unstaged changes
 difftate staged             # only staged changes
-dto                         # OpenCode, same arguments
-difftate HEAD~1             # again, while it runs: switches the running watcher to that view and exits
-difftate --model <model>    # the coding agent's model (default: its own default)
-difftate --cmd <command>    # run Claude through another command or alias
 difftate --open nvim        # review in Neovim (see "Review in Neovim"); --open takes browser, nvim or both
+difftate stop               # stop the watcher
 ```
 
-Every run starts a fresh agent session of the coding agent the watcher was started with (`difftate`/`dtc` for Claude Code, `dto` for OpenCode, or your own shortcuts below). No earlier agent session is found or continued ([ADR 0005](docs/adr/0005-runs-start-fresh.md)), so it doesn't matter which coding agent or account wrote the code, or from which folder.
+**One watcher for the machine** ([ADR 0008](docs/adr/0008-one-watcher-for-the-machine.md)). `difftate` starts it in the background when none runs, adds this folder, shows the view when you give one, opens the review in your viewer, and ends: the shell is free again, and closing the terminal doesn't stop the watcher. It serves the review of every checked-out folder that a request names, on one port with one token, and dispatches each folder's runs in that folder. `difftate` in a second folder (a worktree) uses the running watcher; so does `<leader>rr` in Neovim in a folder the watcher hasn't seen yet, and `dt-export` and `dt-reply`: the first request that names a checked-out folder adds it. The watcher never opens a viewer, and viewers never start it: with none running, `<leader>rr` says "No difftate is running: run `difftate` in a terminal". `difftate stop` stops it through the review API; a run in flight ends failed "(the watcher stopped)".
 
-**Always run from the branch's checkout.** The coding agent edits files in the current directory. There is deliberately no "source branch" option: it would let the coding agent write fixes onto the wrong branch. To review another branch without switching, use a worktree (`git worktree add ../repo-x feature-x`, `cd` there, run `difftate`). Each worktree runs its own watcher, with its own review open, beside the others; `difftate` run again in the same folder switches that folder's watcher.
+**Where it keeps things:** the difftate folder in your home, `~/.difftate` (set `DIFFTATE_HOME` for another), readable only by you: `api.json` (port and pid) and `token` (the one review API token), `watcher.lock` (a second `difftate` while one starts waits for it), `log` (the watcher's messages, each line saying which folder and review it is about; `tail -f ~/.difftate/log`) and `history/`. No folder's git dir gets running files. The coding agent's runs may not write this folder or read the token.
 
-**The base** is the repository's default branch (`origin/HEAD`; without one, a local `main` or `master`), unless `--base` gives another. It used to be `master`. A review is one branch against its base, like a pull request; with a detached HEAD, or on the base branch itself, the current commit stands in for the branch.
+Until the list of coding agents exists, the `difftate` that **starts** the watcher chooses the agent for every review: `--tool claude|opencode` (default `claude`), `--cmd <command>` (run it through another command or alias) and `--model <model>`. A `difftate` that finds a watcher running ignores them; `difftate stop`, then `difftate --cmd …`, changes them.
+
+Every run starts a fresh agent session of that coding agent. No earlier agent session is found or continued ([ADR 0005](docs/adr/0005-runs-start-fresh.md)), so it doesn't matter which coding agent or account wrote the code, or from which folder.
+
+**Always run from the branch's checkout.** The coding agent edits files in the folder of the review it replies in. There is deliberately no "source branch" option: it would let the coding agent write fixes onto the wrong branch. To review another branch without switching, use a worktree (`git worktree add ../repo-x feature-x`, `cd` there, run `difftate`). Each worktree has its own review on the one watcher, following its own branch, and their runs can work at the same time (one run for each review).
+
+**The base** is the repository's default branch (`origin/HEAD`; without one, a local `main` or `master`), unless `--base` gives another. It used to be `master`. `difftate --base` (or a request naming a base) switches the folder's review to that base; a request that names none keeps the base the folder has. A review is one branch against its base, like a pull request; with a detached HEAD, or on the base branch itself, the current commit stands in for the branch.
 
 **The watcher follows the checked-out branch.** Check out another branch and the watcher and its viewers move to that branch's review (a new one if it has none); check out the first branch again and its review is back as you left it. A run in progress finishes on its own threads first, and its replies land there. Until it ends, the files on disk are the other branch's: the review can't take a new thread or viewed mark (409), no thread is placed in that code (each is listed not in view), and both viewers show a one-line banner (`waitingForRun` and `checkedOut` in `/api/review` and `/api/changeset`). On the base branch itself, a commit counts as a checkout: the review lasts one commit.
 
@@ -62,7 +65,7 @@ Every run starts a fresh agent session of the coding agent the watcher was start
 
 difftate keeps the review itself: commits don't end a review, so threads survive them. The changeset comes from git (`GET /api/changeset`). difftate's own browser viewer shows it (`DT_OPEN=browser`, the default), so does the [Neovim viewer](#review-in-neovim) (`DT_OPEN=nvim`). Other clients reach it through the [review API](#review-api). The argument is the starting **view** of the same review (`HEAD~1`, `staged`, …), and both viewers switch views (the browser's **View** menu, Neovim's `<leader>rV`): a thread written in any view belongs to the review, and the threads list shows every thread.
 
-**The browser viewer** is a simple page the watcher serves: the changeset in the view, threads under their lines with their thread state (waiting, queued, working, replied, failed) and outdated marks, and every thread in the threads list (picking one switches to a view that shows it). Click a line number to comment (shift-click another on the same side for more lines); reply, resolve, dismiss or reopen in a thread; **New general comment** comments on the changes as a whole. It updates every 1.5 s. The watcher opens it with a single-use launch code (`http://127.0.0.1:<port>/?launch=…`, also printed in the terminal), never the API token, which a coding agent could read in the browser's history. The first visit trades the code for a cookie (`HttpOnly`, `SameSite=Strict`) and lands on a clean `/`; the code is then refused, so each link opens the page once. Reloading keeps working. To open the page again, run `difftate --open browser` in the repository: it opens a new link. Without the cookie every request gets 401, and a restarted watcher needs a new link.
+**The browser viewer** is a simple page the watcher serves: the changeset in the view, threads under their lines with their thread state (waiting, queued, working, replied, failed) and outdated marks, and every thread in the threads list (picking one switches to a view that shows it). Click a line number to comment (shift-click another on the same side for more lines); reply, resolve, dismiss or reopen in a thread; **New general comment** comments on the changes as a whole. It updates every 1.5 s. `difftate --open browser` opens it with a single-use launch code (`http://127.0.0.1:<port>/?launch=…&folder=…`, also printed), never the API token, which a coding agent could read in the browser's history. The first visit trades the code for a cookie (`HttpOnly`, `SameSite=Strict`) and lands on a clean `/`; the code is then refused, so each link opens the page once. Reloading keeps working. To open the page again, run `difftate --open browser` in the folder: it opens a new link. Without the cookie every request gets 401, and a restarted watcher needs a new link.
 
 ![The browser viewer: an outdated thread with the code it was written on](docs/screenshots/browser-viewer-outdated.jpg)
 
@@ -85,8 +88,8 @@ difftate status --json --branch my-branch
 - Each review is stored in `.git/difftate/reviews/<review>/` (shared by worktrees, never committed): `review.json` (branch, base, start) and `events.jsonl`, plain JSON lines that are only ever appended (threads opened, comments, replies, final notes, status changes, Done marks, and runs: which comments each run was sent, and how it ended). The current state comes from reading them in order.
 - Progress notes show a run's steps live from the watcher's memory. Only their final line is stored, when the run ends.
 - A watcher killed during a run (not Ctrl+C) loses nothing: the next one sees the run that never ended, doesn't send its threads again, and marks those with no reply as failed ("no reply (the watcher stopped)").
-- Every stored line also goes to the **review history**, `~/.difftate/history/<year>-<month>.jsonl`, with the repository (path and remote), branch and base added, so deleting a clone doesn't lose it.
-- Only the watcher writes the store. If `events.jsonl` changes in a way it didn't make (say, the coding agent with the sandbox off), the watcher prints a warning, restores the file, and says so in the final progress note of a thread in the run.
+- Every stored line also goes to the **review history**, `~/.difftate/history/<year>-<month>.jsonl` (under `DIFFTATE_HOME`), with the repository (path and remote), branch and base added, so deleting a clone doesn't lose it.
+- Only the watcher writes the store. If `events.jsonl` changes in a way it didn't make (say, the coding agent with the sandbox off), the watcher logs a warning, restores the file, and says so in the final progress note of a thread in the run of that review (and only that review's).
 
 ## Export
 
@@ -97,21 +100,22 @@ dt-export            # the review of the folder you are in
 dt-export ~/work/app # the review of that folder, from anywhere: the reply command names it
 ```
 
-`dt-export` asks the difftate running in that folder (the same lookup a second `difftate` there uses), so one must be running; with none, it says so and exits 1. Thread state shows by name: `held`, `waiting`, `queued`, `working`, `replied` or `failed`. The same text is `GET /api/export`. Both viewers copy it to the clipboard: the **Export** button in the browser viewer, and `<leader>rE` in Neovim; the reply command in what they copy names the folder the watcher runs in, so the session can reply from anywhere.
+`dt-export` asks the one watcher, naming the folder, so it must be running; with none, it says "No difftate is running: run `difftate` in a terminal" and exits 1. Thread state shows by name: `held`, `waiting`, `queued`, `working`, `replied` or `failed`. The same text is `GET /api/export`. Both viewers copy it to the clipboard: the **Export** button in the browser viewer, and `<leader>rE` in Neovim; the reply command in what they copy names the folder the watcher runs in, so the session can reply from anywhere.
 
-The session replies with `dt-reply <thread> "<answer>"` (the export's command, with `--folder <folder>` when you gave one). Outside a run, `dt-reply` finds the difftate of its folder the same way and posts the answer through the review API: it shows as the coding agent's reply, with no progress note, and the thread becomes `replied`. It may reply to any thread of the review, open, resolved or dismissed, and changes no thread status. `<thread>` is the 8 characters the export shows, or the whole id; an id that isn't in the review is refused. With no running difftate it says so and exits 1, posting nothing: `dt-reply` never writes the review itself. Inside a run (`DT_RUN_DIR` set) it works as before, through the run's folder, and never reaches the review API.
+The session replies with `dt-reply <thread> "<answer>"` (the export's command, with `--folder <folder>` when you gave one). Outside a run, `dt-reply` finds the watcher the same way, naming its folder, and posts the answer through the review API: it shows as the coding agent's reply, with no progress note, and the thread becomes `replied`. It may reply to any thread of the review, open, resolved or dismissed, and changes no thread status. `<thread>` is the 8 characters the export shows, or the whole id; an id that isn't in the review is refused. With no running difftate it says so and exits 1, posting nothing: `dt-reply` never writes the review itself. Inside a run (`DT_RUN_DIR` set) it works as before, through the run's folder, and never reaches the review API.
 
-## Example: several Claude setups
+## Example: another Claude setup
 
-Shortcuts go in `~/.zshrc`, after the `source` line. They pick the coding agent and account that replies, say the one with credits left. Say `ccw` runs Claude with the default config and `ccp` is a wrapper that sets its own config dir:
+The coding agent and account that reply are the ones the watcher was started with. Say `ccp` is a wrapper that runs Claude with its own config dir, and you want it to reply:
 
-```zsh
-dtcw() { difftate --cmd ccw "$@"; }
-dtcp() { difftate --cmd ccp "$@"; }
-dtcx() { CLAUDE_CONFIG_DIR=~/.claude-other difftate "$@"; }   # plain claude, another config dir
+```bash
+difftate stop
+difftate --cmd ccp                                   # the watcher starts with it, for every review
 ```
 
-The watcher passes its environment to the coding agent, so `CLAUDE_CONFIG_DIR` set in a shortcut reaches `claude`.
+Or plain `claude` with another config dir: `difftate stop`, then `CLAUDE_CONFIG_DIR=~/.claude-other difftate`.
+
+The watcher passes its environment to the coding agent, so `CLAUDE_CONFIG_DIR` set for the `difftate` that starts it reaches `claude`. A list of agents, chosen for each repository, replaces this later.
 
 ## Review in Neovim
 
@@ -141,7 +145,7 @@ return {
 
 **Open it with difftate:** `difftate --open nvim` (or `DT_OPEN=nvim`) opens the Neovim viewer. `--open` names the viewer, not the host: the host comes from where difftate runs. Where [Herdr](https://herdr.dev) is reachable (`herdr-app` on `PATH`, or `DT_HERDR`, and running), it opens a **Review · ‹folder›** tab running `nvim +DifftateOpen` in the folder, or switches to that tab if it's open. Anywhere else it opens nothing and prints the command to run (`cd <folder> && nvim +DifftateOpen`); it never falls back to the browser. The tab runs the `nvim` Herdr finds on its `PATH`, with your normal config.
 
-**Use:** start `difftate` in the repository or worktree, then in Neovim in that folder press `<leader>rr` (or `:DifftateOpen`; `nvim +DifftateOpen` opens it at start-up). It finds the folder's watcher as `dt-export` does; with none running, it says so and changes nothing. While the review is open, gitsigns compares every buffer against where the branch left the review's base (`git merge-base <base> HEAD`, computed again at every poll, so it follows a new commit), so `]h`, `[h` and hunk preview move through the review's changes, committed ones too. `<leader>rr` again (or `:DifftateClose`) puts gitsigns back on the index. `:DifftateStatus` says whether a review is open.
+**Use:** run `difftate` once (it starts the watcher), then in Neovim in any checked-out folder press `<leader>rr` (or `:DifftateOpen`; `nvim +DifftateOpen` opens it at start-up). It finds the one watcher as `dt-export` does (the difftate folder in your home) and names its folder, which the watcher serves from then on, so a new worktree needs no `difftate` of its own. With none running, it says "No difftate is running: run `difftate` in a terminal" and starts nothing: Neovim never starts the watcher. While the review is open, gitsigns compares every buffer against where the branch left the review's base (`git merge-base <base> HEAD`, computed again at every poll, so it follows a new commit), so `]h`, `[h` and hunk preview move through the review's changes, committed ones too. `<leader>rr` again (or `:DifftateClose`) puts gitsigns back on the index. `:DifftateStatus` says whether a review is open.
 
 **Threads:** while the review is open, every thread whose file is in a buffer is drawn under its lines, with a sign at its first line (below the signs of git and diagnostics, so it never hides one; the line number is coloured too). An open thread is drawn in full: its thread status and thread state, each comment, reply and note with the reviewer name. Resolved, dismissed and outdated threads are one line (their comment count and the first words); `<leader>re` expands them all, and collapses them again. Text wraps to the window and wraps again when it resizes, a thread moves with its code as you edit before saving, and a reply or note the coding agent writes appears at the next poll, with no key press. A thread on a deleted line is drawn where the line was deleted, with the deleted code quoted. Each thread is a box: every line has the background of floating windows (`NormalFloat`), padded to the window's text width, so it stands apart from code. `<leader>rt` opens the thread on the cursor's line in a read-only markdown float (with the code it was written on when it is outdated) that you can yank from and search; `q` or `<Esc>` closes it. `K` is still LSP hover. Closing the review removes every thread from every buffer.
 
@@ -167,16 +171,16 @@ The plugin only adds: it maps no key that is mapped already (it says which optio
 
 | File | What it does |
 |---|---|
-| `difftate.zsh` | Shell functions `difftate` / `dtc` / `dto`: pick the coding agent, then start `difftate-watch.py` |
-| `difftate-watch.py`, `lib/difftate/` | The watcher: opens the [review](#the-review), serves the [review API](#review-api) and the browser viewer, dispatches waiting threads to the coding agent, posts "🕒 Queued" notes while the coding agent is busy |
+| `bin/difftate`, `bin/dt-export`, `bin/dt-reply` | The programs: `difftate` starts the watcher in the background and opens a review (`difftate stop`, `difftate status`); `dt-export` and `dt-reply` are for agent sessions. They go on your `PATH` |
+| `difftate-watch.py`, `lib/difftate/` | The watcher (one for the machine, started by `difftate`): opens the [review](#the-review) of each folder it serves, serves the [review API](#review-api) and the browser viewer, dispatches waiting threads to the coding agent in the folder, posts "🕒 Queued" notes while the coding agent is busy |
 | `bin/dt-reply` | How the coding agent answers a thread: `dt-reply [--folder <folder>] <thread> "<answer>"`: into the run's folder in a run, through the review API in an exported session |
 | `bin/dt-export` | Prints the [export](#export) of a review, for an agent session you start: `dt-export [<folder>]` |
 | `lib/difftate/main.py` | The composition root: picks the adapters (which store, coding agent and viewers, in one marked block), binds them to the core's use cases, and runs the command line |
 | `lib/difftate/core/` | The core: the Review, the changes and Dispatch, with no technology ([ADR 0003](docs/adr/0003-the-core-knows-no-technology.md)). It reaches the rest only through its ports |
-| `lib/difftate/adapters/inbound/cli/` | The command line: options and help, one watcher per checked-out folder (`watcher.lock`), switching a running watcher's view, opening a viewer, the timer, following the checked-out branch |
+| `lib/difftate/adapters/inbound/cli/` | The command line: options and help, `difftate` (starting the watcher under the machine-wide lock, `stop`), opening a viewer, the watcher's table of folders, each folder's loop (following its checked-out branch), the log |
 | `lib/difftate/core/dispatch/` | Dispatch: the loop, one run at a time, the queued and progress notes, the prompt (`prompt.py`) |
 | `lib/difftate/adapters/outbound/coding_agents/` | Claude Code and OpenCode: command line, model, sandbox settings, and the reader of each one's JSON event stream. `reply_channel/` is the run's folder that `dt-reply` writes to |
-| `lib/difftate/adapters/outbound/terminal/` | The watcher terminal's lines for Dispatch |
+| `lib/difftate/adapters/outbound/terminal/` | The watcher log's lines for Dispatch |
 | `lib/difftate/adapters/inbound/review_api/` | The [review API](#review-api) (`server.py`, the thread format in `json_format.py`) and, in `web/`, difftate's own browser viewer, which reads and writes the review through it |
 | `lib/difftate/adapters/outbound/` | The other driven adapters: `local_store/` and `memory_store/` keep the review, `history_files/` records the review history, `git/` reads the code |
 | `tests/` | Watcher tests: a temporary repository, the real watcher, a fake coding agent. See [Tests](#tests) |
@@ -198,7 +202,7 @@ The plugin only adds: it maps no key that is mapped already (it says which optio
 
 The coding agent's reply follows as a separate entry in the thread (kind `reply`): the coding agent writes only the answer, and difftate marks it a reply. Notes are never sent to the model (see [What the coding agent gets](#what-the-coding-agent-gets)).
 
-**In the watcher terminal**:
+**In the watcher's log** (`difftate log` comes later; for now `tail -f ~/.difftate/log`), each line starts with the folder and review it is about (`/work/app (feature): `):
 
 ```
 [07:40:23] New/changed threads detected — dispatching to claude
@@ -220,12 +224,14 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 
 ## Settings you can change
 
-### Environment variables (set before `difftate` / `dto`)
+### Environment variables (set before `difftate`)
 
 | Variable | Default | Effect |
 |---|---|---|
 | `DT_OPEN` | `browser` | The viewer the review opens in: `browser`, `nvim` (the [Neovim viewer](#review-in-neovim)) or `both`. `--open` overrides it for one run |
 | `DT_HERDR` | unset (`herdr-app` on `PATH`) | Path to the Herdr app's binary, for `--open nvim` to open its Herdr tab when `herdr-app` isn't on `PATH` |
+| `DIFFTATE_HOME` | `~/.difftate` | The difftate folder of the machine: the watcher's port, pid and token, lock and log, and the review history. Tests and trials point it elsewhere |
+| `DT_INTERVAL` | `1` | Seconds between polls, for the `difftate` that starts the watcher. The tests set it small |
 
 ### Constants (edit the file)
 
@@ -233,12 +239,12 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 |---|---|---|---|
 | `MAX_STEPS_SHOWN` | `lib/difftate/core/dispatch/model.py` | `8` | Checklist steps shown; older ones collapse to "…N earlier steps" |
 | `REFRESH_S` | `lib/difftate/core/dispatch/model.py` | `3` | Seconds between progress note refreshes while the coding agent is quiet |
-| `TEXT_MAX` | `lib/difftate/adapters/outbound/terminal/__init__.py` | `300` | Max characters of coding agent text per terminal line |
+| `TEXT_MAX` | `lib/difftate/adapters/outbound/terminal/__init__.py` | `300` | Max characters of coding agent text per log line |
 | `ANCHOR_MAX_LINES` | `lib/difftate/core/dispatch/prompt.py` | `20` | Lines of the commented code included per thread |
 
-### Watcher flags (`difftate-watch.py --help`)
+### Command line (`difftate --help`)
 
-`--base` (default: `origin/HEAD`), `--ref` (the starting view; default: all changes), `--tool`, `--model`, `--cwd`, `--interval` (poll seconds, default 1), `--cmd`, `--open` (browser, nvim, both).
+`difftate [<view>] [--base <branch>] [--open browser|nvim|both]`, with `--tool`, `--cmd` and `--model` for the `difftate` that starts the watcher (until the list of agents exists), and `--cwd` (a folder of the repository). `difftate-watch.py --help` lists the watcher process's own flags, which `difftate` passes it.
 
 ### Internal env vars (set by the watcher, don't set yourself)
 
@@ -248,12 +254,12 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 
 ## How it works
 
-1. Every `--interval` seconds the watcher lists the review's threads. A thread is **waiting** when it has a comment of yours (or another reviewer's) that no run has been sent yet (see [thread state](#review-api)).
-2. Waiting threads → one run of the coding agent, in the background, with the prompt below. Runs go **one at a time**; comments that queue up during a run all go into the next one.
+1. Every second (`DT_INTERVAL`) the watcher lists the threads of each folder's review, on a loop of its own for each folder. A thread is **waiting** when it has a comment of yours (or another reviewer's) that no run has been sent yet (see [thread state](#review-api)).
+2. Waiting threads → one run of the coding agent, in the background, with the prompt below. One review has **one run at a time**; comments that queue up during a run all go into the next one. Runs of different reviews (two worktrees) work at the same time.
 3. While it runs, the watcher keeps polling; new threads get `🕒 Queued` within ~1s and go in the next run.
-4. Before the run starts, the watcher posts a progress note on each of its threads (or reuses the thread's queued note). The watcher reads the coding agent's event stream and edits them with its steps while the run works. When the run ends (done, failed, or stopped by Ctrl+C: "⏹ Stopped"), the watcher writes each note's final line.
+4. Before the run starts, the watcher posts a progress note on each of its threads (or reuses the thread's queued note). The watcher reads the coding agent's event stream and edits them with its steps while the run works. When the run ends (done, failed, or stopped by `difftate stop`: "⏹ Stopped"), the watcher writes each note's final line.
 5. The coding agent answers each thread with `dt-reply <thread> "<answer>"`. That writes the answer into the run's folder (a temporary folder per run), and the watcher posts it as a reply. The coding agent never writes to the review itself.
-6. Ctrl+C stops the watcher, the running coding agent and its child processes.
+6. `difftate stop` stops the watcher, every running coding agent and its child processes.
 
 ### What the coding agent gets
 
@@ -299,7 +305,7 @@ followed by the rules (reply with `dt-reply`, change code only when asked, never
 
 Coding agent invocation:
 - Claude: `claude -p … [--model <model>] --settings <run sandbox> --output-format stream-json --verbose < /dev/null`
-  - `--settings` lets `dt-reply` write to the run's folder, and keeps the coding agent out of difftate's folders (`<repo>/.git/difftate`, and each worktree's watcher folder `<repo>/.git/worktrees/<worktree>/difftate`, listed again for each run) and away from every watcher's API token, so it can't resolve threads or edit notes. Its `sandbox.filesystem` part (`allowWrite` the run's folder, `denyWrite` the folders, `denyRead` every watcher's token, this watcher's first) binds the Bash tool when the sandbox is on; its `permissions.deny` rules (`Edit(//<folder>/**)`, `Read(//<token>)`) bind Claude's own file tools. It's added to your own settings for these runs only.
+  - `--settings` lets `dt-reply` write to the run's folder, and keeps the coding agent out of difftate's folders (the repository's `<repo>/.git/difftate`, and the watcher's own folder, `~/.difftate`) and away from the one API token and the watcher's folder, so it can't resolve threads or edit notes. Its `sandbox.filesystem` part (`allowWrite` the run's folder, `denyWrite` the two folders, `denyRead` the token and the watcher's folder) binds the Bash tool when the sandbox is on; its `permissions.deny` rules (`Edit(//<folder>/**)`, `Read(//<path>)`) bind Claude's own file tools. It's added to your own settings for these runs only.
   - Dispatch posts replies only to threads that were open when the run started, whatever the coding agent writes into its folder.
 - OpenCode: `opencode run … [--model <model>] --auto --format json < /dev/null`
 
@@ -307,13 +313,13 @@ Coding agent invocation:
 
 ## Review API
 
-The watcher (the latest Python, nothing else) serves the **review API** on `127.0.0.1`, for viewers and the progress notes. Every API request needs the header `Authorization: Bearer <token>`, with the token from `.git/difftate/token` (readable only by you; a new one each start). `.git/difftate/api.json` gives the port. One watcher runs per checked-out folder: a watcher started in a worktree keeps its `token` and `api.json` (and its `watcher.lock`) in that worktree's own git folder (`git rev-parse --absolute-git-dir`, under `.git/worktrees/`), so each worktree's review has its own port and token; the reviews themselves stay in the shared `.git/difftate/reviews/`. Two worktrees detached at the same commit open the same review in two watchers (on a detached HEAD the commit stands in for the branch, [ADR 0002](docs/adr/0002-a-review-on-the-base-branch-lasts-one-commit.md)). The same server serves the browser viewer: `/?launch=<code>` trades a single-use launch code for its cookie, and the page, its scripts and its API calls use that cookie instead of the token (API calls only with the header `X-Difftate: page`, from the page's own origin).
+The watcher (the latest Python, nothing else) serves the **review API** on `127.0.0.1`, for viewers and the progress notes: one watcher for the machine, on one port, with one token. Every API request needs the header `Authorization: Bearer <token>`, with the token from `~/.difftate/token` (readable only by you; a new one each start); `~/.difftate/api.json` gives the port and the pid. **Every request names its folder** (the checked-out folder it is about) as a query parameter, `?folder=<path>`, and may name a base, `&base=<branch>` (the folder's own base, the default branch for a new folder, when none is given). A request without a folder gets 400. The first request that names a checked-out folder adds it to what the watcher serves; a path that isn't in one gets 400. The only requests that name no folder are `POST /api/stop` (it stops the watcher) and the browser page's own files. Two worktrees each have their own review on the one watcher (detached at the same commit, they open the same review: on a detached HEAD the commit stands in for the branch, [ADR 0002](docs/adr/0002-a-review-on-the-base-branch-lasts-one-commit.md)). The same server serves the browser viewer: `/?launch=<code>&folder=<path>` trades a single-use launch code for its cookie, and the page, its scripts and its API calls use that cookie instead of the token (API calls only with the header `X-Difftate: page`, from the page's own origin), naming the folder the link carried.
 
 | Request | What it does |
 |---|---|
-| `GET /api/review` | Start or reuse the review of the checked-out branch: `id`, `branch` and `base` (they change when the watcher follows another branch), `mode` and `held` (as `GET /api/mode`), and `folder`, the checked-out folder the watcher runs in (what a viewer passes to `GET /api/export`) |
+| `GET /api/review` | Start or reuse the review of the checked-out branch: `id`, `branch` and `base` (they change when the watcher follows another branch), `mode` and `held` (as `GET /api/mode`), and `folder`, the checked-out folder the watcher runs in (what a viewer passes to `GET /api/export` as `reply_folder`) |
 | `GET /api/view` | The view viewers show: `view` (`""` all changes, a commit such as `HEAD~2` for the commits after it, `HEAD` uncommitted, `staged`, `unstaged`) |
-| `PUT /api/view` | Show another view: `view`, and `open` (`browser`, `nvim`, `both`) to open the viewer on it too. A second `difftate` in the repository sends this, then exits |
+| `PUT /api/view` | Show another view: `view`. `difftate <view>` sends this, then opens the viewer itself: the watcher never opens one |
 | `GET /api/changeset?view=<view>` | The review's changeset in a view (default: the one viewers show), from git: `view`, `base`, `commit` (where the branch left the base), `diff` (unified, new untracked files included) |
 | `GET /api/threads?status=open&view=<view>` | List threads. With a view, each anchor's lines are where its code is in that view, and a thread whose code isn't in it has `inView: false` |
 | `POST /api/threads` | Open a thread: `anchor` (`file`, `side` `old`/`new`, `startLine`, `endLine`, `code`; `null` for a general thread), `body`, `view` (the view its lines are in; default all changes) |
@@ -322,7 +328,9 @@ The watcher (the latest Python, nothing else) serves the **review API** on `127.
 | `PATCH /api/threads/<id>/status` | Set the thread status: `open`, `resolved` or `dismissed`. Answers `id`, `status` and `statusBy` |
 | `GET /api/mode` | The review mode: `mode` (`live` or `batched`) and `held` (the ids of the held threads) |
 | `PUT /api/mode` | Change the review mode: `mode`. Answers as `GET /api/mode`, with `submitted`: the ids of the threads a change to `live` submitted (`[]` for none) |
-| `GET /api/export?folder=<folder>` | The [export](#export) of the review as `text/plain`; with a `folder`, its reply command names it. Writes no event |
+| `GET /api/export?reply_folder=<folder>` | The [export](#export) of the review as `text/plain`; with a `reply_folder`, its reply command names that folder. Writes no event |
+| `POST /api/launch` | A link to the browser viewer on the review, with a single-use launch code: `url` |
+| `POST /api/stop` | Stop the watcher (it answers first). `difftate stop` sends this. A run in flight ends failed "(the watcher stopped)". Names no folder |
 | `POST /api/submit` | Submit a batched review: its held threads go to the coding agent as one run (queued while a run is busy). Answers as `PUT /api/mode`; `submitted: []` when nothing was held, and no run starts |
 
 Opening a thread, setting its status, changing the review mode and submitting take an optional `author`, which must be `reviewer`: anyone else gets 403. That enforces the review's rules for difftate's own callers; it isn't a security check (the token is).
@@ -364,13 +372,13 @@ python3 tests/run.py fast    # what a Lua-only change needs: the Neovim viewer's
 
 `tests/run.py` (standard library only) runs one test at a time in each of its workers (one per CPU, at most 8) and lists the slowest; it takes module, class or test names too (`python3 tests/run.py test_watcher.WatcherTest`). `python3 -m unittest discover -s tests -v` still runs the same tests one after another.
 
-`tests/test_watcher.py` makes a temporary git repository, starts the real watcher with a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API. `tests/test_review_api.py` runs a scripted review through every review API route and compares each answer with `tests/fixtures/review_api_script.json`. The core's tests (`tests/test_core_*.py`) need no repository and no process. `tests/test_core_boundary.py` checks that the core imports no technology, and that only `main.py` wires adapters to the core: an adapter imports the core and itself, never another adapter (one named exception: the history files share the local store's event line format). `tests/test_stores.py` runs one test suite against every store (memory and local). `tests/test_neovim_viewer.py` starts the watcher, then a headless Neovim with only the plugin and gitsigns (`tests/nvim/init.lua`; never your own config, as HOME and the XDG folders are temporary), and drives it as the reviewer does; it needs `nvim` 0.10 or later and `DIFFTATE_TEST_GITSIGNS` set to a gitsigns.nvim checkout, and skips without (`DIFFTATE_TEST_GITSIGNS=~/.local/share/nvim/lazy/gitsigns.nvim` uses LazyVim's, read only). CI (`.github/workflows/ci.yml`) runs them with `tests/run.py` on the latest Python, runs the Neovim viewer's tests with Neovim and gitsigns installed, and checks `difftate.zsh` with `zsh -n` (ShellCheck has no zsh support), on every push and pull request.
+`tests/test_watcher.py` makes a temporary git repository and a temporary `DIFFTATE_HOME`, starts the real watcher with the `difftate` program and a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API; `tests/test_one_watcher.py` covers the one watcher: starting and stopping it, naming folders, and two worktrees on it. Nothing in the tests touches your own `~/.difftate` or a watcher running there. `tests/test_review_api.py` runs a scripted review through every review API route and compares each answer with `tests/fixtures/review_api_script.json`. The core's tests (`tests/test_core_*.py`) need no repository and no process. `tests/test_core_boundary.py` checks that the core imports no technology, and that only `main.py` wires adapters to the core: an adapter imports the core and itself, never another adapter (one named exception: the history files share the local store's event line format). `tests/test_stores.py` runs one test suite against every store (memory and local). `tests/test_neovim_viewer.py` starts the watcher, then a headless Neovim with only the plugin and gitsigns (`tests/nvim/init.lua`; never your own config, as HOME and the XDG folders are temporary), and drives it as the reviewer does; it needs `nvim` 0.10 or later and `DIFFTATE_TEST_GITSIGNS` set to a gitsigns.nvim checkout, and skips without (`DIFFTATE_TEST_GITSIGNS=~/.local/share/nvim/lazy/gitsigns.nvim` uses LazyVim's, read only). CI (`.github/workflows/ci.yml`) runs them with `tests/run.py` on the latest Python, runs the Neovim viewer's tests with Neovim and gitsigns installed, on every push and pull request.
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---|---|
-| No progress note appears | Watcher terminal for `could not post the progress note on thread …`; is the watcher still running? |
+| No progress note appears | The watcher's log (`~/.difftate/log`) for `could not post the progress note on thread …`; is the watcher still running (`difftate`)? |
 | Coding agent never finishes | Run the coding agent's command by hand with `< /dev/null`; look for auth or stdin hangs |
 | Wrong diff shown | Check the view (the browser's **View** menu, `GET /api/view`); rerun `difftate <view>` |
 | Answer from the wrong model | Check the `Model:` line; force it with `difftate --model <model>` |

@@ -95,7 +95,7 @@ def run_status(argv, wiring):
         found = wiring.difftate_folder(opts["cwd"])
         if found is None:
             raise Exit(1, f"Error: {opts['cwd']} is not a git repository")
-        folder = found[0]  # the reviews', shared by the repository's worktrees
+        folder = found.reviews  # the reviews', shared by the repository's worktrees
         try:
             base = wiring.base(opts["cwd"], opts["base"])
             branch = opts["branch"] or wiring.review_branch(opts["cwd"], base)

@@ -82,24 +82,23 @@ class TheExportCommand(Harness, unittest.TestCase):
         self.assertEqual(self.events(), before)
         self.assertEqual(self.state(tid), "held")
 
-    # ── Which watcher it asks ────────────────────────────────────────────────
-    def test_in_a_worktree_it_asks_the_watcher_of_that_worktree_not_the_repositorys(self):
+    # ── Which review it asks for ─────────────────────────────────────────────
+    def test_in_a_worktree_it_exports_that_worktrees_review_from_the_one_watcher(self):
         self.a_review_with_a_held_thread()
         worktree = self.add_worktree("other")
 
         code, out, err = self.export(cwd=worktree)
 
-        self.assertEqual(code, 1, "no watcher runs in the worktree")
-        self.assertEqual(out, "")
-        self.assertIn(os.path.realpath(worktree), err)
+        self.assertEqual((code, err), (0, ""), "the first request naming the worktree adds it")
+        self.assertNotIn("Why an f-string?", out, "not the repository's review")
+        self.assertIn("## Threads that need an answer (0)", out)
 
     # ── When it can't ────────────────────────────────────────────────────────
     def test_with_no_running_watcher_it_says_so_and_fails(self):
         code, out, err = self.export()
 
         self.assertEqual((code, out), (1, ""))
-        self.assertIn("dt-export: no difftate is running for", err)
-        self.assertIn(os.path.realpath(self.repo), err)
+        self.assertIn("No difftate is running: run `difftate` in a terminal", err)
 
     def test_after_the_watcher_stopped_it_fails_the_same_way(self):
         self.a_review_with_a_held_thread()
@@ -108,7 +107,7 @@ class TheExportCommand(Harness, unittest.TestCase):
         code, out, err = self.export()
 
         self.assertEqual((code, out), (1, ""))
-        self.assertIn("no difftate is running", err)
+        self.assertIn("No difftate is running", err)
 
     def test_a_folder_that_is_not_a_git_repository_is_refused(self):
         code, out, err = self.export(self.tmp, cwd=self.tmp)

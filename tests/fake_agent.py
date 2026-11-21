@@ -9,6 +9,7 @@ Controlled through FAKE_AGENT_DIR (a folder the test owns):
   pid      written at start: this process's id
   args     written at start: its command-line arguments, as JSON
   run_dir  written at start: the run's folder it was given ($DT_RUN_DIR)
+  cwd      written at start: the folder it runs in
   prompt   written at start: the prompt it was sent
   prompts  one line appended per run: the prompt as JSON
   go       the coding agent waits for this file before it replies, so a test can see
@@ -61,6 +62,8 @@ def main():
             f.write(str(os.getpid()))
         with open(os.path.join(folder, "args"), "w") as f:
             json.dump(args, f)
+        with open(os.path.join(folder, "cwd"), "w") as f:
+            f.write(os.getcwd())
         with open(os.path.join(folder, "run_dir"), "w") as f:
             f.write(os.environ.get("DT_RUN_DIR", ""))
         with open(os.path.join(folder, "prompt"), "w") as f:

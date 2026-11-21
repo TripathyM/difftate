@@ -24,8 +24,8 @@ local function say(message, level)
   vim.notify(message, level or vim.log.levels.INFO, { title = "difftate" })
 end
 
-local function no_watcher(top)
-  return ("No difftate is running for %s: start it there, then open the review again"):format(top)
+local function no_watcher()
+  return api.NOT_RUNNING
 end
 
 -- The view the review shows: the review's view, or all changes when it is the staged one (only the
@@ -649,7 +649,7 @@ function M.export()
   if not review then
     return
   end
-  local path = "/api/export?folder=" .. vim.uri_encode(review.watcher.top, "rfc3986")
+  local path = "/api/export?reply_folder=" .. vim.uri_encode(review.watcher.top, "rfc3986")
   api.request(review.watcher, "GET", path, function(text, err)
     if not text then
       if err.missing then
