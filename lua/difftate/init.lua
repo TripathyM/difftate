@@ -2,8 +2,10 @@
 -- (ADR 0007). A client of the review API, like the browser and the Herdr viewer.
 --
 -- Modules: review (the open review: opening, polling, closing, writing), api (the review
--- API through curl), mode (the review mode and Submit as text), look (the deleted text and the tint of the diff), compose (the float comments are written in), gitsigns (its base while the review is open), git, draw (the
--- threads in the buffers), threads (their text), wrap, diff (the changeset's diff),
+-- API through curl), mode (the review mode and Submit, as text), look (the deleted text and
+-- the tint of the diff), compose (the float comments are written in), gitsigns (its base
+-- while the review is open), git, draw (the threads in the buffers), threads (their text),
+-- wrap, diff (the changeset's diff),
 -- float (the read float), nav (the order of the threads, the rows of the pickers), pick
 -- (Snacks.picker or vim.ui.select).
 --

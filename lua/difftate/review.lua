@@ -84,18 +84,28 @@ local function read_threads(review, on_done)
   end)
 end
 
+-- Take <answer> (what the review API says of the mode: { mode, held }) as the mode of the open
+-- <review>, for the statusline note, which redraws now rather than on its own timers
+local function know_mode(review, answer)
+  if current == review then
+    review.mode = { mode = answer.mode, held = answer.held or {} }
+    vim.cmd("redrawstatus")
+  end
+end
+
 -- Read the review mode and the held threads of the open <review> (GET /api/mode), for the
 -- statusline note; then on_done(answer), or on_done(nil, err) when the review API didn't answer
 -- (what was known stays: the poll says when difftate stopped).
 local function read_mode(review, on_done)
+  local stamp = review.mode_stamp
   api.request(review.watcher, "GET", "/api/mode", function(answer, err)
     if not answer then
       on_done(nil, err)
       return
     end
-    if current == review then
-      review.mode = { mode = answer.mode, held = answer.held or {} }
-      vim.cmd("redrawstatus") -- the note is the statusline's, which redraws on its own timers
+    -- A change or a Submit answered since this was asked: its answer is newer, so this one doesn't overwrite it
+    if review.mode_stamp == stamp then
+      know_mode(review, answer)
     end
     on_done(answer)
   end)
@@ -431,9 +441,9 @@ end
 -- Take what a change of mode or a Submit answered ({ mode, held, submitted }) as the mode now,
 -- and draw the threads again: what was held is no longer
 local function changed(review, answer)
+  review.mode_stamp = (review.mode_stamp or 0) + 1
+  know_mode(review, answer)
   if current == review then
-    review.mode = { mode = answer.mode, held = answer.held or {} }
-    vim.cmd("redrawstatus")
     refresh(review)
   end
 end

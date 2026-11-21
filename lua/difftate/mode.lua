@@ -30,10 +30,10 @@ function M.label(mode)
   return "live"
 end
 
---- Said after the review was changed to <mode>; <submitted> is the ids the change sent (a
---- change to live submits what is held).
-function M.changed_message(mode, submitted)
-  if mode == "batched" then
+--- Said after the review was changed to the mode called <name> ("live" or "batched"); <submitted> is
+--- the ids the change sent (a change to live submits what is held).
+function M.changed_message(name, submitted)
+  if name == "batched" then
     return "Batched: comments are held until you submit"
   end
   if submitted and #submitted > 0 then
