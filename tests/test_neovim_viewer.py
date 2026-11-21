@@ -167,6 +167,21 @@ class Neovim:
         """The signs the plugin placed in buffer <buf>: [(line, sign text)], top to bottom."""
         return [tuple(s) for s in self.lua(f"return T.drawn({buf}).signs")]
 
+    def boxes(self, buf=0):
+        """The threads drawn in buffer <buf> as boxes: for each thread, its lines as {"text", "width" (display
+        columns, with the padding), "hls" (the highlight of each chunk)}."""
+        return self.lua(f"return T.boxes({buf})")
+
+    def look(self, buf=0):
+        """The diff look drawn in buffer <buf>: {"deleted": [{"row", "above", "lines", "widths", "hls",
+        "priority"} of the deleted text, top to bottom], "tinted": [(line, highlight)]}."""
+        look = self.lua(f"return T.look({buf})")
+        return {"deleted": look["deleted"], "tinted": [tuple(t) for t in look["tinted"]]}
+
+    def screen(self):
+        """What the screen shows now, a string per row."""
+        return self.lua("return T.screen()")
+
     def text_columns(self):
         """The columns of the current window's text: its width without the signs and numbers."""
         return self.lua("return vim.api.nvim_win_get_width(0) - vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].textoff")
@@ -255,6 +270,32 @@ class NeovimHarness(Harness):
         """A thread of the reviewer's on app.py's line <line> (a batched review holds it:
         no coding agent answers); its id."""
         return self.open_thread(body, line=line, **kwargs)["id"]
+
+    def branch_changes(self, name, before, after, base_commit="Add the file"):
+        """The file <name> holds <before> on main and <after> on the branch feature (committed), which
+        replaces the change the harness leaves uncommitted in app.py."""
+        git(self.repo, self.env, "checkout", "-q", "--", "app.py")
+        git(self.repo, self.env, "checkout", "-q", "main")
+        self.write(name, before)
+        self.commit(base_commit)
+        git(self.repo, self.env, "checkout", "-q", "-B", "feature")
+        self.write(name, after)
+        self.commit("Change the file")
+
+    def shapes(self):
+        """shapes.py: its second line is changed, its fourth deleted, a line added after the fifth
+        (the fourth of the branch); gitsigns sees three hunks."""
+        self.branch_changes("shapes.py", SHAPES_BEFORE, SHAPES_AFTER)
+
+    def open_shapes(self, **kwargs):
+        """The review open on shapes.py (the Neovim started on it, gitsigns on the base with its three hunks)."""
+        self.start_watcher()
+        nvim = self.nvim(None, "shapes.py", **kwargs)
+        self.attached(nvim)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        wait_for("the three hunks", lambda: nvim.hunks() == [[1, 1], [0, 1], [1, 0]])
+        return nvim
 
     def batched(self):
         self.api("PUT", "/api/mode", {"mode": "batched"})
@@ -421,6 +462,10 @@ class WhileTheReviewIsOpen(NeovimHarness, unittest.TestCase):
         time.sleep(1)  # and five more would find it stopped
 
         self.assertNotIn("difftate stopped answering", nvim.messages())
+
+
+SHAPES_BEFORE = "one = 1\ntwo = 2\nthree = 3\nfour = 4\nfive = 5\nsix = 6\n"
+SHAPES_AFTER = "one = 1\ntwo = 22\nthree = 3\nfive = 5\nfive_and_a_half = 5.5\nsix = 6\n"
 
 
 # Pickers that record what they were given (T.menu) and wait for the test to choose (T.choose_menu)
@@ -1719,3 +1764,389 @@ class WhenTheReviewApiFails(NeovimHarness, unittest.TestCase):
         tid = self.open_thread("Why an f-string here?")["id"]
         wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
         return tid
+
+
+def screen_row(screen, text, after=0):
+    """The first row of <screen> (from the row <after>) that is <text>: a line of the file after the signs
+    before it ("┃ two = 22"), or a line of a thread when <text> starts with its bar."""
+    for i in range(after, len(screen)):
+        row = screen[i]
+        if text.startswith("│") and text in row or not text.startswith("│") and "│" not in row and row.strip().endswith(text):
+            return i
+    raise AssertionError(f"{text!r} is not on the screen after row {after}:\n" + "\n".join(screen))
+
+
+@needs(MISSING_GITSIGNS)
+class TheDiffLook(NeovimHarness, unittest.TestCase):
+    """While the review is open, a buffer shows what changed against the base: the deleted text where it
+    was, the added and changed lines tinted (GitHub's unified look) and the threads in a box."""
+
+    def test_deleted_text_is_drawn_where_it_was_in_the_delete_colour_the_width_of_the_window(self):
+        self.shapes()
+
+        nvim = self.open_shapes()
+
+        deleted = wait_for("the deleted text", lambda: len(nvim.look()["deleted"]) == 2 and nvim.look()["deleted"])
+        self.assertEqual([(d["row"], d["above"], d["lines"]) for d in deleted],
+                         [(2, True, ["two = 2"]), (4, True, ["four = 4"])],
+                         "above the line after the change: the line before has its threads under it")
+        window = nvim.lua("return vim.api.nvim_win_get_width(0)")
+        for block in deleted:
+            self.assertEqual(block["widths"], [window], "the tint spans the window")
+            self.assertEqual(block["hls"], [["DifftateDeleted", "DifftateDeleted"]])
+
+    def test_deleted_text_at_the_top_of_the_file_is_drawn_above_its_first_line(self):
+        self.branch_changes("shapes.py", "zero = 0\none = 1\n", "one = 1\n")
+        self.start_watcher()
+        nvim = self.nvim(None, "shapes.py")
+        self.attached(nvim)
+
+        nvim.command("DifftateOpen")
+
+        deleted = wait_for("the deleted text", lambda: nvim.look()["deleted"])
+        self.assertEqual([(d["row"], d["above"], d["lines"]) for d in deleted], [(1, True, ["zero = 0"])])
+
+    def test_tabs_in_deleted_text_are_drawn_as_the_spaces_the_buffer_would_show(self):
+        self.branch_changes("shapes.py", "one = 1\n\tindented = 2\nthree = 3\n", "one = 1\nthree = 3\n")
+        self.start_watcher()
+        nvim = self.nvim(None, "shapes.py")
+        self.attached(nvim)
+
+        nvim.command("DifftateOpen")
+
+        deleted = wait_for("the deleted text", lambda: nvim.look()["deleted"])
+        self.assertEqual(deleted[0]["lines"], [" " * nvim.lua("return vim.bo.tabstop") + "indented = 2"])
+
+    def test_added_and_changed_lines_are_tinted(self):
+        self.shapes()
+
+        nvim = self.open_shapes()
+
+        self.assertEqual(wait_for("the tint", lambda: nvim.look()["tinted"]), [(2, "DifftateAdd"), (5, "DifftateAdd")])
+
+    def test_a_new_file_is_tinted_whole(self):
+        self.branch_changes("shapes.py", SHAPES_BEFORE, SHAPES_AFTER)
+        self.write("notes.md", "# Notes\nGreeting style\n")
+        self.commit("Add notes")
+        self.start_watcher()
+        nvim = self.nvim(None, "notes.md")
+        self.attached(nvim)
+
+        nvim.command("DifftateOpen")
+
+        self.assertEqual(wait_for("the tint", lambda: nvim.look()["tinted"]),
+                         [(1, "DifftateAdd"), (2, "DifftateAdd")])
+        self.assertEqual(nvim.look()["deleted"], [])
+
+    def test_the_highlights_are_the_plugins_own_and_linked_to_the_colorschemes(self):
+        self.shapes()
+
+        nvim = self.open_shapes()
+
+        links = nvim.lua("""
+            local out = {}
+            for _, name in ipairs({ "DifftateAdd", "DifftateDeleted", "DifftateBox", "DifftateBody" }) do
+              local hl = vim.api.nvim_get_hl(0, { name = name, link = true })
+              out[name] = { hl.link, hl.default }
+            end
+            return out""")
+        self.assertEqual(links, {"DifftateAdd": ["DiffAdd", True], "DifftateDeleted": ["DiffDelete", True],
+                                 "DifftateBox": ["NormalFloat", True], "DifftateBody": ["NormalFloat", True]})
+
+    def test_a_highlight_the_reviewer_set_themselves_wins_over_the_default(self):
+        self.shapes()
+
+        nvim = self.open_shapes(before="vim.api.nvim_set_hl(0, 'DifftateAdd', { bg = '#003300' })")
+
+        wait_for("the tint", lambda: nvim.look()["tinted"])
+        self.assertEqual(nvim.lua("return vim.api.nvim_get_hl(0, { name = 'DifftateAdd' }).bg"), 0x003300)
+
+    def test_closing_the_review_removes_the_deleted_text_and_the_tint(self):
+        self.shapes()
+        nvim = self.open_shapes()
+        wait_for("the look", lambda: nvim.look()["deleted"] and nvim.look()["tinted"])
+
+        nvim.command("DifftateClose")
+
+        self.assertEqual(nvim.look(), {"deleted": [], "tinted": []})
+        time.sleep(0.6)
+        self.assertEqual(nvim.look(), {"deleted": [], "tinted": []}, "nothing comes back with a poll or a gitsigns update")
+        nvim.write_text("one = 1\ntwo = 2\n")
+        time.sleep(0.5)
+        self.assertEqual(nvim.look(), {"deleted": [], "tinted": []}, "nor with an edit")
+
+    def test_opening_again_draws_the_look_again(self):
+        self.shapes()
+        nvim = self.open_shapes()
+        first = wait_for("the look", lambda: nvim.look()["deleted"] and nvim.look())
+        nvim.command("DifftateClose")
+
+        nvim.command("DifftateOpen")
+
+        wait_for("the look again", lambda: nvim.look() == first)
+
+    def test_an_edit_draws_it_again(self):
+        self.shapes()
+        nvim = self.open_shapes()
+        wait_for("the look", lambda: nvim.look()["tinted"])
+
+        nvim.lua("vim.api.nvim_buf_set_lines(0, 0, 0, false, { 'zero = 0' })")  # a new first line, not saved
+
+        wait_for("the tint to move", lambda: nvim.look()["tinted"] == [(1, "DifftateAdd"), (3, "DifftateAdd"), (6, "DifftateAdd")])
+        self.assertEqual([(d["row"], d["lines"]) for d in nvim.look()["deleted"]], [(3, ["two = 2"]), (5, ["four = 4"])])
+        nvim.lua("vim.api.nvim_buf_set_lines(0, 3, 4, false, { 'three = 3', 'four = 4' })")  # the deleted line is back (and the third is written twice)
+        wait_for("the deleted line to go", lambda: [d["lines"] for d in nvim.look()["deleted"]] == [["two = 2"]])
+
+    def test_a_move_of_the_base_draws_it_again(self):
+        self.shapes()
+        nvim = self.open_shapes()
+        wait_for("the look", lambda: len(nvim.look()["deleted"]) == 2)
+        base_folder = os.path.join(self.tmp, "wt-main")
+        git(self.repo, self.env, "worktree", "add", "-q", base_folder, "main")
+        with open(os.path.join(base_folder, "shapes.py"), "w") as f:
+            f.write(SHAPES_BEFORE.replace("four = 4\n", ""))  # main drops the fourth line too
+        self.commit("Drop four", folder=base_folder)
+
+        git(self.repo, self.env, "merge", "-q", "--no-edit", "main")
+
+        wait_for("the deleted line to go", lambda: [d["lines"] for d in nvim.look()["deleted"]] == [["two = 2"]])
+        self.assertEqual(nvim.look()["tinted"], [(2, "DifftateAdd"), (5, "DifftateAdd")], "the added line stays: it is not on main")
+
+    def test_a_buffer_with_no_change_against_the_base_has_no_look(self):
+        self.shapes()  # app.py is the same on both branches
+        self.start_watcher()
+        nvim = self.nvim()
+        self.attached(nvim)
+
+        nvim.command("DifftateOpen")
+
+        wait_for("the review to open", lambda: nvim.status() != "")
+        time.sleep(0.6)
+        self.assertEqual(nvim.look(), {"deleted": [], "tinted": []})
+        nvim.command("edit shapes.py")
+        wait_for("the look in the file that changed", lambda: nvim.look()["deleted"])
+
+    def test_diff_tint_false_leaves_the_lines_untinted_and_still_draws_the_deleted_text(self):
+        self.shapes()
+
+        nvim = self.open_shapes(opts={"poll_ms": 200, "diff": {"tint": False}})
+
+        wait_for("the deleted text", lambda: len(nvim.look()["deleted"]) == 2)
+        self.assertEqual(nvim.look()["tinted"], [])
+        self.assertEqual(nvim.lua("return require('difftate').config.diff.tint"), False)
+
+    def test_the_tint_is_on_unless_opts_say_otherwise(self):
+        self.assertTrue(self.nvim().lua("return require('difftate').config.diff.tint"))
+
+    def test_with_gitsigns_own_line_highlight_on_as_well_both_are_drawn_and_gitsigns_is_over_the_tint_by_priority(self):
+        self.shapes()
+        nvim = self.open_shapes()
+        wait_for("the tint", lambda: nvim.look()["tinted"])
+
+        nvim.lua("require('gitsigns').toggle_linehl(true)")  # as the reviewer would, to compare
+
+        def line_highlights():  # [group, priority] of every whole-line highlight on the added fifth line
+            return nvim.lua("""
+                local out = {}
+                for _, m in ipairs(vim.api.nvim_buf_get_extmarks(0, -1, { 4, 0 }, { 4, -1 }, { details = true })) do
+                  if m[4].line_hl_group then table.insert(out, { m[4].line_hl_group, m[4].priority }) end
+                end
+                return out""")
+        marks = wait_for("gitsigns' line highlight", lambda: len(line_highlights()) == 2 and line_highlights())
+        self.assertIn(["DifftateAdd", 1], marks)
+        gitsigns = [priority for hl, priority in marks if hl == "GitSignsAddLn"]
+        self.assertEqual(len(gitsigns), 1)
+        self.assertGreater(gitsigns[0], 1, "gitsigns' own highlight is over the tint: Neovim draws the higher priority")
+
+    def test_the_review_without_gitsigns_has_no_look_and_no_error(self):
+        self.shapes()
+        self.start_watcher()
+        nvim = self.nvim(None, "shapes.py", gitsigns=False)
+
+        nvim.command("DifftateOpen")
+
+        wait_for("the review to open", lambda: nvim.status() != "")
+        time.sleep(0.5)
+        self.assertEqual(nvim.look(), {"deleted": [], "tinted": []})
+        self.assertNotIn("Error", nvim.messages())
+
+
+@needs(MISSING_GITSIGNS)
+class ThreadsInABox(NeovimHarness, unittest.TestCase):
+    def a_review_with_a_long_thread(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        tid = self.a_thread(LONG)
+        self.api("POST", f"/api/threads/{tid}/comments", {"kind": "reply", "body": "Added a comment.\n\nSee below."})
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+        return nvim
+
+    def test_every_line_of_a_thread_is_the_box_highlight_padded_to_the_text_width(self):
+        nvim = self.a_review_with_a_long_thread()
+
+        columns = nvim.text_columns()
+        # gitsigns' signs may widen the sign column after the first draw: the box follows
+        box = wait_for("the box as wide as the text", lambda: {line["width"] for line in nvim.boxes()[0]} == {columns}
+                       and nvim.boxes()[0])
+
+        self.assertGreater(len(box), 6)
+        for line in box:
+            self.assertTrue(all(hl.startswith("DifftateBox") for hl in line["hls"]), line)
+        self.assertEqual(box[0]["hls"], ["DifftateBox+DifftateBar", "DifftateBox+DifftateHead", "DifftateBox"])
+        self.assertEqual(box[2]["hls"][1], "DifftateBox+DifftateBody", "the body is the box's, not the code's colour")
+
+    def test_the_box_is_as_wide_as_the_narrowest_window_and_follows_a_resize(self):
+        nvim = self.a_review_with_a_long_thread()
+        wide = nvim.text_columns()
+
+        nvim.command("vsplit")
+
+        narrow = nvim.lua("""
+            local narrowest
+            for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+              local text = vim.api.nvim_win_get_width(win) - vim.fn.getwininfo(win)[1].textoff
+              narrowest = math.min(narrowest or text, text)
+            end
+            return narrowest""")
+        self.assertLess(narrow, wide)
+        wait_for("the box to narrow", lambda: {line["width"] for line in nvim.boxes()[0]} == {narrow})
+        nvim.command("only")
+        wait_for("the box to widen", lambda: {line["width"] for line in nvim.boxes()[0]} == {wide})
+
+    def test_a_collapsed_thread_is_a_box_of_one_line(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        tid = self.a_thread("Done already")
+        self.api("PATCH", f"/api/threads/{tid}/status", {"status": "resolved"})
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+
+        box = nvim.boxes()[0]
+
+        self.assertEqual(len(box), 1)
+        self.assertEqual(box[0]["width"], nvim.text_columns())
+        self.assertTrue(box[0]["hls"][1].startswith("DifftateBox+"))
+
+    def test_the_deleted_code_a_thread_quotes_keeps_the_delete_colour_across_the_box(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.api("POST", "/api/threads", {"anchor": {"file": "app.py", "side": "old", "startLine": 2, "endLine": 2,
+                                                    "code": "    return 'hi ' + name"}, "body": "Why drop this?"})
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+
+        quoted = nvim.boxes()[0][1]
+
+        self.assertEqual(quoted["text"], "│ -     return 'hi ' + name")
+        self.assertEqual(quoted["width"], nvim.text_columns())
+        self.assertEqual(quoted["hls"][-1], "DifftateDeleted", "the padding is red too: the whole line is deleted code")
+
+
+@needs(MISSING_GITSIGNS)
+class DeletedTextAndThreadsTogether(NeovimHarness, unittest.TestCase):
+    """Both are virtual lines in the same gap: the order is the line before, its threads, the threads on
+    the deleted lines (each quotes its code), then the deleted text."""
+
+    def test_the_order_in_a_gap_is_the_threads_on_the_line_before_then_those_on_deleted_lines_then_the_deleted_text(self):
+        self.shapes()
+        self.start_watcher()
+        self.batched()
+        self.open_thread("Why three?", line=3, file="shapes.py")
+        self.api("POST", "/api/threads", {"anchor": {"file": "shapes.py", "side": "old", "startLine": 4, "endLine": 4,
+                                                    "code": "four = 4"}, "body": "Why drop four?"})
+        nvim = self.nvim(None, "shapes.py")
+        self.attached(nvim)
+
+        nvim.command("DifftateOpen")
+
+        wait_for("everything drawn", lambda: len(nvim.look()["deleted"]) == 2 and len(nvim.threads()) == 2)
+        screen = nvim.screen()
+        three = screen_row(screen, "three = 3")
+        new_thread = screen_row(screen, "│   Why three?", three)
+        old_thread = screen_row(screen, "│   Why drop four?", new_thread)
+        deleted = screen_row(screen, "four = 4", old_thread)
+        five = screen_row(screen, "five = 5", deleted)
+        self.assertTrue(three < new_thread < old_thread < deleted < five, "\n".join(screen))
+        self.assertIn("│ - four = 4", screen[old_thread - 2], "the thread on the deleted line quotes its code before its words")
+
+    def test_the_order_holds_when_the_line_before_the_gap_is_blank(self):
+        self.branch_changes("shapes.py", "a = 1\n\nb = 2\nc = 3\n", "a = 1\n\nc = 3\n")
+        self.start_watcher()
+        self.batched()
+        self.api("POST", "/api/threads", {"anchor": {"file": "shapes.py", "side": "old", "startLine": 3, "endLine": 3,
+                                                    "code": "b = 2"}, "body": "Why drop b?"})
+        nvim = self.nvim(None, "shapes.py")
+        self.attached(nvim)
+
+        nvim.command("DifftateOpen")
+
+        wait_for("everything drawn", lambda: nvim.look()["deleted"] and nvim.threads())
+        screen = nvim.screen()
+        thread = screen_row(screen, "│   Why drop b?")
+        deleted = screen_row(screen, "b = 2", thread)
+        c = screen_row(screen, "c = 3", deleted)
+        self.assertTrue(thread < deleted < c, "\n".join(screen))
+
+    def test_at_the_top_of_the_file_the_deleted_text_comes_before_the_thread_on_it(self):
+        self.branch_changes("shapes.py", "zero = 0\none = 1\n", "one = 1\n")
+        self.start_watcher()
+        self.batched()
+        self.api("POST", "/api/threads", {"anchor": {"file": "shapes.py", "side": "old", "startLine": 1, "endLine": 1,
+                                                    "code": "zero = 0"}, "body": "Why drop zero?"})
+        nvim = self.nvim(None, "shapes.py")
+        self.attached(nvim)
+
+        nvim.command("DifftateOpen")
+
+        wait_for("everything drawn", lambda: nvim.look()["deleted"] and nvim.threads())
+        # What is above the first line shows only once the window scrolls up (Neovim's way, for any virtual line)
+        nvim.keys("<C-y>" * 6)
+        screen = nvim.screen()
+        deleted = screen_row(screen, "zero = 0")
+        thread = screen_row(screen, "│   Why drop zero?", deleted)
+        one = screen_row(screen, "one = 1", thread)
+        self.assertTrue(deleted < thread < one, "\n".join(screen))
+
+
+@needs(MISSING_GITSIGNS)
+class TheDiffLookAddsOnly(NeovimHarness, unittest.TestCase):
+    def test_drawing_the_look_changes_no_option_key_gitsigns_setting_highlight_or_foreign_extmark(self):
+        self.shapes()
+        self.start_watcher()
+        self.batched()
+        self.open_thread("Why three?", line=3, file="shapes.py")
+        self.api("POST", "/api/threads", {"anchor": {"file": "shapes.py", "side": "old", "startLine": 4, "endLine": 4,
+                                                    "code": "four = 4"}, "body": "Why drop four?"})
+        nvim = self.nvim(None, "shapes.py", before="vim.diagnostic.set(vim.api.nvim_create_namespace('other'), 0, "
+                         "{ { lnum = 0, col = 0, message = 'hint', severity = vim.diagnostic.severity.HINT } })")
+        self.attached(nvim)
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+        settings = nvim.lua("return T.settings()")
+        foreign = nvim.lua("return T.foreign_extmarks(0)")
+
+        nvim.command("DifftateOpen")
+        wait_for("the look and the threads", lambda: len(nvim.look()["deleted"]) == 2 and len(nvim.threads()) == 2)
+        nvim.keys("<leader>re")  # expanded
+        nvim.command("vsplit")
+        nvim.lua("vim.api.nvim_buf_set_lines(0, 0, 0, false, { 'zero = 0' })")  # an edit, not saved
+        wait_for("it drawn again", lambda: nvim.look()["tinted"][0] == (1, "DifftateAdd"))
+        nvim.command("silent undo")  # the buffer is unmodified again
+        wait_for("it drawn as it was", lambda: nvim.look()["tinted"][0] == (2, "DifftateAdd"))
+
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before, "no option, no key, while the look is drawn")
+        self.assertEqual(nvim.lua("return T.settings()"), settings, "gitsigns' line highlight, word diff and deleted lines stay off; the colorscheme's groups stay")
+        self.assertEqual(nvim.lua("return T.foreign_extmarks(0)"), foreign, "nobody else's extmarks")
+        nvim.command("close")  # the split's window: the reviewer's own stays
+        nvim.command("DifftateClose")
+        wait_for("gitsigns on the index", lambda: nvim.gitsigns_base() is None)
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+        self.assertEqual(nvim.lua("return T.settings()"), settings)
+        self.assertEqual(nvim.lua("return T.foreign_extmarks(0)"), foreign)

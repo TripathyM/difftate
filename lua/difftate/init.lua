@@ -2,7 +2,7 @@
 -- (ADR 0007). A client of the review API, like the browser and the Herdr viewer.
 --
 -- Modules: review (the open review: opening, polling, closing, writing), api (the review
--- API through curl), compose (the float comments are written in), gitsigns (its base while the review is open), git, draw (the
+-- API through curl), look (the deleted text and the tint of the diff), compose (the float comments are written in), gitsigns (its base while the review is open), git, draw (the
 -- threads in the buffers), threads (their text), wrap, diff (the changeset's diff),
 -- float (the read float), nav (the order of the threads, the rows of the pickers), pick
 -- (Snacks.picker or vim.ui.select).
@@ -18,6 +18,10 @@ local M = {}
 local defaults = {
   -- How often the open review asks the review API, as the Herdr viewer does
   poll_ms = 2000,
+  -- How the review draws what changed against its base (from gitsigns' hunks, in the plugin's own
+  -- namespace): the deleted text is always drawn where it was; tint = false leaves the added and
+  -- changed lines untinted, to use gitsigns' own (:Gitsigns toggle_linehl) instead
+  diff = { tint = true },
   -- action = key (false: none). Later actions (comment, ...) come here too.
   keys = {
     toggle = "<leader>rr",
