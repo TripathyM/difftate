@@ -297,6 +297,12 @@ class NeovimHarness(Harness):
         wait_for("the three hunks", lambda: nvim.hunks() == [[1, 1], [0, 1], [1, 0]])
         return nvim
 
+    def a_thread_in_a_run(self):
+        """A live thread whose run is still going (the fake agent waits to be released)."""
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
+        return tid
+
     def batched(self):
         self.api("PUT", "/api/mode", {"mode": "batched"})
 
@@ -525,7 +531,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
             "toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT", "comment": "<leader>gC", "add_comment": "<leader>gA",
             "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG",
             "threads": "<leader>gP", "files": "<leader>gF", "next": "<leader>gN", "previous": "<leader>gB",
-            "mode": "<leader>gM", "submit": "<leader>gU"}})
+            "mode": "<leader>gM", "submit": "<leader>gU", "done": "<leader>gD"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -536,7 +542,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
 
         self.assertEqual(after["options"], before["options"])
         self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG",
-                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rS"})
+                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rS", "n  rD"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -2013,6 +2019,225 @@ class ReviewModeAndSubmit(NeovimHarness, unittest.TestCase):
 
 
 @needs(MISSING_GITSIGNS)
+class ReviewDone(NeovimHarness, unittest.TestCase):
+    mode = "live"
+
+    @property
+    def LIVE(self):
+        return f"review open · {self.mode} · git signs show changes since main"
+
+    def done(self):
+        return self.api("GET", "/api/done")
+
+    def done_note(self, commit=None):
+        return f"review open · {self.mode} · Done at {(commit or self.head())[:7]} · git signs show changes since main"
+
+    def a_review_with_an_open_thread(self, nvim=None):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("Is this right?", line=2)  # held: the review stays batched, so no run is working
+        self.mode = "batched · 1 held"
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+        return nvim
+
+    def stub_put_done(self, nvim, message):
+        nvim.lua("require('difftate.api').request = (function(real) return function(watcher, method, path, on_answer, payload)"
+                 " if method == 'PUT' and path == '/api/done' then"
+                 f" vim.schedule(function() on_answer(nil, {{ message = {vim_string(message)} }}) end) return end"
+                 " return real(watcher, method, path, on_answer, payload) end end)(require('difftate.api').request)")
+
+    # Mark and undo -------------------------------------------------------------
+
+    def test_leader_rD_marks_the_review_done_says_the_commit_and_the_note_shows_it(self):
+        nvim = self.an_open_review()
+        self.assertEqual(nvim.status(), self.LIVE)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rD")
+
+        commit = self.head()
+        wait_for("the message", lambda: f"Done at {commit[:7]}. A new commit clears it." in nvim.messages())
+        self.assertEqual((self.done()["done"], self.done()["commit"]), (True, commit))
+        self.assertEqual(nvim.status(), self.done_note())
+
+    def test_the_key_again_undoes_it_and_says_so(self):
+        nvim = self.an_open_review()
+        nvim.keys("<leader>rD")
+        wait_for("done", lambda: nvim.status() == self.done_note())
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rD")
+
+        wait_for("the message", lambda: f"Done at {self.head()[:7]} undone" in nvim.messages())
+        self.assertFalse(self.done()["done"])
+        self.assertEqual(nvim.status(), self.LIVE)
+
+    def test_the_note_follows_done_marked_or_undone_in_another_viewer(self):
+        nvim = self.an_open_review()
+
+        self.api("PUT", "/api/done", {"done": True})
+        wait_for("done", lambda: nvim.status() == self.done_note())
+        self.api("PUT", "/api/done", {"done": False})
+        wait_for("not done", lambda: nvim.status() == self.LIVE)
+
+    def test_a_new_commit_clears_done_and_the_note_follows(self):
+        nvim = self.an_open_review()
+        nvim.keys("<leader>rD")
+        wait_for("done", lambda: nvim.status() == self.done_note())
+
+        self.write("app.py", "greeting = 'a new commit'\n")
+        self.commit("Another change")
+
+        wait_for("the note without Done", lambda: nvim.status() == self.LIVE)
+        self.assertEqual(self.done()["lastMark"]["kind"], "cleared")
+        nvim.command("messages clear")
+        nvim.keys("<leader>rD")  # marks it again, at the new commit
+        wait_for("the message", lambda: f"Done at {self.head()[:7]}." in nvim.messages())
+
+    def test_nothing_is_asked_when_nothing_is_open(self):
+        nvim = self.an_open_review()
+        nvim.lua(FAKE_SELECT)
+
+        nvim.keys("<leader>rD")
+
+        wait_for("done", lambda: self.done()["done"])
+        self.assertIsNone(nvim.menu(), "no question when nothing is open")
+
+    # The warning -----------------------------------------------------------------
+
+    def test_open_threads_are_warned_about_and_stopping_marks_nothing(self):
+        nvim = self.a_review_with_an_open_thread()
+        nvim.lua(FAKE_SELECT)
+
+        nvim.keys("<leader>rD")
+
+        wait_for("the question", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["title"], "1 thread still open. Mark Done anyway?")
+        self.assertEqual(nvim.menu()["lines"], ["Mark Done anyway", "Stop"])
+        nvim.pick(2)
+        time.sleep(0.5)
+        self.assertFalse(self.done()["done"])
+        self.assertEqual(nvim.status(), self.LIVE)
+
+    def test_going_on_after_the_warning_marks_it_done(self):
+        nvim = self.a_review_with_an_open_thread()
+        nvim.lua(FAKE_SELECT)
+        nvim.keys("<leader>rD")
+        wait_for("the question", lambda: nvim.menu())
+
+        nvim.pick(1)
+
+        wait_for("done", lambda: nvim.status() == self.done_note())
+        self.assertEqual(self.done()["openThreads"], 1, "the thread stays open: Done warns, it gates nothing")
+
+    def test_a_run_in_flight_is_warned_about_with_the_open_threads(self):
+        self.commit()
+        self.start_watcher()
+        self.a_thread_in_a_run()
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        nvim.lua(FAKE_SELECT)
+
+        nvim.keys("<leader>rD")
+
+        wait_for("the question", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["title"], "1 thread still open · 1 run still working. Mark Done anyway?")
+        self.release_agent()
+
+    def test_undoing_done_asks_nothing_even_with_threads_open(self):
+        nvim = self.a_review_with_an_open_thread()
+        self.api("PUT", "/api/done", {"done": True})
+        wait_for("done", lambda: nvim.status() == self.done_note())
+        nvim.lua(FAKE_SELECT)
+
+        nvim.keys("<leader>rD")
+
+        wait_for("not done", lambda: not self.done()["done"])
+        self.assertIsNone(nvim.menu())
+
+    # Errors ------------------------------------------------------------------------
+
+    def test_a_409_and_a_403_are_shown_as_the_api_says(self):
+        nvim = self.an_open_review()
+        for message in ("another branch is checked out: go back to feature to mark it Done",
+                        "only a reviewer marks a review Done"):
+            self.stub_put_done(nvim, message)
+            nvim.command("messages clear")
+
+            nvim.keys("<leader>rD")
+
+            wait_for("the API's own words", lambda: message in nvim.messages())
+            self.assertFalse(self.done()["done"])
+            self.assertEqual(nvim.status(), self.LIVE)
+
+    def test_with_no_review_open_it_says_so_and_asks_nothing(self):
+        self.commit()
+        self.start_watcher()
+        nvim = self.nvim()
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rD")
+
+        wait_for("the message", lambda: "No review is open: open it to mark it Done" in nvim.messages())
+        self.assertFalse(self.done()["done"])
+
+    def test_a_stopped_watcher_is_said(self):
+        nvim = self.an_open_review()
+        self.stop_watcher()
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rD")
+
+        wait_for("the error", lambda: "No difftate is running for" in nvim.messages())
+
+    def test_a_watcher_that_has_no_done_route_shows_no_done_and_no_error(self):
+        nvim = self.an_open_review()
+        nvim.lua("require('difftate.api').request = (function(real) return function(watcher, method, path, on_answer, payload)"
+                 " if path == '/api/done' then vim.schedule(function() on_answer(nil, { message = 'GET /api/done: 404' }) end) return end"
+                 " return real(watcher, method, path, on_answer, payload) end end)(require('difftate.api').request)")
+        nvim.command("messages clear")
+
+        time.sleep(1)  # some polls
+
+        self.assertEqual(nvim.status(), self.LIVE)
+        self.assertNotIn("404", nvim.messages())
+
+    # The key -----------------------------------------------------------------------
+
+    def test_the_key_comes_from_opts_keys_and_false_maps_none(self):
+        nvim = self.nvim(opts={"keys": {"done": "<leader>rd"}})
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rD', 'n')"), "")
+        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>rd', 'n')"), "")
+        unmapped = self.nvim(opts={"keys": {"done": False}})
+        self.assertEqual(unmapped.lua("return vim.fn.maparg('<leader>rD', 'n')"), "")
+
+    def test_a_key_another_plugin_mapped_stays_its_and_it_says_which_option_to_change(self):
+        nvim = self.nvim(before="vim.keymap.set('n', '<leader>rD', '<cmd>echo \"mine\"<cr>', { desc = 'Mine' })")
+
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rD', 'n')"), '<Cmd>echo "mine"<CR>')
+        self.assertIn("<leader>rD is already mapped (Mine): set opts.keys.done to another key", nvim.messages())
+
+    def test_the_done_key_changes_no_option_or_key_of_the_reviewers_window_or_buffer(self):
+        nvim = self.a_review_with_an_open_thread()
+        nvim.lua(FAKE_SELECT)
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+
+        nvim.keys("<leader>rD")  # the question
+        wait_for("the question", lambda: nvim.menu())
+        nvim.pick(1)  # marks it
+        wait_for("done", lambda: self.done()["done"])
+        nvim.keys("<leader>rD")  # undoes it
+        wait_for("not done", lambda: not self.done()["done"])
+
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+
+
+@needs(MISSING_GITSIGNS)
 class WhenTheReviewApiFails(NeovimHarness, unittest.TestCase):
     def test_a_stopped_watcher_shows_an_error_and_keeps_the_float_and_its_text(self):
         nvim = self.an_open_review()
@@ -2051,13 +2276,6 @@ class WhenTheReviewApiFails(NeovimHarness, unittest.TestCase):
         self.assertEqual(nvim.compose_float()["lines"], ["Refused"])
         self.assertEqual([t["id"] for t in self.api("GET", "/api/threads")], [tid], "nothing was posted")
         self.release_agent()
-
-    def a_thread_in_a_run(self):
-        """A live thread whose run is still going (the fake agent waits to be released)."""
-        tid = self.open_thread("Why an f-string here?")["id"]
-        wait_for("a working progress note", lambda: self.note(tid, "progress", "Working"))
-        return tid
-
 
 def screen_row(screen, text, after=0):
     """The first row of <screen> (from the row <after>) that is <text>: a line of the file after the signs
