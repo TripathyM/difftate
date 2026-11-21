@@ -332,8 +332,8 @@ class OpeningTheReview(NeovimHarness, unittest.TestCase):
 
         wait_for("gitsigns on the base", lambda: nvim.gitsigns_base() == self.head(ref="main"))
         wait_for("the review's hunk", lambda: nvim.hunks() == [[1, 1]])
-        self.assertEqual(nvim.status(), "review open · git signs show changes since main")
-        self.assertIn("review open · git signs show changes since main", nvim.messages())
+        self.assertEqual(nvim.status(), "review open · live · git signs show changes since main")
+        self.assertIn("review open · live · git signs show changes since main", nvim.messages())
 
     def test_nvim_plus_difftate_open_opens_the_review_at_start_up(self):
         self.commit()
@@ -356,7 +356,7 @@ class OpeningTheReview(NeovimHarness, unittest.TestCase):
         nvim.command("DifftateOpen")
 
         wait_for("gitsigns on the worktree's base", lambda: nvim.gitsigns_base() == self.head(folder, "main"))
-        self.assertEqual(nvim.status(), "review open · git signs show changes since feature")
+        self.assertEqual(nvim.status(), "review open · live · git signs show changes since feature")
 
 
 @needs(MISSING_NVIM)
@@ -369,7 +369,7 @@ class WithoutGitsigns(NeovimHarness, unittest.TestCase):
         nvim.command("DifftateOpen")
 
         wait_for("the review to open", lambda: nvim.status() != "")
-        self.assertEqual(nvim.status(), "review open · gitsigns isn't loaded: no git signs for changes since main")
+        self.assertEqual(nvim.status(), "review open · live · gitsigns isn't loaded: no git signs for changes since main")
 
 
 @needs(MISSING_GITSIGNS)
@@ -405,7 +405,7 @@ class ClosingTheReview(NeovimHarness, unittest.TestCase):
         nvim.command("DifftateStatus")
 
         self.assertEqual(nvim.messages().strip().split("\n"), [
-            "review open · git signs show changes since main",
+            "review open · live · git signs show changes since main",
             "Review closed: git signs show changes since the index again",
             "No review is open"])
 
@@ -423,7 +423,7 @@ class WhileTheReviewIsOpen(NeovimHarness, unittest.TestCase):
         git(self.repo, self.env, "merge", "-q", "--no-edit", "main")
 
         wait_for("gitsigns on the new merge-base", lambda: nvim.gitsigns_base() == self.head(ref="main"))
-        self.assertEqual(nvim.status(), "review open · git signs show changes since main")
+        self.assertEqual(nvim.status(), "review open · live · git signs show changes since main")
 
     def test_requests_never_block_the_editor_even_when_the_watcher_hangs(self):
         self.commit()
@@ -452,7 +452,7 @@ class WhileTheReviewIsOpen(NeovimHarness, unittest.TestCase):
         nvim = self.an_open_review()
         self.stop_watcher()
         wait_for("the message", lambda: "difftate stopped answering" in nvim.messages())
-        self.assertEqual(nvim.status(), "review open · git signs show changes since main")
+        self.assertEqual(nvim.status(), "review open · live · git signs show changes since main")
         nvim.command("DifftateClose")
         nvim.command("messages clear")
 
@@ -524,7 +524,8 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
         nvim = self.nvim(extra_rtp=[FAKE_WHICH_KEY], opts={"keys": {
             "toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT", "comment": "<leader>gC", "add_comment": "<leader>gA",
             "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG",
-            "threads": "<leader>gP", "files": "<leader>gF", "next": "<leader>gN", "previous": "<leader>gB"}})
+            "threads": "<leader>gP", "files": "<leader>gF", "next": "<leader>gN", "previous": "<leader>gB",
+            "mode": "<leader>gM", "submit": "<leader>gU"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -535,7 +536,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
 
         self.assertEqual(after["options"], before["options"])
         self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG",
-                                                                 "n  rs", "n  rf", "n ]r", "n [r"})
+                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rS"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -1717,6 +1718,298 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         nvim.keys("q")
 
         self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+
+
+@needs(MISSING_GITSIGNS)
+class ReviewModeAndSubmit(NeovimHarness, unittest.TestCase):
+    LIVE = "review open · live · git signs show changes since main"
+
+    def batched_note(self, held):
+        return f"review open · batched · {held} held · git signs show changes since main"
+
+    def a_review_with_threads(self, count=2, before=None):
+        """A batched review open in Neovim with <count> held threads (on app.py's line 2, then 1, ...)."""
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.held = [self.a_thread(f"Held thread {n}", line=1 + n % 2) for n in range(count)]
+        nvim = self.nvim(before=before)
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+        return nvim
+
+    def mode(self):
+        return self.api("GET", "/api/mode")
+
+    def no_run_started(self):
+        time.sleep(1.5)  # the watcher looks every 0.2 s
+        self.assertEqual((self.prompts(), self.dispatches()), ([], 0))
+
+    # The mode ----------------------------------------------------------------
+
+    def test_leader_rM_switches_a_live_review_to_batched_and_back_and_the_note_shows_each(self):
+        nvim = self.an_open_review()
+        self.assertEqual(nvim.status(), self.LIVE)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rM")
+
+        wait_for("the message", lambda: "Batched: comments are held until you submit" in nvim.messages())
+        self.assertEqual(self.mode(), {"mode": "batched", "held": []})
+        self.assertEqual(nvim.status(), self.batched_note(0))
+        nvim.keys("<leader>rM")
+        wait_for("the message", lambda: "Live: comments go to the coding agent as you write them" in nvim.messages())
+        self.assertEqual(self.mode(), {"mode": "live", "held": []})
+        self.assertEqual(nvim.status(), self.LIVE)
+        self.no_run_started()
+
+    def test_switching_to_live_submits_what_is_held_and_says_how_many(self):
+        nvim = self.a_review_with_threads(2)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rM")
+
+        wait_for("the message", lambda: "Live: 2 held threads submitted to the coding agent" in nvim.messages())
+        self.assertEqual(self.mode(), {"mode": "live", "held": []})
+        self.assertEqual({self.state(tid) for tid in self.held} & {"held"}, set(), "none is held any more")
+        wait_for("one run for both", lambda: len(self.prompts()) == 1)
+        self.assertEqual(nvim.status(), self.LIVE)
+        self.release_agent()
+
+    def test_one_held_thread_is_said_in_the_singular(self):
+        nvim = self.a_review_with_threads(1)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rM")
+
+        wait_for("the message", lambda: "Live: 1 held thread submitted to the coding agent" in nvim.messages())
+        self.release_agent()
+
+    def test_the_mode_the_reviewer_sees_is_the_review_apis_not_a_flag_of_the_plugins(self):
+        nvim = self.an_open_review()
+        self.batched()  # another viewer switched it
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rM")  # so this switches it back to live
+
+        wait_for("the message", lambda: "Live: comments go to the coding agent as you write them" in nvim.messages())
+        self.assertEqual(self.mode()["mode"], "live")
+
+    # Submit ------------------------------------------------------------------
+
+    def test_leader_rS_submits_the_held_threads_as_one_run_and_the_review_stays_batched(self):
+        nvim = self.a_review_with_threads(2)
+        self.assertIn("held until you submit", "\n".join(nvim.threads()[0]["lines"]))
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rS")
+
+        wait_for("the message", lambda: "Submitted 2 held threads" in nvim.messages())
+        self.assertEqual(self.mode(), {"mode": "batched", "held": []})
+        wait_for("one run", lambda: len(self.prompts()) == 1)
+        wait_for("the note", lambda: nvim.status() == self.batched_note(0))
+        wait_for("the threads no longer held", lambda: all(
+            "held until you submit" not in "\n".join(t["lines"]) for t in nvim.threads()))
+        self.release_agent()
+
+    def test_submitting_one_held_thread_is_said_in_the_singular(self):
+        nvim = self.a_review_with_threads(1)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rS")
+
+        wait_for("the message", lambda: any(line.endswith("Submitted 1 held thread") for line in nvim.messages().splitlines()))
+        self.release_agent()
+
+    def test_submitting_with_nothing_held_says_so_and_starts_no_run(self):
+        nvim = self.an_open_review()
+        self.batched()
+        wait_for("the note", lambda: nvim.status() == self.batched_note(0))
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rS")
+
+        wait_for("the message", lambda: "Nothing is held: nothing to submit" in nvim.messages())
+        self.assertEqual(self.mode(), {"mode": "batched", "held": []})
+        self.no_run_started()
+
+    def test_submitting_a_live_review_says_it_is_not_batched_and_starts_no_run(self):
+        nvim = self.an_open_review()
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rS")
+
+        wait_for("the message", lambda: "Not a batched review: nothing to submit" in nvim.messages())
+        self.assertEqual(self.mode(), {"mode": "live", "held": []})
+        self.no_run_started()
+
+    # Held --------------------------------------------------------------------
+
+    def test_a_comment_in_a_batched_review_is_held_inline_and_in_the_threads_picker(self):
+        nvim = self.an_open_review(nvim=None)
+        self.batched()
+        wait_for("the note", lambda: nvim.status() == self.batched_note(0))
+        nvim.command("2")
+        nvim.lua(FAKE_SELECT)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rc")
+        wait_for("the compose float", lambda: nvim.compose_float())
+        nvim.write_text("Name the greeting first")
+        nvim.command("write")
+
+        wait_for("the message", lambda: "Comment held until you submit" in nvim.messages())
+        thread = self.drawn(nvim, [2])[0]
+        self.assertIn("● open · held until you submit", thread["lines"][0])
+        self.assertEqual(self.api("GET", "/api/threads")[0]["state"], "held")
+        wait_for("the count in the note", lambda: nvim.status() == self.batched_note(1))
+        nvim.keys("<leader>rs")
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], ["● app.py:2 · open · held until you submit · Name the greeting first"])
+        self.no_run_started()
+
+    def test_a_comment_in_a_thread_of_a_batched_review_is_held_too_and_in_a_live_one_it_is_sent(self):
+        nvim = self.a_review_with_threads(1)
+        nvim.command("1")  # where the one held thread is
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>ra")
+        wait_for("the compose float", lambda: nvim.compose_float())
+        nvim.write_text("And again")
+        nvim.command("write")
+
+        wait_for("the message", lambda: "Comment held until you submit" in nvim.messages())
+        nvim.keys("<leader>rM")
+        wait_for("live", lambda: self.mode()["mode"] == "live")
+        nvim.command("messages clear")
+        nvim.keys("<leader>ra")
+        wait_for("the compose float", lambda: nvim.compose_float())
+        nvim.write_text("Now live")
+        nvim.command("write")
+
+        wait_for("the message", lambda: "Comment sent" in nvim.messages())
+        self.release_agent()
+
+    def test_a_comment_in_a_live_review_says_it_was_sent_not_held(self):
+        nvim = self.an_open_review()
+        nvim.command("2")
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rc")
+        wait_for("the compose float", lambda: nvim.compose_float())
+        nvim.write_text("Live comment")
+        nvim.command("write")
+
+        wait_for("the message", lambda: "Comment sent" in nvim.messages())
+        self.assertNotIn("held", nvim.messages())
+        self.release_agent()
+
+    def test_the_note_follows_threads_held_or_submitted_in_another_viewer(self):
+        nvim = self.an_open_review()
+        self.batched()
+        wait_for("batched", lambda: nvim.status() == self.batched_note(0))
+
+        self.a_thread("From the browser", line=1)
+        self.a_thread("Another", line=2)
+        wait_for("two held", lambda: nvim.status() == self.batched_note(2))
+        self.api("POST", "/api/submit", {})
+        wait_for("none held", lambda: nvim.status() == self.batched_note(0))
+        self.api("PUT", "/api/mode", {"mode": "live"})
+        wait_for("live", lambda: nvim.status() == self.LIVE)
+        self.release_agent()
+
+    def test_the_note_without_gitsigns_names_the_mode_too(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        nvim = self.nvim(gitsigns=False)
+
+        nvim.command("DifftateOpen")
+
+        wait_for("the note", lambda: nvim.status() != "")
+        self.assertEqual(nvim.status(), "review open · batched · 0 held · gitsigns isn't loaded: no git signs for changes since main")
+
+    # Where there is nothing to do ----------------------------------------------
+
+    def test_with_no_review_open_each_key_says_so_and_asks_nothing(self):
+        self.commit()
+        self.start_watcher()
+        nvim = self.nvim()
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rM")
+        nvim.keys("<leader>rS")
+
+        wait_for("both messages", lambda: "No review is open: open it to switch the review mode" in nvim.messages()
+                 and "No review is open: open it to submit" in nvim.messages())
+        self.assertEqual(self.mode(), {"mode": "live", "held": []})
+
+    def test_a_stopped_watcher_is_said_for_each_key(self):
+        nvim = self.an_open_review()
+        self.stop_watcher()
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rM")
+        nvim.keys("<leader>rS")
+
+        wait_for("the error", lambda: nvim.messages().count("No difftate is running for") == 2)
+
+    def test_a_refusal_from_the_api_is_shown_as_it_says(self):
+        nvim = self.an_open_review()
+        self.batched()
+        wait_for("the note", lambda: nvim.status() == self.batched_note(0))
+        nvim.lua("require('difftate.api').request = (function(real) return function(watcher, method, path, on_answer, payload)"
+                 " if method == 'POST' and path == '/api/submit' then"
+                 " vim.schedule(function() on_answer(nil, { message = 'only a reviewer submits a review' }) end) return end"
+                 " return real(watcher, method, path, on_answer, payload) end end)(require('difftate.api').request)")
+        self.a_thread("Held", line=1)
+        wait_for("the note", lambda: nvim.status() == self.batched_note(1))
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rS")
+
+        wait_for("the API's own words", lambda: "only a reviewer submits a review" in nvim.messages())
+        self.assertEqual(len(self.mode()["held"]), 1, "nothing was submitted")
+
+    # The keys ----------------------------------------------------------------
+
+    def test_the_keys_come_from_opts_keys_and_false_maps_none(self):
+        nvim = self.nvim(opts={"poll_ms": 200, "keys": {"mode": "<leader>rm", "submit": "<leader>ru"}})
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rM', 'n')"), "")
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rS', 'n')"), "")
+        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>rm', 'n')"), "")
+        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>ru', 'n')"), "")
+        unmapped = self.nvim(opts={"keys": {"mode": False, "submit": False}})
+        self.assertEqual(unmapped.lua("return vim.fn.maparg('<leader>rM', 'n')"), "")
+        self.assertEqual(unmapped.lua("return vim.fn.maparg('<leader>rS', 'n')"), "")
+
+    def test_a_key_another_plugin_mapped_stays_its_and_it_says_which_option_to_change(self):
+        nvim = self.nvim(before="vim.keymap.set('n', '<leader>rM', '<cmd>echo \"mine\"<cr>', { desc = 'Mine' });"
+                                "vim.keymap.set('n', '<leader>rS', '<cmd>echo \"also\"<cr>', { desc = 'Also' })")
+
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rM', 'n')"), '<Cmd>echo "mine"<CR>')
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rS', 'n')"), '<Cmd>echo "also"<CR>')
+        self.assertIn("<leader>rM is already mapped (Mine): set opts.keys.mode to another key", nvim.messages())
+        self.assertIn("<leader>rS is already mapped (Also): set opts.keys.submit to another key", nvim.messages())
+
+    def test_the_mode_and_submit_keys_change_no_option_or_key_of_the_reviewers_window_or_buffer(self):
+        nvim = self.a_review_with_threads(2)
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+
+        nvim.keys("<leader>rS")  # submits the two
+        wait_for("the submit", lambda: self.mode()["held"] == [])
+        nvim.keys("<leader>rS")  # nothing held
+        wait_for("the message", lambda: "Nothing is held" in nvim.messages())
+        nvim.keys("<leader>rM")  # batched -> live
+        wait_for("live", lambda: self.mode()["mode"] == "live")
+        nvim.keys("<leader>rS")  # not batched
+        wait_for("the message", lambda: "Not a batched review" in nvim.messages())
+        nvim.keys("<leader>rM")  # live -> batched
+        wait_for("batched", lambda: self.mode()["mode"] == "batched")
+
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+        self.release_agent()
 
 
 @needs(MISSING_GITSIGNS)
