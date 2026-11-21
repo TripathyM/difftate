@@ -580,7 +580,10 @@ function M.export()
   local path = "/api/export?folder=" .. vim.uri_encode(review.watcher.top, "rfc3986")
   api.request(review.watcher, "GET", path, function(text, err)
     if not text then
-      return err.missing and failed(review, err) or say(export.failed_message(err.message), vim.log.levels.ERROR)
+      if err.missing then
+        return failed(review, err)
+      end
+      return say(export.failed_message(err.message), vim.log.levels.ERROR)
     end
     local problem = export.problem(text)
     if problem then

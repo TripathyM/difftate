@@ -2789,6 +2789,7 @@ class ReviewExport(NeovimHarness, unittest.TestCase):
         nvim.keys("<leader>rE")
 
         wait_for("the message", lambda: "No difftate is running for" in nvim.messages())
+        self.assertNotIn("Could not export", nvim.messages(), "said once, in the usual words")
 
     def test_nothing_is_exported_when_no_review_is_open(self):
         nvim = self.nvim()
