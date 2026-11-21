@@ -124,8 +124,12 @@ The agent that replies to threads and changes the code, such as Claude Code or O
 _Avoid_: agent (alone: a reviewing agent is an agent too), implementer, tool, bot, AI, model
 
 **Agent list**:
-The machine's list of coding agents that can reply, in `agents.toml` in the difftate folder: each a name, the coding agent (Claude Code or OpenCode), the command with the environment it needs, and an optional model, plus the default. The repository's agent (`difftate agent <name>`, in its git config) is one of them; a run uses the repository's, else the default, as they are when it starts.
+The machine's list of coding agents that can reply, in `agents.toml` in the difftate folder: each a name, the coding agent (Claude Code or OpenCode), the command with the environment it needs, and an optional model, plus the default. The repository's agent (`difftate agent <name>`, in its git config) is one of them; a run uses the review's agent override, else the repository's, else the default, as they are when it starts.
 _Avoid_: agents file, config (alone)
+
+**Agent override**:
+The agent from the agent list a reviewer chose for one review, from any viewer; they can clear it. It is a review event, kept in the review and its review history like the review mode, and only a reviewer sets it. A run in flight keeps its agent: the next run uses the override.
+_Avoid_: agent setting (that is the repository's), account switch
 
 **Agent session**:
 The coding agent's conversation: during one run, which it starts fresh with the review's threads and commit messages and ends with; or one the reviewer runs, given an export.

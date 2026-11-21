@@ -6,7 +6,7 @@ rules and returns events: facts in the past tense. apply() is the only place
 the Review's state changes, so a Review rebuilt from its events is the same
 Review. There is one event type for each line type the local store keeps
 ("opened", "comment", "note", "status", "moved", "outdated", "run",
-"run-ended", "viewed", "done", "undone", "done-cleared", "mode", "submitted").
+"run-ended", "viewed", "done", "undone", "done-cleared", "mode", "agent", "submitted").
 
 The rules:
   1. Only a reviewer opens a thread or changes its thread status, and only
@@ -18,8 +18,9 @@ The rules:
   5. Only a reviewer marks the review Done or undoes it. It is Done at one
      commit: a new commit on the branch clears it, and a thread, a comment or
      a status change doesn't.
-  6. Only a reviewer changes the review mode or submits. A review is live
-     until a reviewer changes it.
+  6. Only a reviewer changes the review mode, chooses the agent of the review
+     or submits. A review is live, with no agent of its own, until a reviewer
+     changes it.
 A thread moves with its code, or is outdated, only as difftate finds it
 (move_with_code). A file stays viewed until its diff in the changeset
 changes. While another branch is checked out, nothing that reads the code
@@ -319,6 +320,15 @@ class ModeChanged:
 
 
 @dataclass(frozen=True)
+class AgentOverridden:
+    """A reviewer chose <agent> to reply in this review, whatever the repository
+    says, or cleared the choice with "" (the "agent" line). The name is the
+    machine's agent list's: the core doesn't know the list."""
+    agent: str
+    time: str
+
+
+@dataclass(frozen=True)
 class ReviewSubmitted:
     """A reviewer submitted the review: its held <threads> wait for a run now
     (the "submitted" line). A change from batched to live with threads held
@@ -333,7 +343,8 @@ def submitted(events: List[Event]) -> Tuple[str, ...]:
 
 
 Event = Union[ThreadOpened, CommentAdded, NoteWritten, ThreadStatusChanged, ThreadMoved, ThreadOutdated,
-              RunStarted, RunEnded, FileViewed, DoneMarked, DoneUndone, DoneCleared, ModeChanged, ReviewSubmitted]
+              RunStarted, RunEnded, FileViewed, DoneMarked, DoneUndone, DoneCleared, ModeChanged,
+              AgentOverridden, ReviewSubmitted]
 
 
 def lasting(events: List[Event]) -> List[Event]:
@@ -391,6 +402,7 @@ class Review:
         self._done: Optional[DoneMark] = None  # the mark that made the review Done, while it is
         self._last_mark: Optional[DoneMark] = None  # the last Done mark of any kind
         self._mode = LIVE  # a review with no mode event is live
+        self._agent = ""  # the agent chosen for this review: "" for none
         self._submitted_at = 0  # the last comment's place in the review at the latest submit
         self._answered: Set[str] = set()  # ids of comments a reply on their held thread answered
 
@@ -725,6 +737,22 @@ class Review:
         self.apply(event)
         return events + [event]
 
+    # ── Agent override ───────────────────────────────────────────────────────
+    def agent_override(self) -> str:
+        """The agent a reviewer chose for this review: "" when none."""
+        return self._agent
+
+    def set_agent_override(self, author: str, agent: str) -> List[Event]:
+        """<author> chooses <agent> to reply in this review, or "" to clear the
+        choice. Rule 6: only a reviewer does. Nothing when it is chosen already."""
+        if author != REVIEWER:
+            raise NotAllowed("only a reviewer chooses the agent of a review")
+        if agent == self._agent:
+            return []
+        event = AgentOverridden(agent, _now())
+        self.apply(event)
+        return [event]
+
     # ── Runs (Dispatch) ──────────────────────────────────────────────────────
     def start_run(self, thread_ids: List[str], in_prompt: Optional[Collection[str]] = None) -> List[Event]:
         """A run starts on the threads: every reviewer comment in them that no
@@ -800,6 +828,8 @@ class Review:
             kind = {DoneMarked: "done", DoneUndone: "undone", DoneCleared: "cleared"}[type(event)]
             self._last_mark = DoneMark(kind, event.time, event.commit)
             self._done = self._last_mark if kind == "done" else None
+        elif isinstance(event, AgentOverridden):
+            self._agent = event.agent
         elif isinstance(event, ReviewSubmitted):
             self._submitted_at = self._seq
         elif isinstance(event, ModeChanged):

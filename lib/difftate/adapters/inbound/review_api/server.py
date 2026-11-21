@@ -58,6 +58,15 @@ watcher serves. Naming another base switches the folder's review to it.
   PUT   /api/mode                       change it: {"mode", "author"?}: {"mode", "held", "submitted"
                                         (the ids of the threads a change to live submitted: [] for
                                         none)}. "author" must be "reviewer", as for Done
+  GET   /api/agent                      the agent that replies in this review: {"agent" (its name),
+                                        "source" ("review": a reviewer chose it for this review;
+                                        "repository"; "machine": the default), "names" (the machine's
+                                        agent list)}
+  PUT   /api/agent                      choose the agent for this review: {"agent": <a name on the
+                                        list> or null (or "") to clear the choice, "author"?}: the
+                                        same answer. "author" must be "reviewer" (the default): anyone
+                                        else gets 403. 400 for a name that isn't on the list, naming the
+                                        list. A run in progress keeps its agent: the next run uses it
   GET   /api/export[?reply_folder=<folder>]
                                         the review as text (text/plain), for an agent session
                                         the reviewer starts: its commit messages, every thread in
@@ -155,8 +164,8 @@ from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ....core.review.model import AUTHOR_OF, DIFFTATE, REVIEWER, Conflict, CouldNotRead, NotAllowed, NotFound
-from .json_format import (NOTE_KINDS, BadRequest, anchor_from_json, changeset_json, comment_json, done_json,
-                          fields, mode_json, need, need_bool, need_kind, need_mode, need_status, need_text,
+from .json_format import (NOTE_KINDS, BadRequest, agent_json, anchor_from_json, changeset_json, comment_json, done_json,
+                          fields, mode_json, need, need_agent, need_bool, need_kind, need_mode, need_status, need_text,
                           reviewer_name, submitted_json, thread_json)
 
 MAX_BODY = 1 << 20
@@ -320,8 +329,10 @@ class ReviewApi:
     the review served now, with its ports bound: main.bind_review: about
     ({"id", "branch", "base"}), list_threads, open_thread, add_comment,
     edit_note, set_status, mark_viewed, list_viewed, set_done, read_done,
-    set_mode, read_mode, submit, export, changeset and checked_out), shown (a
-    ShownView) and root (the folder's top). It raises the core's NotFound for a
+    set_mode, read_mode, set_agent_override, read_agent_override, submit,
+    export, changeset and checked_out), shown (a ShownView), root (the
+    folder's top), who_replies() (who replies: see agent_json) and check_agent(name)
+    (raises the core's NotFound for a name not on the list). It raises the core's NotFound for a
     folder it won't serve, or a base that isn't one.
 
     It writes its token and where it runs (api.json: port, pid) to <home>, the
@@ -464,6 +475,16 @@ def _handler(folders, token, login, default_reviewer, page_url, on_stop):
         mode, author = need_mode(need(p, "mode")), fields(p).get("author", "reviewer")
         return submitted_json(s.review.set_mode(author, mode))
 
+    def put_agent(s, q, p):
+        agent, author = need_agent(need(p, "agent")), fields(p).get("author", "reviewer")
+        if agent:
+            try:
+                s.check_agent(agent)
+            except NotFound as e:  # a name that isn't on the list is the request's fault
+                raise BadRequest(str(e)) from e
+        s.review.set_agent_override(author, agent)
+        return agent_json(s.who_replies())
+
     def get_export(s, q, p):
         folder = (q.get("reply_folder") or [None])[0]
         if folder is not None and not folder.strip():
@@ -499,6 +520,8 @@ def _handler(folders, token, login, default_reviewer, page_url, on_stop):
         ("PUT", r"/api/done", put_done, True),
         ("GET", r"/api/mode", lambda s, q, p: mode_json(s.review.read_mode()), True),
         ("PUT", r"/api/mode", put_mode, True),
+        ("GET", r"/api/agent", lambda s, q, p: agent_json(s.who_replies()), True),
+        ("PUT", r"/api/agent", put_agent, True),
         ("POST", r"/api/submit", post_submit, True),
         ("GET", r"/api/export", get_export, True),
         ("POST", r"/api/launch", post_launch, True),

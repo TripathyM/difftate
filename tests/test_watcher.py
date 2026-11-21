@@ -1629,6 +1629,79 @@ class WhoRepliesTest(Harness, unittest.TestCase):
         wait_for("the replied state", lambda: self.state(tid) == "replied")
         self.assertEqual(self.ran("work"), 1)
 
+    def test_a_reviewers_override_replaces_the_repositorys_agent_until_it_is_cleared(self):
+        self.difftate_agent("work")
+        self.start_watcher()
+        self.assertEqual(self.api("GET", "/api/agent"),
+                         {"agent": "work", "source": "repository", "names": ["personal", "work"]})
+
+        self.assertEqual(self.api("PUT", "/api/agent", {"agent": "personal"})["source"], "review")
+        self.ask("With the override?")
+        self.assertEqual((self.ran("personal"), self.ran("work")), (1, 0))
+        self.assertIn("dispatching to personal", self.terminal())
+
+        self.assertEqual(self.api("PUT", "/api/agent", {"agent": None}),
+                         {"agent": "work", "source": "repository", "names": ["personal", "work"]})
+        self.ask("With it cleared?")
+        self.assertEqual((self.ran("personal"), self.ran("work")), (1, 1))
+
+    def test_the_override_is_of_one_review_and_stays_in_its_store_across_a_restart(self):
+        self.start_watcher()
+        self.api("PUT", "/api/agent", {"agent": "work"})
+        git(self.repo, self.env, "checkout", "-q", "-b", "other")
+        wait_for("the review of other", lambda: self.api("GET", "/api/review")["branch"] == "other")
+        self.assertEqual(self.api("GET", "/api/agent")["source"], "machine", "another review has none")
+
+        git(self.repo, self.env, "checkout", "-q", "feature")
+        wait_for("the review of feature", lambda: self.api("GET", "/api/review")["branch"] == "feature")
+        self.stop_watcher()
+        self.start_watcher()
+
+        self.assertEqual(self.api("GET", "/api/agent"),
+                         {"agent": "work", "source": "review", "names": ["personal", "work"]})
+
+    def test_a_name_that_is_not_listed_is_refused_naming_the_list(self):
+        self.start_watcher()
+
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            self.api("PUT", "/api/agent", {"agent": "wrok"})
+
+        self.assertEqual(refused.exception.code, 400)
+        body = refused.exception.read().decode()
+        refused.exception.close()
+        self.assertIn("no agent 'wrok'", body)
+        self.assertIn("personal, work", body)
+        self.assertEqual(self.api("GET", "/api/agent")["source"], "machine")
+
+    def test_an_override_the_list_lost_is_still_shown_and_can_be_cleared_and_its_run_fails_naming_the_list(self):
+        self.start_watcher()
+        self.api("PUT", "/api/agent", {"agent": "work"})
+        self.write_agent_list('default = "personal"\n[agents.personal]\ntool = "claude"\ncmd = "%s"\n' % FAKE_AGENT)
+
+        self.assertEqual(self.api("GET", "/api/agent"),
+                         {"agent": "work", "source": "review", "names": ["personal"]})
+        tid = self.open_thread("Why an f-string here?")["id"]
+        final = wait_for("the failed progress note", lambda: self.note(tid, "progress", "no reply"))
+        self.assertIn("review's agent 'work' is not in the agent list", final)
+
+        self.assertEqual(self.api("PUT", "/api/agent", {"agent": ""})["agent"], "personal")
+
+    def test_a_run_in_flight_keeps_its_agent_and_the_next_run_uses_the_new_one(self):
+        os.remove(os.path.join(self.dirs["personal"], "go"))  # the run waits for its agent
+        self.start_watcher()
+        tid = self.open_thread("Why an f-string here?")["id"]
+        wait_for("the run to start", lambda: self.ran("personal") == 1)
+
+        self.api("PUT", "/api/agent", {"agent": "work"})
+        with open(os.path.join(self.dirs["personal"], "go"), "w"):
+            pass
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        self.assertEqual((self.ran("personal"), self.ran("work")), (1, 0))
+
+        self.api("POST", f"/api/threads/{tid}/comments", {"body": "And now?"})
+        wait_for("the second run", lambda: self.ran("work") == 1)
+        self.assertEqual(self.ran("personal"), 1)
+
     def test_a_run_whose_command_isnt_found_fails_with_a_clear_note(self):
         self.start_watcher()
         self.write_agent_list('default = "lost"\n[agents.lost]\ntool = "claude"\ncmd = "no-such-agent-binary"\n')

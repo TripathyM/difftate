@@ -14,6 +14,7 @@ With DIFFTATE_TEST_NVIM_REQUIRED=1 (CI's Neovim job) they fail instead.
 """
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -27,7 +28,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import nvim_rpc  # noqa: E402
-from test_watcher import Harness, git, wait_for, with_folder  # noqa: E402
+from test_watcher import FAKE_AGENT, Harness, git, wait_for, with_folder  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INIT = os.path.join(ROOT, "tests", "nvim", "init.lua")
@@ -85,6 +86,10 @@ def needs(missing):
 def vim_string(text):
     """<text> as a Vim script string in double quotes."""
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+
+
+# The agent part of the status note (" · agent fake"): most tests are about the rest of the note
+AGENT_PART = re.compile(r" · agent [^·\n]*?(?= ·|$|\n)", re.M)
 
 
 class Neovim:
@@ -155,11 +160,17 @@ class Neovim:
         self.lua(f"vim.cmd('redraw'); vim.api.nvim_feedkeys(vim.keycode({vim_string(keys)}), 'mx', false)")
 
     def messages(self):
-        return self.lua("return vim.fn.execute('messages')")
+        """:messages, with the agent part of the status note left out like status() does."""
+        return AGENT_PART.sub("", self.lua("return vim.fn.execute('messages')"))
 
-    def status(self):
+    def note(self):
         """The plugin's status note, as a statusline shows it."""
         return self.lua("return require('difftate').status()")
+
+    def status(self):
+        """The status note without its agent part (" · agent fake"): ReviewAgent says what that part is, the
+        other tests say what the rest is."""
+        return AGENT_PART.sub("", self.note())
 
     def gitsigns_base(self):
         """The base gitsigns diffs every buffer against: None for the index."""
@@ -393,7 +404,7 @@ class OpeningTheReview(NeovimHarness, unittest.TestCase):
         wait_for("gitsigns on the base", lambda: nvim.gitsigns_base() == self.head(ref="main"))
         wait_for("the review's hunk", lambda: nvim.hunks() == [[1, 1]])
         self.assertEqual(nvim.status(), "review open · live · git signs show changes since main")
-        self.assertIn("review open · live · git signs show changes since main", nvim.messages())
+        wait_for("the note in the messages", lambda: "review open · live · git signs show changes since main" in nvim.messages())
 
     def test_nvim_plus_difftate_open_opens_the_review_at_start_up(self):
         self.commit()
@@ -585,7 +596,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
             "toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT", "comment": "<leader>gC", "add_comment": "<leader>gA",
             "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG",
             "threads": "<leader>gP", "files": "<leader>gF", "next": "<leader>gN", "previous": "<leader>gB",
-            "mode": "<leader>gM", "submit": "<leader>gU", "done": "<leader>gD", "export": "<leader>gX", "viewed": "<leader>gV", "views": "<leader>gW"}})
+            "mode": "<leader>gM", "agent": "<leader>gH", "submit": "<leader>gU", "done": "<leader>gD", "export": "<leader>gX", "viewed": "<leader>gV", "views": "<leader>gW"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -596,7 +607,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
 
         self.assertEqual(after["options"], before["options"])
         self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG",
-                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rS", "n  rD", "n  rE", "n  rv", "n  rV"})
+                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rA", "n  rS", "n  rD", "n  rE", "n  rv", "n  rV"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -2072,6 +2083,146 @@ class ReviewModeAndSubmit(NeovimHarness, unittest.TestCase):
 
         self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
         self.release_agent()
+
+
+@needs(MISSING_GITSIGNS)
+class ReviewAgent(NeovimHarness, unittest.TestCase):
+    """GET and PUT /api/agent in Neovim: the agent in the statusline note, and the picker on <leader>rA that sets
+    the review's own agent, or clears it. Two agents run the same fake with different folders: which one ran
+    shows in the folder it wrote to."""
+
+    def setUp(self):
+        super().setUp()
+        self.dirs = {name: os.path.join(self.tmp, f"agent-{name}") for name in ("alpha", "beta")}
+        for folder in self.dirs.values():
+            os.makedirs(folder)
+            with open(os.path.join(folder, "go"), "w"):
+                pass
+        self.write_agent_list('default = "alpha"\n' + "".join(
+            f'[agents.{name}]\ntool = "claude"\ncmd = "{FAKE_AGENT}"\nenv = {{ FAKE_AGENT_DIR = "{folder}" }}\n'
+            for name, folder in self.dirs.items()))
+
+    def ran(self, name):
+        try:
+            with open(os.path.join(self.dirs[name], "prompts")) as f:
+                return sum(1 for _ in f)
+        except FileNotFoundError:
+            return 0
+
+    def chosen(self):
+        return self.api("GET", "/api/agent")
+
+    def expected_note(self, agent, source=""):
+        return f"review open · live · agent {agent}{source} · git signs show changes since main"
+
+    def test_the_note_names_the_agent_that_replies_and_says_when_it_is_this_reviews_own(self):
+        nvim = self.an_open_review()
+        wait_for("the note", lambda: nvim.note() == self.expected_note("alpha"))
+
+        self.api("PUT", "/api/agent", {"agent": "beta"})  # another viewer's choice
+        wait_for("the note", lambda: nvim.note() == self.expected_note("beta", " (this review)"))
+
+        self.api("PUT", "/api/agent", {"agent": ""})
+        wait_for("the note", lambda: nvim.note() == self.expected_note("alpha"))
+
+    def test_leader_rA_lists_the_agents_and_choosing_one_sets_it_for_this_review_only(self):
+        nvim = self.an_open_review()
+        nvim.lua(FAKE_SELECT)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rA")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["title"], "Review agent")
+        self.assertEqual(nvim.menu()["lines"], ["Default: alpha (the machine's)", "alpha", "beta"])
+        nvim.pick(3)
+        wait_for("the message", lambda: "beta replies in this review, from the next run" in nvim.messages())
+        self.assertEqual(self.chosen(), {"agent": "beta", "source": "review", "names": ["alpha", "beta"]})
+        self.assertEqual(nvim.note(), self.expected_note("beta", " (this review)"))
+        self.open_thread("Why an f-string here?")
+        wait_for("beta's run", lambda: self.ran("beta") == 1)
+        self.assertEqual(self.ran("alpha"), 0)
+
+    def test_the_picker_marks_the_reviews_own_agent_and_its_first_entry_clears_the_choice(self):
+        nvim = self.an_open_review()
+        nvim.lua(FAKE_SELECT)
+        self.api("PUT", "/api/agent", {"agent": "beta"})
+        wait_for("the note", lambda: "(this review)" in nvim.note())
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rA")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], ["Default (clears this review's choice)", "alpha", "beta (this review)"])
+        nvim.pick(1)
+        wait_for("the message", lambda: "The review's own agent is cleared: alpha replies, from the next run" in nvim.messages())
+        self.assertEqual(self.chosen()["source"], "machine")
+        wait_for("the note", lambda: nvim.note() == self.expected_note("alpha"))
+
+    def test_choosing_what_the_review_has_already_asks_nothing_of_the_watcher(self):
+        nvim = self.an_open_review()
+        nvim.lua(FAKE_SELECT)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rA")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.pick(1)  # the default, which it has
+
+        wait_for("the message", lambda: "The review has no agent of its own: alpha replies" in nvim.messages())
+        self.assertEqual(self.chosen()["source"], "machine")
+
+    def test_with_no_review_open_it_says_so(self):
+        nvim = self.nvim(before=FAKE_SELECT)
+
+        nvim.keys("<leader>rA")
+
+        self.assertIn("No review is open: open it to choose the agent", nvim.messages())
+        self.assertIsNone(nvim.menu())
+
+    def test_a_list_that_cant_be_read_leaves_the_note_without_an_agent_and_the_key_says_why(self):
+        self.write_agent_list("this is not toml [")
+        self.commit()
+        self.start_watcher()
+        nvim = self.nvim(before=FAKE_SELECT)
+        self.attached(nvim)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rA")
+
+        wait_for("the message", lambda: "could not read the agent list" in nvim.messages())
+        self.assertIsNone(nvim.menu())
+        self.assertNotIn(" · agent ", nvim.note())
+
+    def test_the_key_comes_from_opts_keys_and_false_maps_none(self):
+        nvim = self.nvim(opts={"keys": {"agent": "<leader>rg"}})
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rA', 'n')"), "")
+        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>rg', 'n')"), "")
+        off = self.nvim(opts={"keys": {"agent": False}})
+        self.assertEqual(off.lua("return vim.fn.maparg('<leader>rA', 'n')"), "")
+
+    def test_a_key_another_plugin_mapped_stays_its_and_it_says_which_option_to_change(self):
+        nvim = self.nvim(before="vim.keymap.set('n', '<leader>rA', '<cmd>echo \"mine\"<cr>', { desc = 'Mine' })")
+
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rA', 'n')"), '<Cmd>echo "mine"<CR>')
+        self.assertIn("<leader>rA is already mapped (Mine): set opts.keys.agent to another key", nvim.messages())
+
+    def test_the_key_and_the_note_change_no_option_or_key_of_the_reviewers_window_or_buffer(self):
+        nvim = self.an_open_review(nvim=self.nvim(before=FAKE_SNACKS))
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+
+        nvim.keys("<leader>rA")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.pick(3)
+        wait_for("beta", lambda: self.chosen()["agent"] == "beta")
+        nvim.keys("<leader>rA")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.pick(1)
+        wait_for("alpha", lambda: self.chosen()["agent"] == "alpha")
+
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
 
 
 @needs(MISSING_GITSIGNS)

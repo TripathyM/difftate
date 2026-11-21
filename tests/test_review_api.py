@@ -418,7 +418,20 @@ class ServedOnFakes:
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         self.review = bind_review(store or MemoryStore(), code or FakeCode({"app.py": "x = 1\n"}),
                                   FakeHistory(), {"id": "r", "branch": "feature", "base": "main"})
-        entry = SimpleNamespace(review=self.review, shown=ShownView(view, a_fake_view), root=tmp)
+        self.agents = ["personal", "work"]  # the machine's agent list; its default is the first
+        self.repository_agent = ""
+
+        def agent():
+            chosen = self.review.read_agent_override()
+            return SimpleNamespace(name=chosen or self.repository_agent or self.agents[0], names=self.agents,
+                                   source="review" if chosen else "repository" if self.repository_agent else "machine")
+
+        def check_agent(name):
+            if name not in self.agents:
+                raise NotFound(f"no agent '{name}' in the agent list: {', '.join(self.agents)}")
+
+        entry = SimpleNamespace(review=self.review, shown=ShownView(view, a_fake_view), root=tmp,
+                                who_replies=agent, check_agent=check_agent)
 
         def folders(folder, base):
             if folder != tmp:
@@ -717,6 +730,67 @@ class TheExportRoute(ServedOnFakes, unittest.TestCase):
         self.serve()
 
         self.assertEqual(self.ask("POST", "/api/export", {})[0], 405)
+
+
+class TheAgentRoutes(ServedOnFakes, unittest.TestCase):
+    """GET and PUT /api/agent: who replies in this review, and the reviewer's
+    choice of another agent from the machine's list."""
+
+    def test_it_names_the_agent_where_it_comes_from_and_the_list(self):
+        self.serve()
+
+        self.assertEqual(self.ask("GET", "/api/agent"),
+                         (200, {"agent": "personal", "source": "machine", "names": ["personal", "work"]}))
+        self.repository_agent = "work"
+        self.assertEqual(self.ask("GET", "/api/agent"),
+                         (200, {"agent": "work", "source": "repository", "names": ["personal", "work"]}))
+
+    def test_a_reviewer_chooses_an_agent_for_the_review_and_clears_the_choice(self):
+        self.serve()
+        self.repository_agent = "work"
+
+        self.assertEqual(self.ask("PUT", "/api/agent", {"agent": "personal"}),
+                         (200, {"agent": "personal", "source": "review", "names": ["personal", "work"]}))
+        self.assertEqual(self.ask("GET", "/api/agent")[1]["source"], "review")
+        self.assertEqual(self.review.read_agent_override(), "personal")
+
+        for clear in (None, ""):
+            self.ask("PUT", "/api/agent", {"agent": "personal"})
+            self.assertEqual(self.ask("PUT", "/api/agent", {"agent": clear}),
+                             (200, {"agent": "work", "source": "repository", "names": ["personal", "work"]}))
+            self.assertEqual(self.review.read_agent_override(), "")
+
+    def test_a_name_that_is_not_on_the_list_is_400_naming_the_list_and_changes_nothing(self):
+        self.serve()
+        self.ask("PUT", "/api/agent", {"agent": "work"})
+
+        status, answer = self.ask("PUT", "/api/agent", {"agent": "wrok"})
+
+        self.assertEqual(status, 400)
+        self.assertIn("no agent 'wrok'", answer["error"])
+        self.assertIn("personal, work", answer["error"])
+        self.assertEqual(self.review.read_agent_override(), "work")
+
+    def test_only_a_reviewer_chooses_it(self):
+        self.serve()
+
+        for author in ("agent", "difftate"):
+            with self.subTest(author=author):
+                self.assertEqual(self.ask("PUT", "/api/agent", {"agent": "work", "author": author})[0], 403)
+        self.assertEqual(self.review.read_agent_override(), "")
+
+    def test_a_request_that_names_no_agent_is_400(self):
+        self.serve()
+
+        for payload in (None, {}, {"agent": 1}, {"agent": ["work"]}):
+            with self.subTest(payload=payload):
+                self.assertEqual(self.ask("PUT", "/api/agent", payload)[0], 400)
+
+    def test_it_needs_the_token(self):
+        self.serve()
+
+        self.assertEqual(self.ask("GET", "/api/agent", token=False)[0], 401)
+        self.assertEqual(self.ask("PUT", "/api/agent", {"agent": "work"}, token=False)[0], 401)
 
 
 class TheModeRoutes(ServedOnFakes, unittest.TestCase):

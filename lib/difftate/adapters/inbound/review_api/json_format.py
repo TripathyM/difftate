@@ -58,6 +58,15 @@ def need_status(status: Any) -> str:
     return status
 
 
+def need_agent(agent: Any) -> str:
+    """An agent name, or "" (or null) to clear the review's choice."""
+    if agent is None:
+        return ""
+    if not isinstance(agent, str):
+        raise BadRequest("agent must be an agent's name, or null to clear it")
+    return agent.strip()
+
+
 def need_mode(mode: Any) -> str:
     if mode not in MODES:
         raise BadRequest(f"mode must be {' or '.join(MODES)}")
@@ -167,3 +176,9 @@ def submitted_json(status: ModeStatus) -> Dict[str, Any]:
     """The review mode as a change left it, with the ids of the threads it
     submitted ([] for none)."""
     return dict(mode_json(status), submitted=list(status.submitted))
+
+
+def agent_json(choice: Any) -> Dict[str, Any]:
+    """The agent that replies: its name, where that comes from (review,
+    repository or machine) and the names on the machine's list."""
+    return {"agent": choice.name, "source": choice.source, "names": list(choice.names)}

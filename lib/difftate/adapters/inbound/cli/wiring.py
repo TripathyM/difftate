@@ -47,13 +47,17 @@ class Wiring:
         or OSError.
     coding_agent(cwd, folder): the coding agent whose runs work in <cwd> and
         may not write the review's <folder>: its name and start(prompt, threads),
-        which chooses the agent when a run starts (the repository's, else the
-        machine's default, from the agent list as it is then) and raises the
+        which chooses the agent when a run starts (the review's own choice, else
+        the repository's, else the machine's default, from the agent list as it
+        is then; loop() tells it which review) and raises the
         core's CouldNotStart for an agent that isn't listed or whose command
         isn't found.
-    agent_choice(cwd): the agent that replies in the repository of <cwd>: an
-        object with name, source ("repository" or "machine"), names (the
+    agent_choice(cwd, override): the agent that replies in the repository of
+        <cwd>, or <override> ("" for none), a review's own choice: an object
+        with name, source ("review", "repository" or "machine"), names (the
         list's) and path (the list's file); raises the core's NotFound.
+    check_agent(name): <name> is an agent a run can start; raises the core's
+        NotFound, naming the list, when it isn't.
     set_agent(cwd, name): set the repository's agent; raises the core's
         NotFound for a name not in the list or a command not found.
     base(cwd, given): the review's base; raises the core's NotFound.
@@ -78,7 +82,8 @@ class Wiring:
     start_watcher: Callable[[Sequence[str]], Callable[[], bool]]
     reply_in_run: Callable[[str, str, str], str]
     coding_agent: Callable[[str, str], Any]
-    agent_choice: Callable[[str], Any]
+    agent_choice: Callable[..., Any]  # (cwd, override="")
+    check_agent: Callable[[str], None]
     set_agent: Callable[[str, str], None]
     base: Callable[[str, str], str]
     need_view: Callable[[str, Any], str]
