@@ -114,7 +114,8 @@ The note a run keeps on each of its threads: its steps while it works, then one 
 _Avoid_: status comment, checklist
 
 **Watcher**:
-The difftate process for one checked-out folder of a repository: the repository itself, or one of its worktrees. It opens the review of the branch checked out there, watches its threads, and dispatches runs until it is stopped. It follows that branch: between runs, it moves to that branch's review.
+The one difftate process on a machine. For each checked-out folder it is asked about (a repository itself, or one of its worktrees), it opens the review of the branch checked out there, watches its threads, and dispatches runs in that folder. It follows each folder's branch: between runs, it moves to that branch's review.
+_Avoid_: server, daemon, watcher of a folder
 
 ### Coding agent
 
@@ -133,13 +134,9 @@ _Avoid_: handoff, dump, snapshot
 ### Viewing
 
 **Viewer**:
-Where the reviewer reads a review and writes comments: the browser, the Neovim viewer or the Herdr viewer.
+Where the reviewer reads a review and writes comments: the browser or the Neovim viewer. A viewer never starts the watcher.
 _Avoid_: UI, frontend, client
 
 **Neovim viewer**:
 The viewer inside the reviewer's own Neovim: the review's threads shown on the real files, which the reviewer reads, edits and moves through with their own editor.
-_Avoid_: Review tab, nvim plugin
-
-**Herdr viewer**:
-The viewer inside the Herdr app that imitates a code editor, for one repository's review. It gets no new features.
-_Avoid_: Review tab (the Herdr tab of that name now runs the Neovim viewer)
+_Avoid_: Review tab (the Herdr tab of that name runs the Neovim viewer), nvim plugin
