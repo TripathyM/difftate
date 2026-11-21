@@ -8,6 +8,7 @@ local float = require("difftate.float")
 local git = require("difftate.git")
 local gitsigns = require("difftate.gitsigns")
 local look = require("difftate.look")
+local mode = require("difftate.mode")
 local nav = require("difftate.nav")
 local pick = require("difftate.pick")
 local threads = require("difftate.threads")
@@ -83,6 +84,23 @@ local function read_threads(review, on_done)
   end)
 end
 
+-- Read the review mode and the held threads of the open <review> (GET /api/mode), for the
+-- statusline note; then on_done(answer), or on_done(nil, err) when the review API didn't answer
+-- (what was known stays: the poll says when difftate stopped).
+local function read_mode(review, on_done)
+  api.request(review.watcher, "GET", "/api/mode", function(answer, err)
+    if not answer then
+      on_done(nil, err)
+      return
+    end
+    if current == review then
+      review.mode = { mode = answer.mode, held = answer.held or {} }
+      vim.cmd("redrawstatus") -- the note is the statusline's, which redraws on its own timers
+    end
+    on_done(answer)
+  end)
+end
+
 -- One poll of the open <review>: the review API (the base may change after a
 -- checkout), the merge-base, then the threads. One at a time: a slow one is skipped over.
 local function poll(review)
@@ -111,8 +129,10 @@ local function poll(review)
       end
       review.base_error = why
       look.redraw() -- gitsigns may have moved its hunks since: it only says so when their counts change
-      read_threads(review, function()
-        review.polling = false
+      read_mode(review, function()
+        read_threads(review, function()
+          review.polling = false
+        end)
       end)
     end)
   end)
@@ -167,10 +187,15 @@ function M.open(cwd, opts)
           say(why, vim.log.levels.WARN)
           return
         end
-        say(M.status())
-        look.show(watcher.top, opts.diff)
-        read_threads(review, function()
-          start_polling(review, opts.poll_ms)
+        read_mode(review, function()
+          if current ~= review then
+            return
+          end
+          say(M.status())
+          look.show(watcher.top, opts.diff)
+          read_threads(review, function()
+            start_polling(review, opts.poll_ms)
+          end)
         end)
       end)
     end)
@@ -274,12 +299,15 @@ local function send(review, method, path, payload, done)
 end
 
 -- A compose float's send function: post <payload> (a function of the text) to <path>, say
--- <sent> when the review API took it
+-- <sent> when the review API took it (that the comment is held when the review is batched)
 local function poster(review, method, path, payload, sent)
   return function(body, done)
     send(review, method, path, payload(body), function(ok, why)
       if ok then
-        say(sent)
+        -- The mode as it is now, not as the last poll saw it: another viewer may have changed it
+        read_mode(review, function(answer)
+          say(mode.comment_message(answer or review.mode, sent))
+        end)
       end
       done(ok, why)
     end)
@@ -391,6 +419,69 @@ function M.set_status(status)
       function(ok, why)
         say(ok and (reopening and "Reopened" or "Resolved") or why, ok and vim.log.levels.INFO or vim.log.levels.ERROR)
       end)
+  end)
+end
+
+-- The review mode and Submit ---------------------------------------------------
+
+local function failed(review, err)
+  say(err.missing and no_watcher(review.watcher.top) or err.message, vim.log.levels.ERROR)
+end
+
+-- Take what a change of mode or a Submit answered ({ mode, held, submitted }) as the mode now,
+-- and draw the threads again: what was held is no longer
+local function changed(review, answer)
+  if current == review then
+    review.mode = { mode = answer.mode, held = answer.held or {} }
+    vim.cmd("redrawstatus")
+    refresh(review)
+  end
+end
+
+--- Switch the review between live and batched. Changing to live submits what is held: it says how many.
+function M.toggle_mode()
+  local review = open_review("switch the review mode")
+  if not review then
+    return
+  end
+  -- From the mode the review API has now, so a switch made in another viewer isn't switched back blindly
+  read_mode(review, function(now, err)
+    if not now then
+      return failed(review, err)
+    end
+    api.request(review.watcher, "PUT", "/api/mode", function(answer, err)
+      if not answer then
+        return failed(review, err)
+      end
+      say(mode.changed_message(answer.mode, answer.submitted))
+      changed(review, answer)
+    end, { mode = mode.other(now) })
+  end)
+end
+
+--- Submit the held threads of a batched review: they go to the coding agent as one run. With none held,
+--- or in a live review, it says so and sends nothing.
+function M.submit()
+  local review = open_review("submit")
+  if not review then
+    return
+  end
+  read_mode(review, function(now, err)
+    if not now then
+      return failed(review, err)
+    end
+    local problem = mode.submit_problem(now)
+    if problem then
+      say(problem)
+      return
+    end
+    api.request(review.watcher, "POST", "/api/submit", function(answer, err)
+      if not answer then
+        return failed(review, err)
+      end
+      say(mode.submitted_message(answer.submitted))
+      changed(review, answer)
+    end, vim.empty_dict()) -- {}, not []: the API wants an object
   end)
 end
 
@@ -578,10 +669,13 @@ function M.status()
   if not (current and current.merge_base) then
     return ""
   end
+  local parts = { "review open", mode.label(current.mode) }
   if not current.signs then
-    return ("review open · gitsigns isn't loaded: no git signs for changes since %s"):format(current.base)
+    table.insert(parts, ("gitsigns isn't loaded: no git signs for changes since %s"):format(current.base))
+  else
+    table.insert(parts, ("git signs show changes since %s"):format(current.base))
   end
-  return ("review open · git signs show changes since %s"):format(current.base)
+  return table.concat(parts, " · ")
 end
 
 return M
