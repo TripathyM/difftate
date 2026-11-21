@@ -42,6 +42,7 @@ local defaults = {
     submit = "<leader>rS", -- submit the held threads of a batched review
     done = "<leader>rD", -- mark the review Done at the branch's commit, or undo it
     export = "<leader>rE", -- copy the review's export to the clipboard, for an agent session
+    viewed = "<leader>rv", -- mark the current file viewed, or not
   },
 }
 
@@ -66,6 +67,7 @@ local actions = {
   submit = { function() review.submit() end, "Submit the held threads" },
   done = { function() review.toggle_done() end, "Mark the review Done, or undo it" },
   export = { function() review.export() end, "Copy the review's export for an agent session" },
+  viewed = { function() review.toggle_viewed() end, "Mark this file viewed, or not" },
 }
 
 M.config = vim.deepcopy(defaults)
