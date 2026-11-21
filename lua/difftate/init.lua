@@ -45,6 +45,7 @@ local defaults = {
     export = "<leader>rE", -- copy the review's export to the clipboard, for an agent session
     views = "<leader>rV", -- choose the view: all changes, the last commits, uncommitted, unstaged
     viewed = "<leader>rv", -- mark the current file viewed, or not
+    browser = "<leader>rB", -- open this folder's review in the browser (a single-use link)
   },
 }
 
@@ -72,6 +73,7 @@ local actions = {
   export = { function() review.export() end, "Copy the review's export for an agent session" },
   views = { function() review.pick_view() end, "Choose the view of the review" },
   viewed = { function() review.toggle_viewed() end, "Mark this file viewed, or not" },
+  browser = { function() review.browser(vim.fn.getcwd()) end, "Open the review in the browser" },
 }
 
 M.config = vim.deepcopy(defaults)

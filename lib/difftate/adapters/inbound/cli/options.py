@@ -6,6 +6,7 @@ USAGE = """difftate — Open the review of this folder, starting the watcher (on
 
 Usage:
   difftate [<view>] [--base <branch>] [--open browser|nvim|both]
+  difftate browser [<view>] [--base <branch>]   the same, opening the review in the browser
   difftate stop
   difftate restart
   difftate agent [<name>]

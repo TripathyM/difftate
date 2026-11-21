@@ -747,6 +747,29 @@ function M.export()
   end, nil, true)
 end
 
+-- Browser -----------------------------------------------------------------------
+
+--- Open the review of the checked-out folder <cwd> is in in the browser (<leader>rB): the link the
+--- watcher gives for its page (POST /api/launch), with a new single-use launch code, opened with
+--- vim.ui.open. It starts nothing and needs no review open here: with no watcher it says so.
+function M.browser(cwd)
+  api.find(cwd, function(watcher, why)
+    if not watcher then
+      return say(why, vim.log.levels.WARN)
+    end
+    api.request(watcher, "POST", "/api/launch", function(answer, err)
+      if not answer then
+        return say(err.missing and no_watcher(watcher.top) or err.message, vim.log.levels.WARN)
+      end
+      local handle, open_err = vim.ui.open(answer.url)
+      if not handle and open_err then
+        return say("Could not open the browser: " .. open_err, vim.log.levels.WARN)
+      end
+      say("Opened the review in the browser")
+    end)
+  end)
+end
+
 -- Viewed files --------------------------------------------------------------------
 
 --- Mark the file of the current buffer viewed, or not (PUT /api/viewed), as the browser's checkbox does:
