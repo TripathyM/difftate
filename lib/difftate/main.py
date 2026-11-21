@@ -3,10 +3,13 @@ them to the core's use cases with functools.partial, and runs the command
 line, which starts the review API and the loop.
 
 It is the only module that imports both the core and the adapters
-(tests/test_core_boundary.py). difftate-watch.py calls main().
+(tests/test_core_boundary.py). difftate-watch.py (the watcher), bin/difftate, bin/dt-export and
+bin/dt-reply call it.
 """
 import functools
 import os
+import subprocess
+import sys
 import threading
 from types import SimpleNamespace
 
@@ -58,6 +61,14 @@ REPORTER = Terminal             # for reporting
 CODING_AGENTS = {a.name: a for a in (ClaudeCode, OpenCode)}  # for asking the coding agent: --tool picks one
 VIEWERS = {"browser": cli.open_browser, "nvim": cli.open_in_nvim}  # where the review opens: --open picks
 # ═══════════════════════════════════════════════════════════════════════════
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))  # this checkout of difftate
+
+
+def difftate_home():
+    """The difftate folder of the machine: the watcher's running files, token, lock
+    and log, and the review history. $DIFFTATE_HOME, else ~/.difftate."""
+    return os.environ.get("DIFFTATE_HOME") or os.path.join(os.path.expanduser("~"), ".difftate")
 
 
 def bind_review(store, code, history, about):
@@ -116,36 +127,55 @@ def open_review(folder, cwd, branch, base, on_tamper):
     store = STORE.open(folder, branch, base, on_tamper=on_tamper)
     about = store.review()
     repo = {"path": os.path.realpath(cwd), "remote": REPOSITORY.remote_url(cwd)}
-    history = REVIEW_HISTORY({"repo": repo, "branch": branch, "base": base, "review": about["id"]})
+    history = REVIEW_HISTORY({"repo": repo, "branch": branch, "base": base, "review": about["id"]},
+                             os.path.join(difftate_home(), "history"))
     # The snapshots of a review whose folder was removed can go
     REPOSITORY.forget_kept_snapshots(cwd, STORE.review_ids(folder))
     return bind_review(store, CODE_READER(cwd, base, branch, about["id"]), history, about)
 
 
-def coding_agent(tool, cmd, model, cwd, folder, watcher_folder):
-    """The coding agent <tool>: its runs work in <cwd>. A run may not write
-    the review's <folder>, this watcher's <watcher_folder> (its lock and the
-    review API's running files: one folder with <folder> in the repository
-    itself) or any other checked-out folder's watcher folder, and may not read
-    any of their review API tokens, this watcher's first. The checked-out
-    folders are listed again for each run, so a worktree added since is
-    covered."""
+def coding_agent(tool, cmd, model):
+    """The coding agent <tool>, started with <cmd> (its default when empty)
+    and <model>: .for_folder(cwd, folder) is the one whose runs work in <cwd>.
+    A run may not write the review's <folder>, or the difftate folder of the
+    machine (the watcher's running files, its log and the review history), and may not read
+    that or the one review API token. Raises the core's CouldNotStart when the
+    command isn't found."""
     chosen = CODING_AGENTS[tool]
+    found = find_command(cmd or chosen.default_cmd)
 
-    def off_limits():
-        watchers = REPOSITORY.watcher_folders(cwd)
-        return OffLimits(keep_out=list(dict.fromkeys([folder, watcher_folder, *watchers])),
-                         secrets=list(dict.fromkeys(token_file(f) for f in [watcher_folder, *watchers])))
+    def for_folder(cwd, folder):
+        home = difftate_home()
 
-    return chosen(find_command(cmd or chosen.default_cmd), model, cwd=cwd, off_limits=off_limits)
+        def off_limits():
+            return OffLimits(keep_out=[folder, home], secrets=[token_file(home), home])
+
+        return chosen(found, model, cwd=cwd, off_limits=off_limits)
+
+    return SimpleNamespace(name=tool, cmd=found, for_folder=for_folder)
 
 
-def review_api(review, watcher_folder, root, view, check, on_switch):
-    """The review API, with its running files and token in <watcher_folder>. A
-    reviewer who gives no reviewer name is the user: the repository's git
-    user.name, read at each request."""
-    shown = ShownView(view, check, on_switch, open_in=cli.where_to_open(VIEWERS))
-    return ReviewApi(review, watcher_folder, root, shown, default_reviewer=functools.partial(REPOSITORY.user_name, root))
+def shown_view(view, check, on_switch):
+    return ShownView(view, check, on_switch)
+
+
+def review_api(folders, home, on_stop):
+    """The review API, with its running files and token in <home>. A reviewer
+    who gives no reviewer name is the user: the repository's git user.name, read
+    at each request."""
+    return ReviewApi(folders, home, default_reviewer=REPOSITORY.user_name, on_stop=on_stop)
+
+
+def start_watcher(args):
+    """Start the watcher in the background, with its own session (closing the
+    terminal doesn't stop it) and its log in the difftate folder as its output;
+    a function that says whether it is still alive."""
+    home = difftate_home()
+    os.makedirs(home, mode=0o700, exist_ok=True)
+    with open(os.path.join(home, "log"), "a", encoding="utf-8") as log:
+        process = subprocess.Popen([sys.executable, os.path.join(ROOT, "difftate-watch.py"), *args],
+                                   stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+    return lambda: process.poll() is None
 
 
 def loop(review, coding_agent):
@@ -155,8 +185,13 @@ def loop(review, coding_agent):
     def switch_review(review):
         dispatch.review = review
 
+    def busy():
+        """A run holds the review, or the last run's end isn't kept yet (poll)."""
+        return dispatch.run is not None or bool(dispatch.unended and not dispatch.unended())
+
     return cli.Loop(
         poll=functools.partial(poll, dispatch, coding_agent, report),
+        busy=busy,
         recover_runs=functools.partial(recover_interrupted_runs, report=report),
         stop=functools.partial(stop_run, dispatch, report),
         switch_review=switch_review,
@@ -186,15 +221,18 @@ def wiring():
     return cli.Wiring(
         coding_agents=list(CODING_AGENTS),
         viewers=VIEWERS,
+        difftate_home=difftate_home(),
         difftate_folder=REPOSITORY.difftate_folder,
         running_watcher=running_watcher,
         ask_running_watcher=ask_running_watcher,
+        start_watcher=start_watcher,
         reply_in_run=reply_in_run,
         coding_agent=coding_agent,
         base=REPOSITORY.base,
         need_view=REPOSITORY.need_view,
         review_branch=REPOSITORY.review_branch,
         open_review=open_review,
+        shown_view=shown_view,
         review_api=review_api,
         loop=loop,
         done_status=done_status,
@@ -202,19 +240,24 @@ def wiring():
 
 
 def main(argv):
-    """difftate-watch.py: `status` reads a review's Done state; anything else
-    starts the watcher."""
+    """difftate-watch.py: the watcher, which `difftate` starts in the background."""
+    return cli.run_watcher(argv, wiring())
+
+
+def difftate_main(argv):
+    """bin/difftate: `status` reads a review's Done state; anything else opens
+    the folder's review (starting the watcher if none runs) or stops the watcher."""
     if argv[:1] == ["status"]:
         return cli.run_status(argv[1:], wiring())
-    return cli.run(argv, wiring())
+    return cli.run_difftate(argv, wiring())
 
 
 def export_main(argv):
-    """bin/dt-export: print the export of a review, asked of its watcher."""
+    """bin/dt-export: print the export of a review, asked of the watcher."""
     return cli.run_export(argv, wiring())
 
 
 def reply_main(argv):
     """bin/dt-reply: a run's answer into its folder, or an agent session's,
-    posted through the review API of its folder's watcher."""
+    posted through the review API of the watcher."""
     return cli.run_reply(argv, wiring())

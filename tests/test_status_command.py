@@ -17,17 +17,15 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from test_watcher import WATCHER, Harness, git, wait_for  # noqa: E402
+from test_watcher import DIFFTATE, Harness, git, wait_for  # noqa: E402
 
-DIFFTATE_ZSH = os.path.join(ROOT, "difftate.zsh")
-ZSH = shutil.which("zsh")
 TIME = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$"
 
 
 class TheStatusCommand(Harness, unittest.TestCase):
     def status(self, *args, cwd=None):
         """The command's result: (exit code, what it printed, what it said on stderr)."""
-        r = subprocess.run([sys.executable, WATCHER, "status", *args], cwd=cwd or self.repo, env=self.env,
+        r = subprocess.run([sys.executable, DIFFTATE, "status", *args], cwd=cwd or self.repo, env=self.env,
                            capture_output=True, text=True, timeout=60)
         return r.returncode, r.stdout, r.stderr
 
@@ -163,7 +161,7 @@ class TheStatusCommand(Harness, unittest.TestCase):
         wait_for("the clearing", lambda: [e for e in self.events() if e["type"] == "done-cleared"])
         self.stop_watcher()
 
-        history = os.path.join(self.home, ".difftate", "history")
+        history = os.path.join(self.difftate_home, "history")
         lines = []
         for name in sorted(os.listdir(history)):
             with open(os.path.join(history, name)) as f:
@@ -254,14 +252,15 @@ class TheStatusCommand(Harness, unittest.TestCase):
         self.assertIn("no-such-branch", out + err)
 
     # ── From the shell ───────────────────────────────────────────────────────
-    @unittest.skipUnless(ZSH, "zsh isn't installed")
-    def test_the_difftate_shell_function_runs_it_and_does_not_start_a_watcher(self):
-        r = subprocess.run([ZSH, "-c", f"source {DIFFTATE_ZSH}; difftate status --json --branch feature"],
+    def test_the_difftate_program_on_the_path_runs_it_and_does_not_start_a_watcher(self):
+        self.env["PATH"] = os.pathsep.join([os.path.join(ROOT, "bin"), self.env["PATH"]])
+        r = subprocess.run(["difftate", "status", "--json", "--branch", "feature"],
                            cwd=self.repo, env=self.env, capture_output=True, text=True, timeout=60)
 
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout)["branch"], "feature")
-        self.assertFalse(os.path.exists(os.path.join(self.repo, ".git", "difftate", "api.json")))
+        self.assertIsNone(self.running_pid())
+        self.assertFalse(os.path.exists(os.path.join(self.difftate_home, "api.json")))
 
 
 if __name__ == "__main__":

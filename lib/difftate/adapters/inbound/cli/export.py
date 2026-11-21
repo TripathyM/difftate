@@ -4,10 +4,10 @@
 
 The export is the review's commit messages, every thread in full, which
 threads need an answer, and how to reply (GLOSSARY.md, Export). It comes from
-the review API of the watcher of the checked-out folder the command runs in,
-or of <folder>: the watcher is found as a second `difftate` in that folder
-finds it (its own difftate folder, in its own git folder), never through the
-store, so the store keeps one writer (ADR 0006). Exporting changes no thread.
+the review API of the one watcher, naming the checked-out folder the command
+runs in, or <folder>: it is found in the difftate folder of the home, never
+through the store, so the store keeps one writer (ADR 0006). Exporting changes
+no thread.
 
 With a <folder>, the export's reply command names it (dt-reply --folder), as
 the session that reads it may run in another folder. Without one, the session
@@ -16,6 +16,10 @@ runs where the command did, and dt-reply finds the watcher from there.
 import os
 import sys
 import urllib.parse
+
+from .difftate import with_folder
+
+NOT_RUNNING = "No difftate is running: run `difftate` in a terminal"
 
 USAGE = """dt-export — Print the export of a review, for an agent session you start.
 
@@ -26,8 +30,8 @@ Prints the review's commit messages, every thread in full (open, resolved and
 dismissed, with comments, replies, thread status and thread state), which
 threads need an answer, and how to reply. It changes nothing.
 
-The review is that of the checked-out folder you run it in, or of <folder>: the
-one difftate is running in. One must be running there."""
+The review is that of the checked-out folder you run it in, or of <folder>. The
+watcher must be running (`difftate` in a terminal starts it)."""
 
 
 def run_export(argv, wiring, out=sys.stdout, err=sys.stderr):
@@ -45,16 +49,16 @@ def run_export(argv, wiring, out=sys.stdout, err=sys.stderr):
     if found is None:
         print(f"dt-export: {cwd} is not a git repository", file=err)
         return 1
-    _, watcher_folder, top = found
-    pid = wiring.running_watcher(watcher_folder)
+    top = found.root
+    pid = wiring.running_watcher(wiring.difftate_home)
     if not pid:
-        print(f"dt-export: no difftate is running for {top}: start it there, then run dt-export again", file=err)
+        print(NOT_RUNNING, file=err)
         return 1
-    path = "/api/export" + (f"?folder={urllib.parse.quote(top)}" if given else "")
+    path = with_folder("/api/export", top) + (f"&reply_folder={urllib.parse.quote(top)}" if given else "")
     try:
-        status, answer = wiring.ask_running_watcher(watcher_folder, "GET", path)
+        status, answer = wiring.ask_running_watcher(wiring.difftate_home, "GET", path)
     except (OSError, ValueError, KeyError) as e:
-        print(f"dt-export: difftate is running for {top} (pid {pid}), but it didn't answer ({e})", file=err)
+        print(f"dt-export: difftate is running (pid {pid}), but it didn't answer ({e})", file=err)
         return 1
     if status != 200 or not isinstance(answer, str):
         said = (answer or {}).get("error") if isinstance(answer, dict) else None

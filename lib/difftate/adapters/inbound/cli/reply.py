@@ -7,13 +7,15 @@ run's end gives it to Dispatch, which posts it: the run has no review API and no
 token (its sandbox denies it), so it never takes the other path, even when its
 folder is gone. Outside a run, in an agent session the reviewer started with an
 export (GLOSSARY.md, Export), the answer is posted through the review API of the
-watcher of the checked-out folder the command runs in, or of <folder>: found as
+watcher, naming the checked-out folder the command runs in, or <folder>: found as
 `dt-export` finds it. It never writes the store (ADR 0006), so it works only
 while that watcher runs. The answer is posted as a coding agent's reply, with no
 progress note, and changes no thread status.
 """
 import os
 import sys
+
+from .difftate import with_folder
 
 USAGE = """dt-reply — The coding agent's answer to a review thread.
 
@@ -26,8 +28,8 @@ shows them. Write only the answer: difftate posts it as a reply.
 
 Inside a difftate run (which sets DT_RUN_DIR) it leaves the answer for the run.
 In an agent session you started with dt-export, it posts the answer through the
-difftate running in the checked-out folder you run it in, or in <folder> (the
-export names it when you gave one): one must be running, or nothing is posted."""
+difftate watcher, naming the checked-out folder you run it in, or <folder> (the
+export names it when you gave one): it must be running, or nothing is posted."""
 
 
 class ReplyRefused(Exception):
@@ -89,13 +91,13 @@ def _reply_through_watcher(wiring, given, cwd, thread, body, err):
     if found is None:
         print(f"dt-reply: {where} is not a git repository", file=err)
         return None
-    _, watcher_folder, top = found
-    pid = wiring.running_watcher(watcher_folder)
+    top, home = found.root, wiring.difftate_home
+    pid = wiring.running_watcher(home)
     if not pid:
-        print(f"dt-reply: no difftate is running for {top}: start it there, then reply again; nothing was posted", file=err)
+        print("dt-reply: No difftate is running: run `difftate` in a terminal; nothing was posted", file=err)
         return None
     try:
-        status, threads = wiring.ask_running_watcher(watcher_folder, "GET", "/api/threads")
+        status, threads = wiring.ask_running_watcher(home, "GET", with_folder("/api/threads", top))
         if status != 200 or not isinstance(threads, list):
             print(f"dt-reply: difftate could not list the review's threads: {_said(threads) or status}; nothing was posted", file=err)
             return None
@@ -105,9 +107,9 @@ def _reply_through_watcher(wiring, given, cwd, thread, body, err):
                   else f"dt-reply: {thread!r} matches several threads", file=err)
             return None
         status, answer = wiring.ask_running_watcher(
-            watcher_folder, "POST", f"/api/threads/{matches[0]}/comments", {"kind": "reply", "body": body})
+            home, "POST", with_folder(f"/api/threads/{matches[0]}/comments", top), {"kind": "reply", "body": body})
     except (OSError, ValueError, KeyError) as e:
-        print(f"dt-reply: difftate is running for {top} (pid {pid}), but it didn't answer ({e}); nothing was posted", file=err)
+        print(f"dt-reply: difftate is running (pid {pid}), but it didn't answer ({e}); nothing was posted", file=err)
         return None
     if status != 200:
         print(f"dt-reply: difftate refused the reply: {_said(answer) or status}", file=err)

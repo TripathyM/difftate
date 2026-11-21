@@ -155,14 +155,14 @@ class TheReplyCommand(Harness, unittest.TestCase):
         self.assertEqual((code, err), (0, ""))
         self.assertEqual(self.state(tid), "replied")
 
-    def test_in_a_worktree_it_asks_the_watcher_of_that_worktree_not_the_repositorys(self):
+    def test_in_a_worktree_it_replies_in_that_worktrees_review_not_the_repositorys(self):
         tid = self.a_review_with_a_held_thread()
         worktree = self.add_worktree("other")
 
         code, out, err = self.reply(tid[:8], "Yes.", cwd=worktree)
 
         self.assertEqual((code, out), (1, ""))
-        self.assertIn(os.path.realpath(worktree), err)
+        self.assertIn(f"no thread {tid[:8]!r} in this review", err, "the worktree has its own review")
         self.assertEqual(self.comments(tid), [("comment", "Why an f-string?")])
 
     def test_the_command_the_export_names_works_from_the_session(self):
@@ -183,8 +183,7 @@ class TheReplyCommand(Harness, unittest.TestCase):
         code, out, err = self.reply("deadbeef", "Hello.")
 
         self.assertEqual((code, out), (1, ""))
-        self.assertIn("dt-reply: no difftate is running for", err)
-        self.assertIn(os.path.realpath(self.repo), err)
+        self.assertIn("No difftate is running: run `difftate` in a terminal", err)
         self.assertIn("nothing was posted", err)
 
     def test_after_the_watcher_stopped_it_fails_the_same_way(self):
@@ -194,7 +193,7 @@ class TheReplyCommand(Harness, unittest.TestCase):
         code, out, err = self.reply(tid[:8], "Hello.")
 
         self.assertEqual((code, out), (1, ""))
-        self.assertIn("no difftate is running", err)
+        self.assertIn("No difftate is running", err)
 
     def test_a_folder_that_is_not_a_git_repository_is_refused(self):
         code, out, err = self.reply("--folder", self.tmp, "deadbeef", "Hello.", cwd=self.tmp)
@@ -295,7 +294,8 @@ class AmbiguousThreadIds(unittest.TestCase):
             posted.append((path, payload))
             return 200, {}
 
-        wiring = SimpleNamespace(difftate_folder=lambda cwd: ("/r/.git/difftate", "/r/.git/difftate", "/r"),
+        wiring = SimpleNamespace(difftate_folder=lambda cwd: SimpleNamespace(reviews="/r/.git/difftate", root="/r"),
+                                 difftate_home="/home/.difftate",
                                  running_watcher=lambda folder: 1234, ask_running_watcher=ask)
         out, err = io.StringIO(), io.StringIO()
 

@@ -27,7 +27,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import nvim_rpc  # noqa: E402
-from test_watcher import Harness, git, wait_for  # noqa: E402
+from test_watcher import Harness, git, wait_for, with_folder  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INIT = os.path.join(ROOT, "tests", "nvim", "init.lua")
@@ -342,10 +342,45 @@ class OpeningTheReview(NeovimHarness, unittest.TestCase):
 
         nvim.command("DifftateOpen")
 
-        wait_for("the message", lambda: "No difftate is running for" in nvim.messages())
-        self.assertIn(os.path.realpath(self.repo), nvim.messages())
+        wait_for("the message", lambda: "No difftate is running: run `difftate` in a terminal" in nvim.messages())
+        self.assertIsNone(self.running_pid(), "and it started nothing")
         self.assertIsNone(nvim.gitsigns_base())
         self.assertEqual(nvim.status(), "")
+
+    def test_finding_the_one_watcher_or_none_changes_no_option_or_key_and_starts_nothing(self):
+        # #158 adds no key: the keys it adds are the ones of setting it up (test_setting_it_up_...).
+        # With no watcher, <leader>rr says so; nothing starts. With one, the first request naming
+        # a folder adds it, and the reviewer's window stays as it was.
+        self.commit()
+        nvim = self.nvim()
+        self.attached(nvim)
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+        settings = nvim.lua("return T.settings()")
+
+        nvim.keys("<leader>rr")
+
+        wait_for("the message", lambda: "No difftate is running: run `difftate` in a terminal" in nvim.messages())
+        self.assertIsNone(self.running_pid(), "Neovim never starts the watcher")
+        self.assertFalse(os.path.exists(os.path.join(self.difftate_home, "api.json")))
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+        self.assertEqual(nvim.lua("return T.settings()"), settings)
+
+        folder = self.add_worktree("tidy")
+        self.commit("Greet with hey", folder=folder)
+        self.start_watcher()  # a watcher that serves the repository, not the worktree yet
+        worktree = self.nvim(folder)
+        self.attached(worktree)
+        wtree_window = worktree.lua("return vim.api.nvim_get_current_win()")
+        wtree_before = worktree.lua(f"return T.snapshot({wtree_window})")
+
+        worktree.keys("<leader>rr")
+
+        wait_for("the review of the worktree", lambda: "git signs show changes since main" in worktree.status())
+        worktree.keys("<leader>rr")  # closed again
+        wait_for("gitsigns on the index", lambda: worktree.gitsigns_base() is None)
+        self.assertEqual(worktree.lua(f"return T.snapshot({wtree_window})"), wtree_before)
+        self.assertEqual(self.api("GET", "/api/review", folder=folder)["branch"], "tidy")
 
     def test_it_points_gitsigns_at_where_the_branch_left_the_base_and_says_so(self):
         self.commit()
@@ -374,7 +409,7 @@ class OpeningTheReview(NeovimHarness, unittest.TestCase):
         self.start_watcher()
         folder = self.add_worktree("tidy")
         self.commit("Greet with hey", folder=folder)
-        self.start_watcher_in(folder, "--base", "feature")
+        self.assertEqual(self.difftate("--base", "feature", folder=folder).returncode, 0)
         nvim = self.nvim(folder)
         self.attached(nvim)
 
@@ -1979,7 +2014,7 @@ class ReviewModeAndSubmit(NeovimHarness, unittest.TestCase):
         nvim.keys("<leader>rM")
         nvim.keys("<leader>rS")
 
-        wait_for("the error", lambda: nvim.messages().count("No difftate is running for") == 2)
+        wait_for("the error", lambda: nvim.messages().count("No difftate is running: run `difftate` in a terminal") == 2)
 
     def test_a_refusal_from_the_api_is_shown_as_it_says(self):
         nvim = self.an_open_review()
@@ -2213,7 +2248,7 @@ class ReviewDone(NeovimHarness, unittest.TestCase):
 
         nvim.keys("<leader>rD")
 
-        wait_for("the error", lambda: "No difftate is running for" in nvim.messages())
+        wait_for("the error", lambda: "No difftate is running: run `difftate` in a terminal" in nvim.messages())
 
     def test_a_watcher_that_has_no_done_route_shows_no_done_and_no_error(self):
         nvim = self.an_open_review()
@@ -2270,7 +2305,7 @@ class WhenTheReviewApiFails(NeovimHarness, unittest.TestCase):
 
         nvim.command("write")
 
-        wait_for("the error", lambda: "No difftate is running for" in nvim.messages())
+        wait_for("the error", lambda: "No difftate is running: run `difftate` in a terminal" in nvim.messages())
         self.assertEqual(nvim.compose_float()["lines"], ["Do not lose me"], "the float stays, with its text")
         nvim.keys("<Esc>q")
         nvim.keys("<leader>rc")
@@ -2690,7 +2725,7 @@ class ReviewExport(NeovimHarness, unittest.TestCase):
     """GET /api/export, put where the reviewer pastes it (the system clipboard, as the browser does)."""
 
     def export_text(self):
-        request = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/export?folder=" + urllib.parse.quote(os.path.realpath(self.repo)),
+        request = urllib.request.Request(f"http://127.0.0.1:{self.port}" + with_folder("/api/export", self.repo) + "&reply_folder=" + urllib.parse.quote(os.path.realpath(self.repo)),
                                          headers={"Authorization": f"Bearer {self.token}"})
         with urllib.request.urlopen(request, timeout=10) as r:
             return r.read().decode()
@@ -2722,7 +2757,7 @@ class ReviewExport(NeovimHarness, unittest.TestCase):
         text = self.clipboard(nvim)
         self.assertIn("Is this right?", text)
         self.assertEqual(text.rstrip("\n"), self.export_text().rstrip("\n"),
-                         "the same text as GET /api/export?folder=<the review's folder>: its reply command works from anywhere")
+                         "the same text as GET /api/export?reply_folder=<the review's folder>: its reply command works from anywhere")
 
     def test_the_message_counts_the_threads_that_need_an_answer(self):
         self.commit()
@@ -2809,7 +2844,7 @@ class ReviewExport(NeovimHarness, unittest.TestCase):
 
         nvim.keys("<leader>rE")
 
-        wait_for("the message", lambda: "No difftate is running for" in nvim.messages())
+        wait_for("the message", lambda: "No difftate is running: run `difftate` in a terminal" in nvim.messages())
         self.assertNotIn("Could not export", nvim.messages(), "said once, in the usual words")
 
     def test_nothing_is_exported_when_no_review_is_open(self):
@@ -3003,7 +3038,7 @@ class ReviewViewed(NeovimHarness, unittest.TestCase):
 
         nvim.keys("<leader>rv")
 
-        wait_for("the error", lambda: "No difftate is running for" in nvim.messages())
+        wait_for("the error", lambda: "No difftate is running: run `difftate` in a terminal" in nvim.messages())
 
     def test_a_409_is_shown_as_the_api_says(self):
         nvim = self.an_open_review()
@@ -3267,7 +3302,7 @@ class ChoosingTheView(NeovimHarness, unittest.TestCase):
 
         self.choose(nvim, 4)
 
-        wait_for("the message", lambda: "No difftate is running for" in nvim.messages())
+        wait_for("the message", lambda: "No difftate is running: run `difftate` in a terminal" in nvim.messages())
 
     def test_with_no_review_open_it_says_so_and_opens_no_picker(self):
         self.commit()

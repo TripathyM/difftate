@@ -44,12 +44,3 @@ jobs:
         env:
           DIFFTATE_TEST_GITSIGNS: ${{ runner.temp }}/gitsigns.nvim
           DIFFTATE_TEST_NVIM_REQUIRED: "1"
-
-  # ShellCheck has no zsh support, so the one shell file gets zsh's own syntax check
-  zsh-syntax:
-    name: zsh syntax
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update -q && sudo apt-get install -yq zsh
-      - run: zsh -n difftate.zsh

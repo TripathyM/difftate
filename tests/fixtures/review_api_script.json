@@ -4491,20 +4491,6 @@
   "request": [
    "PUT",
    "/api/view",
-   {
-    "view": "",
-    "open": "elsewhere"
-   }
-  ],
-  "status": 400,
-  "answer": {
-   "error": "open must be browser, nvim or both"
-  }
- },
- {
-  "request": [
-   "PUT",
-   "/api/view",
    {}
   ],
   "status": 200,
@@ -5803,7 +5789,7 @@
  {
   "request": [
    "GET",
-   "/api/export?folder=<repo>",
+   "/api/export?reply_folder=<repo>",
    null
   ],
   "status": 200,
