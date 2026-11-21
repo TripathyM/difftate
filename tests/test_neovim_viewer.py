@@ -2665,6 +2665,7 @@ class TheDiffLookAddsOnly(NeovimHarness, unittest.TestCase):
         self.assertEqual(nvim.lua("return T.foreign_extmarks(0)"), foreign)
 
 
+@needs(MISSING_GITSIGNS)
 class ReviewExport(NeovimHarness, unittest.TestCase):
     """GET /api/export, put where the reviewer pastes it (the system clipboard, as the browser does)."""
 
