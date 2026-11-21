@@ -27,7 +27,7 @@ from test_watcher import DIFFTATE, ROOT, Harness, alive, wait_for, with_folder  
 
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
-from difftate.adapters.inbound.cli.watcher import Watcher  # noqa: E402
+from difftate.adapters.inbound.cli.watcher import FolderEntry, Watcher  # noqa: E402
 
 STAMP = r"\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\]"
 
@@ -259,6 +259,31 @@ class TwoWorktrees(Harness, unittest.TestCase):
         return self.in_worktree("POST", "/api/threads", {
             "anchor": {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2,
                        "code": "    return 'hey ' + name"}, "body": body})
+
+    def events_of(self, review_id):
+        for top, _, names in os.walk(os.path.join(self.repo, ".git")):
+            if os.path.basename(top) == review_id and "events.jsonl" in names:
+                return os.path.join(top, "events.jsonl")
+        raise AssertionError("no events file")
+
+    def test_a_store_changed_outside_difftate_is_a_warning_of_that_review_only(self):
+        self.start_watcher()
+        self.assertEqual(self.difftate(folder=self.worktree).returncode, 0)
+        mine, theirs = self.api("GET", "/api/review"), self.in_worktree("GET", "/api/review")
+        self.assertEqual((mine["warnings"], theirs["warnings"]), ([], []))
+        self.thread_in_worktree("Why hey?")
+        path = self.events_of(theirs["id"])
+        with open(path) as f:
+            text = f.read()
+        with open(path, "w") as f:
+            f.write(text.replace("Why hey?", "Fine."))
+
+        (warning,) = wait_for("the warning", lambda: self.in_worktree("GET", "/api/review")["warnings"])
+
+        self.assertIn("changed outside difftate", warning["text"])
+        self.assertTrue(warning["id"] and warning["time"])
+        self.assertEqual(self.api("GET", "/api/review")["warnings"], [], "the other folder's review is not told")
+        self.assertEqual(len(self.in_worktree("GET", "/api/review")["warnings"]), 1, "kept, not repeated")
 
     def test_each_has_its_own_review_following_its_own_branch(self):
         self.start_watcher()
@@ -509,7 +534,10 @@ class TamperingIsRoutedToTheEntryWhoseReviewWasTampered(unittest.TestCase):
 
         def entry(name):
             loop = SimpleNamespace(warn_tampered=lambda ids, name=name: warned.append((name, list(ids))))
-            return SimpleNamespace(loop=loop)
+            made = FolderEntry(SimpleNamespace(), SimpleNamespace(root="/" + name, reviews="/" + name), "main", None,
+                               watcher.tampered)
+            made.loop = loop
+            return made
 
         return watcher, entry, warned
 
@@ -525,9 +553,26 @@ class TamperingIsRoutedToTheEntryWhoseReviewWasTampered(unittest.TestCase):
     def test_an_entry_with_no_loop_yet_is_not_an_error(self):
         watcher, _, warned = self.watcher()
 
-        watcher.tampered(SimpleNamespace(loop=None), ["abcdef123456"])
+        watcher.tampered(FolderEntry(SimpleNamespace(), SimpleNamespace(root="/a", reviews="/a"), "main", None, None),
+                         ["abcdef123456"])
 
         self.assertEqual(warned, [])
+
+    def test_the_warning_is_kept_with_the_review_it_is_about_with_an_id_and_a_time(self):
+        watcher, entry, _ = self.watcher()
+        first = entry("first")
+        first.key = ("feature", "main")
+        watcher.tampered(first, ["abcdef123456", "123456abcdef"])
+        watcher.tampered(first, [], ("other", "main"))
+
+        (warning,) = first.shown_warnings()
+        self.assertEqual(set(warning), {"id", "time", "text"})
+        self.assertIn("changed outside difftate", warning["text"])
+        self.assertIn("abcdef12", warning["text"])
+        self.assertRegex(warning["time"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d")
+        first.key = ("other", "main")
+        self.assertEqual(len(first.shown_warnings()), 1, "the other review has its own")
+        self.assertNotEqual(first.shown_warnings()[0]["id"], warning["id"])
 
 
 if __name__ == "__main__":

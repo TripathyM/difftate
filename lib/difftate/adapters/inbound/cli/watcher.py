@@ -17,6 +17,8 @@ import os
 import signal
 import threading
 import traceback
+import uuid
+from datetime import datetime, timezone
 
 from ....core.changes.model import View
 from ....core.review.model import CouldNotRead, NotFound
@@ -52,6 +54,7 @@ class FolderEntry:
         self.key = None  # (branch, base) of the review shown
         self.wanted_base = None  # a base asked for while a run held the review: shown once it ends
         self.unreadable = None  # (branch, base) whose review couldn't be read (warned once)
+        self.warnings = {}  # (branch, base): the warnings about that review, shown by its viewers
         self.thread = None
         self.gone = lambda entry: False  # called by the loop with this entry: whether its folder is gone (and dropped)
 
@@ -65,8 +68,18 @@ class FolderEntry:
         key = (branch, base)
         if key not in self.reviews:
             self.reviews[key] = self.wiring.open_review(self.folder, self.root, branch, base,
-                                                        lambda thread_ids: self.on_tamper(self, thread_ids))
+                                                        lambda thread_ids: self.on_tamper(self, thread_ids, key))
         return self.reviews[key]
+
+    def warn(self, text, key=None):
+        """Keep a warning about the review <key> (the one shown, by default), with an id and a time."""
+        found = self.warnings.setdefault(key or self.key, [])
+        found.append({"id": uuid.uuid4().hex[:12], "text": text,
+                      "time": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+
+    def shown_warnings(self):
+        """The warnings about the review shown."""
+        return list(self.warnings.get(self.key, ()))
 
     def start(self, view):
         """Open the review of the checked-out branch, showing <view>, and start the loop.
@@ -299,11 +312,13 @@ class Watcher:
         while not self.stopping.wait(0.5):
             pass
 
-    def tampered(self, entry, thread_ids):
+    def tampered(self, entry, thread_ids, key=None):
         """The stored review of <entry> was changed outside difftate: say so in
         its log lines, and tell its run in progress. No other entry is told."""
         names = ", ".join(t[:8] for t in thread_ids) or "no thread named"
-        print(f"Warning: the stored review was changed outside difftate ({names}): restored it")
+        text = f"The stored review was changed outside difftate ({names}): restored it"
+        print(f"Warning: {text[0].lower()}{text[1:]}")
+        entry.warn(text, key)
         if entry.loop:
             entry.loop.warn_tampered(thread_ids)
 

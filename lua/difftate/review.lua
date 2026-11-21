@@ -258,6 +258,14 @@ local function poll(review)
     end
     review.lost = false
     review.base = answer.base
+    -- A warning about the review (a store changed outside difftate): shown once, as it comes
+    review.warned = review.warned or {}
+    for _, warning in ipairs(answer.warnings or {}) do
+      if not review.warned[warning.id] then
+        review.warned[warning.id] = true
+        say(warning.text, vim.log.levels.WARN)
+      end
+    end
     read_view(review, function()
       follow_base(review, function(why)
         if why and why ~= review.base_error then

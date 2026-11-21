@@ -19,7 +19,9 @@ watcher serves. Naming another base switches the folder's review to it.
   GET   /api/review                     start or reuse the review of the folder's checked-out
                                         branch: {"id", "branch", "base", "waitingForRun",
                                         "checkedOut", "folder" (the checked-out folder
-                                        the watcher runs in)}. The watcher follows the branch, so
+                                        the watcher runs in), "warnings": [{"id", "time",
+                                        "text"}] about the review (a store changed outside
+                                        difftate, restored)}. The watcher follows the branch, so
                                         they change after a checkout; until a run in
                                         progress ends, "waitingForRun" is true and
                                         "checkedOut" names the branch it moves to
@@ -145,7 +147,7 @@ browser's history). `difftate` opens it with a single-use launch code:
 GET /?launch=<code>&folder=<path> trades the code for an HttpOnly, SameSite=Strict cookie and
 redirects to /?folder=<path> (the folder the link named: the page names it in every
 API request), after which the code is refused. The page (/) and its scripts
-(/app.js, /diff.js) need that cookie; API requests take it instead of the token only
+(/app.js, /diff.js, /warnings.js) need that cookie; API requests take it instead of the token only
 with the header "X-Difftate: page" (which another site's page can't send without
 asking) and, when the browser says, the API's own Origin. Anything else gets 401.
 """
@@ -175,6 +177,7 @@ PAGE_FILES = {
     "/": (os.path.join(_HERE, "web", "index.html"), "text/html; charset=utf-8"),
     "/app.js": (os.path.join(_HERE, "web", "app.js"), "text/javascript; charset=utf-8"),
     "/diff.js": (os.path.join(_HERE, "web", "diff.js"), "text/javascript; charset=utf-8"),
+    "/warnings.js": (os.path.join(_HERE, "web", "warnings.js"), "text/javascript; charset=utf-8"),
 }
 # The core's errors, as HTTP statuses. A bad view is the request's fault (400),
 # though the code reader says it isn't found: see a_view below.
@@ -412,7 +415,8 @@ def _handler(folders, token, login, default_reviewer, page_url, on_stop):
     def get_review(s, q, p):
         review = s.review
         about = {"id": review.about["id"], "branch": review.about["branch"], "base": review.about["base"]}
-        return dict(about, **waiting_for_run(review), **mode_json(review.read_mode()), folder=s.root)
+        return dict(about, **waiting_for_run(review), **mode_json(review.read_mode()), folder=s.root,
+                    warnings=s.shown_warnings())
 
     def switch_view(s, q, p):
         return s.shown.switch(a_view(s, fields(p).get("view", "")))
