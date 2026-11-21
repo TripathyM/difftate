@@ -14,6 +14,7 @@ def run_watcher(argv, wiring):
     output is its log."""
     log = FolderLog(sys.stdout)
     sys.stdout = log
+    sys.stderr = log  # tracebacks and warnings are log lines too, with their time and label
     watcher = None
     try:
         opts = parse_watcher(argv)
