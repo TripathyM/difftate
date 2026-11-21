@@ -2,13 +2,13 @@
 
 Annotate a coding agent's diff, and the coding agent answers or fixes the code.
 
-Review a diff in the browser (or a [Herdr](#review-in-herdr-optional) tab), comment on any line, and Claude Code or OpenCode replies or edits the code. Each run starts a fresh agent session, so any coding agent can answer any branch, whoever wrote it. Progress shows live in the viewer and in the terminal.
+Review a diff in the browser (or in your own [Neovim](#review-in-neovim)), comment on any line, and Claude Code or OpenCode replies or edits the code. Each run starts a fresh agent session, so any coding agent can answer any branch, whoever wrote it. Progress shows live in the viewer and in the terminal.
 
 ## Requirements
 
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`) or [OpenCode](https://opencode.ai) (`opencode`)
 - `zsh`, `python3` (standard library only), `git`
-- Optional: the [Herdr](https://herdr.dev) app, to review in a Herdr tab (see [Review in Herdr](#review-in-herdr-optional)); its go to definition uses [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`)
+- Optional: the [Herdr](https://herdr.dev) app, as the host of the Neovim viewer's **Review · ‹folder›** tab (see [Review in Neovim](#review-in-neovim))
 
 ## Install
 
@@ -47,7 +47,7 @@ dto                         # OpenCode, same arguments
 difftate HEAD~1             # again, while it runs: switches the running watcher to that view and exits
 difftate --model <model>    # the coding agent's model (default: its own default)
 difftate --cmd <command>    # run Claude through another command or alias
-difftate --open nvim        # review in Neovim (see "Review in Neovim"); --open herdr is the frozen Herdr viewer
+difftate --open nvim        # review in Neovim (see "Review in Neovim"); --open takes browser, nvim or both
 ```
 
 Every run starts a fresh agent session of the coding agent the watcher was started with (`difftate`/`dtc` for Claude Code, `dto` for OpenCode, or your own shortcuts below). No earlier agent session is found or continued ([ADR 0005](docs/adr/0005-runs-start-fresh.md)), so it doesn't matter which coding agent or account wrote the code, or from which folder.
@@ -60,13 +60,13 @@ Every run starts a fresh agent session of the coding agent the watcher was start
 
 ## The review
 
-difftate keeps the review itself: commits don't end a review, so threads survive them. The changeset comes from git (`GET /api/changeset`). difftate's own browser viewer shows it (`DT_OPEN=browser`, the default), so does the [Neovim viewer](#review-in-neovim) (`DT_OPEN=nvim`), and so does the frozen [Review tab in Herdr](#review-in-herdr-optional) (`DT_OPEN=herdr`). Other clients reach it through the [review API](#review-api). The argument is the starting **view** of the same review (`HEAD~1`, `staged`, …), and both viewers switch views (the browser's **View** menu, the Review tab's `Space V`): a thread written in any view belongs to the review, and the threads list shows every thread.
+difftate keeps the review itself: commits don't end a review, so threads survive them. The changeset comes from git (`GET /api/changeset`). difftate's own browser viewer shows it (`DT_OPEN=browser`, the default), so does the [Neovim viewer](#review-in-neovim) (`DT_OPEN=nvim`). Other clients reach it through the [review API](#review-api). The argument is the starting **view** of the same review (`HEAD~1`, `staged`, …), and both viewers switch views (the browser's **View** menu, Neovim's `<leader>rV`): a thread written in any view belongs to the review, and the threads list shows every thread.
 
 **The browser viewer** is a simple page the watcher serves: the changeset in the view, threads under their lines with their thread state (waiting, queued, working, replied, failed) and outdated marks, and every thread in the threads list (picking one switches to a view that shows it). Click a line number to comment (shift-click another on the same side for more lines); reply, resolve, dismiss or reopen in a thread; **New general comment** comments on the changes as a whole. It updates every 1.5 s. The watcher opens it with a single-use launch code (`http://127.0.0.1:<port>/?launch=…`, also printed in the terminal), never the API token, which a coding agent could read in the browser's history. The first visit trades the code for a cookie (`HttpOnly`, `SameSite=Strict`) and lands on a clean `/`; the code is then refused, so each link opens the page once. Reloading keeps working. To open the page again, run `difftate --open browser` in the repository: it opens a new link. Without the cookie every request gets 401, and a restarted watcher needs a new link.
 
 ![The browser viewer: an outdated thread with the code it was written on](docs/screenshots/browser-viewer-outdated.jpg)
 
-**Done.** When you finish a review, mark it **Done** in the Review tab (`Space d`; press again to undo). It is Done at one commit, shown as **Done at ‹commit›**, whether you went through the code or skipped it (write a general thread saying why, resolve it, and mark Done). Open threads, and runs still working, are warned about first, and you can mark Done anyway. A new commit on the branch clears Done; a new thread doesn't. Only the reviewer marks it: the coding agent can't. Every mark (done, undone, cleared by a commit) is kept in the review history with its time and commit.
+**Done.** When you finish a review, mark it **Done** (`<leader>rD` in Neovim; press again to undo). It is Done at one commit, shown as **Done at ‹commit›**, whether you went through the code or skipped it (write a general thread saying why, resolve it, and mark Done). Open threads, and runs still working, are warned about first, and you can mark Done anyway. A new commit on the branch clears Done; a new thread doesn't. Only the reviewer marks it: the coding agent can't. Every mark (done, undone, cleared by a commit) is kept in the review history with its time and commit.
 
 Read it from outside difftate, in any folder of the repository, with or without a watcher running (it only reads):
 
@@ -97,7 +97,7 @@ dt-export            # the review of the folder you are in
 dt-export ~/work/app # the review of that folder, from anywhere: the reply command names it
 ```
 
-`dt-export` asks the difftate running in that folder (the same lookup a second `difftate` there uses), so one must be running; with none, it says so and exits 1. Thread state shows by name: `held`, `waiting`, `queued`, `working`, `replied` or `failed`. The same text is `GET /api/export`. Both viewers copy it to the clipboard: the **Export** button in the browser viewer, and Space E in the Review tab; the reply command in what they copy names the folder the watcher runs in, so the session can reply from anywhere.
+`dt-export` asks the difftate running in that folder (the same lookup a second `difftate` there uses), so one must be running; with none, it says so and exits 1. Thread state shows by name: `held`, `waiting`, `queued`, `working`, `replied` or `failed`. The same text is `GET /api/export`. Both viewers copy it to the clipboard: the **Export** button in the browser viewer, and `<leader>rE` in Neovim; the reply command in what they copy names the folder the watcher runs in, so the session can reply from anywhere.
 
 The session replies with `dt-reply <thread> "<answer>"` (the export's command, with `--folder <folder>` when you gave one). Outside a run, `dt-reply` finds the difftate of its folder the same way and posts the answer through the review API: it shows as the coding agent's reply, with no progress note, and the thread becomes `replied`. It may reply to any thread of the review, open, resolved or dismissed, and changes no thread status. `<thread>` is the 8 characters the export shows, or the whole id; an id that isn't in the review is refused. With no running difftate it says so and exits 1, posting nothing: `dt-reply` never writes the review itself. Inside a run (`DT_RUN_DIR` set) it works as before, through the run's folder, and never reaches the review API.
 
@@ -139,7 +139,7 @@ return {
 }
 ```
 
-**Open it with difftate:** `difftate --open nvim` (or `DT_OPEN=nvim`) opens the Neovim viewer. `--open` names the viewer, not the host: the host comes from where difftate runs. Where [Herdr](#review-in-herdr-optional) is reachable (`herdr-app` on `PATH`, or `DT_HERDR`, and running), it opens a **Review · ‹folder›** tab running `nvim +DifftateOpen` in the folder, or switches to that tab if it's open. Anywhere else it opens nothing and prints the command to run (`cd <folder> && nvim +DifftateOpen`); it never falls back to the browser. The tab runs the `nvim` Herdr finds on its `PATH`, with your normal config.
+**Open it with difftate:** `difftate --open nvim` (or `DT_OPEN=nvim`) opens the Neovim viewer. `--open` names the viewer, not the host: the host comes from where difftate runs. Where [Herdr](https://herdr.dev) is reachable (`herdr-app` on `PATH`, or `DT_HERDR`, and running), it opens a **Review · ‹folder›** tab running `nvim +DifftateOpen` in the folder, or switches to that tab if it's open. Anywhere else it opens nothing and prints the command to run (`cd <folder> && nvim +DifftateOpen`); it never falls back to the browser. The tab runs the `nvim` Herdr finds on its `PATH`, with your normal config.
 
 **Use:** start `difftate` in the repository or worktree, then in Neovim in that folder press `<leader>rr` (or `:DifftateOpen`; `nvim +DifftateOpen` opens it at start-up). It finds the folder's watcher as `dt-export` does; with none running, it says so and changes nothing. While the review is open, gitsigns compares every buffer against where the branch left the review's base (`git merge-base <base> HEAD`, computed again at every poll, so it follows a new commit), so `]h`, `[h` and hunk preview move through the review's changes, committed ones too. `<leader>rr` again (or `:DifftateClose`) puts gitsigns back on the index. `:DifftateStatus` says whether a review is open.
 
@@ -163,40 +163,6 @@ return {
 
 The plugin only adds: it maps no key that is mapped already (it says which option to change instead), sets no option, and changes nothing but gitsigns' base, and only while the review is open. Its keys are under `<leader>r`, a "review" group in which-key (added only while a key is mapped under it); LazyVim's core doesn't use it, only its refactoring extra: with that extra, pick other keys in `opts.keys`.
 
-## Review in Herdr (optional)
-
-**The Herdr viewer is frozen** ([ADR 0007](docs/adr/0007-reviews-happen-in-the-reviewers-own-editor.md)): it still works as described here, and `--open herdr` opens it, but it gets no new features. For new work use the [Neovim viewer](#review-in-neovim).
-
-If you use the [Herdr](https://herdr.dev) app, the frozen Herdr viewer can open the review in a Herdr tab instead of the browser: a small code editor with vim keys, comment threads under the lines, go to definition, fuzzy file open, and quick edits you save yourself. The tab reads and writes through difftate's [review API](#review-api), like the browser viewer, so the coding agent answers its comments as it does in the browser, and both stay in sync. The tab shows the review's view (all changes unless the argument or `Space V` picks another).
-
-![The Review tab in Herdr](herdr/preview.png)
-
-**Install** (from the difftate folder, `~/difftate` below):
-
-```bash
-ln -s ~/difftate/herdr/mods/difftate ~/.config/herdr-app/mods/difftate   # the mod, linked so git pull updates it
-```
-
-If `~/.config/herdr-app/mods/difftate` already exists, remove it first: `ln -s` would put the link inside it.
-
-```zsh
-# in ~/.zshrc, after the source line
-export DT_OPEN=herdr                                              # difftate / dtc / dto open a Review tab
-export DT_HERDR="/Applications/Herdr.app/Contents/MacOS/Herdr"   # only if herdr-app isn't on PATH
-```
-
-Herdr adds `herdr-app` to `~/.local/bin` when it starts. Check with `command -v herdr-app` in a new terminal; set `DT_HERDR` only if that prints nothing.
-
-Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~/.config/herdr-app/keys.json` (also in [`herdr/keys.json`](herdr/keys.json)) to open the tab for the focused pane's repo.
-
-**Use:** run `difftate` as usual. It opens a **Review · ‹repo›** tab, or switches to it if it's open. If Herdr isn't running or can't be found, it opens the browser. `--open browser`, `nvim` or `both` overrides `DT_OPEN` for one run.
-
-- Keys: `?` in the tab lists them. Defaults are in [`herdr/mods/difftate/README.md`](herdr/mods/difftate/README.md). Your own go in `~/.config/difftate/keymap.json`, which updates don't touch.
-- After a `git pull`, close and reopen the Review tab: an open tab keeps the code it started with.
-- [`herdr/RECIPE.md`](herdr/RECIPE.md) describes the mod for herdr.dev and for rebuilding it.
-
-**Uninstall:** `rm ~/.config/herdr-app/mods/difftate` (removes the link only) and drop the `DT_OPEN` / `DT_HERDR` lines.
-
 ## Files
 
 | File | What it does |
@@ -215,9 +181,6 @@ Optional: add `"cmd-shift-r": "mod.open:difftate"` to the `global` section of `~
 | `lib/difftate/adapters/outbound/` | The other driven adapters: `local_store/` and `memory_store/` keep the review, `history_files/` records the review history, `git/` reads the code |
 | `tests/` | Watcher tests: a temporary repository, the real watcher, a fake coding agent. See [Tests](#tests) |
 | `lua/difftate/`, `plugin/difftate.lua` | The Neovim viewer: a lazy.nvim plugin. See [Review in Neovim](#review-in-neovim) |
-| `herdr/mods/difftate/` | The Herdr Review tab (optional): code view, keys, threads, editing. See [Review in Herdr](#review-in-herdr-optional) |
-| `herdr/keys.json`, `herdr/RECIPE.md`, `herdr/preview.png` | Herdr's sharing files: the optional key binding, the build brief, the screenshot |
-| `herdr/screenshots/` | More screenshots of the Review tab, shown in the mod's README |
 
 ## What you see
 
@@ -261,8 +224,8 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 
 | Variable | Default | Effect |
 |---|---|---|
-| `DT_OPEN` | `browser` | The viewer the review opens in: `browser`, `nvim` (the [Neovim viewer](#review-in-neovim)), `herdr` (the frozen [Herdr viewer](#review-in-herdr-optional)) or `both`. `--open` overrides it for one run |
-| `DT_HERDR` | unset (`herdr-app` on `PATH`) | Path to the Herdr app's binary, for `DT_OPEN=herdr` or `nvim` when `herdr-app` isn't on `PATH` |
+| `DT_OPEN` | `browser` | The viewer the review opens in: `browser`, `nvim` (the [Neovim viewer](#review-in-neovim)) or `both`. `--open` overrides it for one run |
+| `DT_HERDR` | unset (`herdr-app` on `PATH`) | Path to the Herdr app's binary, for `--open nvim` to open its Herdr tab when `herdr-app` isn't on `PATH` |
 
 ### Constants (edit the file)
 
@@ -275,7 +238,7 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 
 ### Watcher flags (`difftate-watch.py --help`)
 
-`--base` (default: `origin/HEAD`), `--ref` (the starting view; default: all changes), `--tool`, `--model`, `--cwd`, `--interval` (poll seconds, default 1), `--cmd`, `--open` (browser, nvim, herdr, both).
+`--base` (default: `origin/HEAD`), `--ref` (the starting view; default: all changes), `--tool`, `--model`, `--cwd`, `--interval` (poll seconds, default 1), `--cmd`, `--open` (browser, nvim, both).
 
 ### Internal env vars (set by the watcher, don't set yourself)
 
@@ -350,7 +313,7 @@ The watcher (the latest Python, nothing else) serves the **review API** on `127.
 |---|---|
 | `GET /api/review` | Start or reuse the review of the checked-out branch: `id`, `branch` and `base` (they change when the watcher follows another branch), `mode` and `held` (as `GET /api/mode`), and `folder`, the checked-out folder the watcher runs in (what a viewer passes to `GET /api/export`) |
 | `GET /api/view` | The view viewers show: `view` (`""` all changes, a commit such as `HEAD~2` for the commits after it, `HEAD` uncommitted, `staged`, `unstaged`) |
-| `PUT /api/view` | Show another view: `view`, and `open` (`browser`, `nvim`, `herdr`, `both`) to open the viewer on it too. A second `difftate` in the repository sends this, then exits |
+| `PUT /api/view` | Show another view: `view`, and `open` (`browser`, `nvim`, `both`) to open the viewer on it too. A second `difftate` in the repository sends this, then exits |
 | `GET /api/changeset?view=<view>` | The review's changeset in a view (default: the one viewers show), from git: `view`, `base`, `commit` (where the branch left the base), `diff` (unified, new untracked files included) |
 | `GET /api/threads?status=open&view=<view>` | List threads. With a view, each anchor's lines are where its code is in that view, and a thread whose code isn't in it has `inView: false` |
 | `POST /api/threads` | Open a thread: `anchor` (`file`, `side` `old`/`new`, `startLine`, `endLine`, `code`; `null` for a general thread), `body`, `view` (the view its lines are in; default all changes) |
@@ -412,8 +375,6 @@ python3 tests/run.py fast    # what a Lua-only change needs: the Neovim viewer's
 | Wrong diff shown | Check the view (the browser's **View** menu, `GET /api/view`); rerun `difftate <view>` |
 | Answer from the wrong model | Check the `Model:` line; force it with `difftate --model <model>` |
 | Thread ignored | Its thread state is `replied` or `failed` (`GET /api/threads`): comment again to re-trigger |
-| Browser opens instead of the Herdr tab | The watcher prints a `Herdr:` line saying why: `herdr-app` not found (set `DT_HERDR`), Herdr not running, or the mod missing (`herdr-app check ~/.config/herdr-app/mods/difftate`) |
-| Herdr tab misses a change after an update | Close the Review tab and open it again: an open tab keeps the code it started with |
 
 ## Roadmap
 

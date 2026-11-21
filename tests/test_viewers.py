@@ -1,5 +1,5 @@
-"""The viewers `--open` names: the browser, the Herdr viewer and the Neovim
-viewer. Herdr is faked: DT_HERDR points at a script that records each call and
+"""The viewers `--open` names: the browser and the Neovim viewer (whose host
+is Herdr when it is reachable). Herdr is faked: DT_HERDR points at a script that records each call and
 answers `ls` from a file, as Herdr's app would."""
 import io
 import json
@@ -123,46 +123,28 @@ class ViewersTest(unittest.TestCase):
 
         self.assertIn("cd '/work/my shop' && nvim +DifftateOpen", said)
 
-    def test_open_herdr_still_opens_the_herdr_viewer(self):
-        self.herdr.running("1")
-
-        with redirect_stdout(io.StringIO()):
-            self.assertTrue(viewers.open_in_herdr("http://127.0.0.1:1/", self.root))
-
-        [[do, verb, args]] = self.herdr.calls()
-        self.assertEqual((do, verb), ("do", "tab.new"))
-        self.assertEqual(json.loads(args), {"name": self.name, "mod": "difftate", "props": {"folder": self.root}})
-
-    def test_open_herdr_switches_to_the_tab_it_has(self):
-        self.herdr.running(self.name)
-
-        with redirect_stdout(io.StringIO()):
-            self.assertTrue(viewers.open_in_herdr("http://127.0.0.1:1/", self.root))
-
-        [[do, verb, args]] = self.herdr.calls()
-        self.assertEqual((do, verb, json.loads(args)), ("do", "tab.select", {"id": "tab-0"}))
-
-    def test_open_herdr_not_running_is_false_so_the_browser_follows(self):
-        with redirect_stdout(io.StringIO()) as out:
-            self.assertFalse(viewers.open_in_herdr("http://127.0.0.1:1/", self.root))
-
-        self.assertIn("Herdr: not running", out.getvalue())
-
     def test_open_both_opens_every_viewer_the_browser_last(self):
         order = []
         table = {"browser": lambda url, root: order.append("browser") or True,
-                 "nvim": lambda url, root: order.append("nvim") or True,
-                 "herdr": lambda url, root: order.append("herdr") or True}
+                 "nvim": lambda url, root: order.append("nvim") or True}
 
         viewers.open_review(table, "both", "u", "/r")
 
         self.assertEqual(order[-1], "browser")
-        self.assertEqual(sorted(order), ["browser", "herdr", "nvim"])
+        self.assertEqual(sorted(order), ["browser", "nvim"])
 
-    def test_the_composition_names_three_viewers_and_both(self):
-        self.assertEqual(set(main.VIEWERS), {"browser", "nvim", "herdr"})
+    def test_the_composition_names_two_viewers_and_both(self):
+        self.assertEqual(set(main.VIEWERS), {"browser", "nvim"})
+        self.assertFalse(hasattr(viewers, "open_in_herdr"))
         self.assertEqual(viewers.where_to_open(main.VIEWERS), (*main.VIEWERS, "both"))
         self.assertIn("nvim", viewers.where_to_open(main.VIEWERS))
+
+    def test_open_herdr_is_refused_like_any_unknown_value_naming_the_three_values(self):
+        for argv, env in ((["--tool", "claude", "--open", "herdr"], {}), (["--tool", "claude"], {"DT_OPEN": "herdr"})):
+            with mock.patch.dict(os.environ, env), self.assertRaises(options.Exit) as raised:
+                options.parse(argv, ["claude"], viewers.where_to_open(main.VIEWERS))
+            self.assertEqual(raised.exception.code, 1)
+            self.assertIn("must be browser, nvim or both, not 'herdr'", raised.exception.message)
 
     def test_open_accepts_nvim_and_the_help_names_the_three_values(self):
         opts = options.parse(["--tool", "claude", "--open", "nvim"], ["claude"], viewers.where_to_open(main.VIEWERS))
@@ -170,8 +152,8 @@ class ViewersTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"DT_OPEN": "nvim"}):
             opts = options.parse(["--tool", "claude"], ["claude"], viewers.where_to_open(main.VIEWERS))
         self.assertEqual(opts["open"], "nvim")
-        self.assertRegex(options.USAGE, r"browser, nvim, herdr or both")
-        self.assertIn("frozen", options.USAGE)
+        self.assertRegex(options.USAGE, r"browser, nvim or both")
+        self.assertNotIn("herdr:", options.USAGE)
 
 
 if __name__ == "__main__":

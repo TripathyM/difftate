@@ -1,5 +1,4 @@
--- Done, as text (GLOSSARY.md: Done). Pure: no editor, no request. The words are the browser viewer's
--- and the Herdr viewer's (herdr/mods/difftate/done.js). <status> is what GET /api/done answers:
+-- Done, as text (GLOSSARY.md: Done). Pure: no editor, no request. The words are those of the deleted Herdr viewer (ADR 0008). <status> is what GET /api/done answers:
 -- { done, commit, time, head, lastMark, openThreads, runsInFlight }.
 local M = {}
 

@@ -1,8 +1,7 @@
 -- A client of difftate's review API (lib/difftate/adapters/inbound/review_api/server.py),
 -- served by the watcher of one checked-out folder: the repository, or one of its
 -- worktrees. The watcher writes where it runs to <that folder's own git dir>/difftate/api.json
--- ({port, pid, root}) and its token to .../difftate/token, as dt-export and the Herdr
--- viewer (herdr/mods/difftate/api.js) read them.
+-- ({port, pid, root}) and its token to .../difftate/token, as dt-export reads them.
 --
 -- Requests go through curl in vim.system, so Neovim never waits for one. The token
 -- goes to curl on stdin (a config file, -K -), never in its arguments, which any
@@ -94,7 +93,7 @@ function M.request(watcher, method, path, on_answer, payload, raw)
     end
     if tonumber(status) ~= 200 or not answer then
       local said = answer and answer.error or nil
-      -- 401: another watcher's token, from a stale file (as the Herdr viewer reads it)
+      -- 401: another watcher's token, from a stale file
       on_answer(nil, { missing = status == "401", message = said or ("%s %s: %s"):format(method, path, status) })
       return
     end

@@ -30,7 +30,7 @@ NEW = FileInView("long.py", "new")
 # An id no code reader gave: a snapshot that is gone (git gc)
 LOST = "0123456789abcdef0123456789abcdef01234567"
 REVIEW = "feature-1a2b3c4d"  # the review's id
-POLL = 2.0  # seconds between two polls of a viewer (herdr/mods/difftate/main.js)
+POLL = 2.0  # seconds between two polls of a viewer (lua/difftate/init.lua)
 
 
 class CodeReaderContract:

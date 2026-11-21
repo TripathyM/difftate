@@ -1,5 +1,5 @@
 """Opening the review in a viewer: the browser, the Neovim viewer (in the
-host where difftate runs), or the frozen Herdr viewer.
+host where difftate runs).
 
 Each viewer is opened with (url, root): the link to difftate's own page, and
 the repository's top folder. It says whether it could be reached. main.py
@@ -40,7 +40,7 @@ def _herdr_cli():
     return os.environ.get("DT_HERDR") or shutil.which("herdr-app") or ""
 
 
-def _herdr_tab(root, new_tab, say, why_not_opened="could not open a Review tab"):
+def _herdr_tab(root, new_tab, say):
     """Switch to the Review tab of the repository at <root> in Herdr, or open
     one with the arguments of <new_tab> (a function of the tab's name). <say>
     reports what went wrong. False when Herdr can't be reached or won't open it."""
@@ -65,19 +65,10 @@ def _herdr_tab(root, new_tab, say, why_not_opened="could not open a Review tab")
             return True
     r = _run([cli, "do", "tab.new", json.dumps(new_tab(name))])
     if not r or r.returncode != 0:
-        say(f"  Herdr: {why_not_opened}")
+        say("  Herdr: could not open a Review tab")
         return False
     print(f'  Herdr: opened the "{name}" tab')
     return True
-
-
-def open_in_herdr(url, root):
-    """The Herdr viewer, frozen: a Review tab running Herdr's `difftate` mod.
-    False when Herdr can't be reached."""
-    def mod_tab(name):
-        return {"name": name, "mod": "difftate", "props": {"folder": root}}
-
-    return _herdr_tab(root, mod_tab, print, "could not open a Review tab (is the difftate mod installed?)")
 
 
 NVIM_COMMAND = ["nvim", "+DifftateOpen"]

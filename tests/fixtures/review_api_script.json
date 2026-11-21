@@ -4498,7 +4498,7 @@
   ],
   "status": 400,
   "answer": {
-   "error": "open must be browser, herdr or both"
+   "error": "open must be browser, nvim or both"
   }
  },
  {
