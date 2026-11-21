@@ -112,8 +112,17 @@ local function read_mode(review, on_done)
   end)
 end
 
+-- Take <answer> (what the review API says of Done) as the state of the open <review>, for the
+-- statusline note, which redraws now rather than on its own timers
+local function know_done(review, answer)
+  if current == review then
+    review.done = answer
+    vim.cmd("redrawstatus")
+  end
+end
+
 -- Read whether the open <review> is Done (GET /api/done), for the statusline note and Done's key; then
--- on_done(answer), or on_done(nil, err) when the review API didn't answer (what was known stays; a watcher
+-- on_done(answer), or on_done(nil, err) when the review API didn't answer (what was known stays: a watcher
 -- without the route shows no Done and no error: the poll says when difftate stopped).
 local function read_done(review, on_done)
   local stamp = review.done_stamp
@@ -123,9 +132,8 @@ local function read_done(review, on_done)
       return
     end
     -- A mark or an undo answered since this was asked: its answer is newer, so this one doesn't overwrite it
-    if current == review and review.done_stamp == stamp then
-      review.done = answer
-      vim.cmd("redrawstatus")
+    if review.done_stamp == stamp then
+      know_done(review, answer)
     end
     on_done(answer)
   end)
@@ -528,10 +536,7 @@ local function put_done(review, marking, now)
       return failed(review, err)
     end
     review.done_stamp = (review.done_stamp or 0) + 1
-    if current == review then
-      review.done = answer
-      vim.cmd("redrawstatus")
-    end
+    know_done(review, answer)
     say(marking and done.marked_message(answer) or done.undone_message(now))
   end, { done = marking })
 end
@@ -745,11 +750,13 @@ function M.status()
     return ""
   end
   local parts = { "review open" }
-  for _, part in ipairs({ mode.label(current.mode) or false, done.label(current.done) or false }) do
+  local function add(part)
     if part then
       table.insert(parts, part)
     end
   end
+  add(mode.label(current.mode))
+  add(done.label(current.done))
   if not current.signs then
     table.insert(parts, ("gitsigns isn't loaded: no git signs for changes since %s"):format(current.base))
   else
