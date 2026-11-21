@@ -1,7 +1,7 @@
 -- The Neovim viewer (GLOSSARY.md): difftate's review in the reviewer's own Neovim
 -- (ADR 0007). A client of the review API, like the browser and the Herdr viewer.
 --
--- Modules: done (Done, as text), review (the open review: opening, polling, closing, writing), api (the review
+-- Modules: done (Done, as text), export (the export, as text), review (the open review: opening, polling, closing, writing), api (the review
 -- API through curl), mode (the review mode and Submit, as text), look (the deleted text and
 -- the tint of the diff), compose (the float comments are written in), gitsigns (its base
 -- while the review is open), git, draw (the threads in the buffers), threads (their text),
@@ -41,6 +41,7 @@ local defaults = {
     mode = "<leader>rM", -- switch the review between live and batched
     submit = "<leader>rS", -- submit the held threads of a batched review
     done = "<leader>rD", -- mark the review Done at the branch's commit, or undo it
+    export = "<leader>rE", -- copy the review's export to the clipboard, for an agent session
   },
 }
 
@@ -64,6 +65,7 @@ local actions = {
   mode = { function() review.toggle_mode() end, "Switch the review between live and batched" },
   submit = { function() review.submit() end, "Submit the held threads" },
   done = { function() review.toggle_done() end, "Mark the review Done, or undo it" },
+  export = { function() review.export() end, "Copy the review's export for an agent session" },
 }
 
 M.config = vim.deepcopy(defaults)

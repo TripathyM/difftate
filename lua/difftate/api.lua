@@ -60,8 +60,9 @@ end
 --- loop with the decoded JSON, or on_answer(nil, err) where err.missing says no
 --- watcher answered (none wrote where it runs, or it doesn't answer there), and
 --- err.message what went wrong. <payload> (a Lua table, sent as JSON) is the body of a
---- POST or PATCH, as the browser sends it.
-function M.request(watcher, method, path, on_answer, payload)
+--- POST or PATCH, as the browser sends it. With <text> true the answer is the body as it came (an
+--- answer that is text, not JSON: the export); an error is JSON as always.
+function M.request(watcher, method, path, on_answer, payload, text)
   local port, token = address(watcher)
   if not port then
     vim.schedule(function()
@@ -83,6 +84,10 @@ function M.request(watcher, method, path, on_answer, payload)
       return
     end
     local body, status = (r.stdout or ""):match("^(.*)\n(%d+)$")
+    if text and tonumber(status) == 200 then
+      on_answer(body or "")
+      return
+    end
     local decoded_ok, answer = pcall(vim.json.decode, body or "", { luanil = { object = true, array = true } })
     if not decoded_ok or type(answer) ~= "table" then
       answer = nil
