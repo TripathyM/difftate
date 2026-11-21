@@ -513,6 +513,8 @@ def _handler(folders, token, login, default_reviewer, page_url, on_stop):
         if not folder:
             raise BadRequest("folder is required: name the checked-out folder this request is about "
                              "(?folder=<path>)")
+        if not os.path.isabs(folder):
+            raise BadRequest(f"folder must be an absolute path, not '{folder}'")
         base = (q.get("base") or [""])[0].strip()
         try:
             return folders(folder, base)

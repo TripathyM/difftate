@@ -85,12 +85,14 @@ def _open(argv, wiring):
         status, shown = _ask(wiring, "GET", with_folder("/api/view", root))
     print(f"difftate is running (pid {pid}): the review of {review['branch']} against {review['base']} "
           f"in {root}, showing {View((shown or {}).get('view') or '').name}")
-    status, launch = _ask(wiring, "POST", with_folder("/api/launch", root))
-    if status != 200:
-        raise Exit(1, f"Error: {_said(launch, status)}")
-    if opts["open"] != "nvim":
-        print(f"  → {launch['url']}")
-    viewers.open_review(wiring.viewers, opts["open"], launch["url"], root)
+    url = ""
+    if opts["open"] != "nvim":  # the Neovim viewer needs no link
+        status, launch = _ask(wiring, "POST", with_folder("/api/launch", root))
+        if status != 200:
+            raise Exit(1, f"Error: {_said(launch, status)}")
+        url = launch["url"]
+        print(f"  → {url}")
+    viewers.open_review(wiring.viewers, opts["open"], url, root)
     return 0
 
 

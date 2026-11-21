@@ -160,6 +160,14 @@ class NamingTheFolder(Harness, unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("folder is required", message)
 
+    def test_a_relative_folder_is_refused(self):
+        self.start_watcher()
+
+        status, message = self.refused("/api/threads", ".")
+
+        self.assertEqual(status, 400)
+        self.assertIn("absolute path", message)
+
     def test_a_path_that_is_not_a_checked_out_folder_is_refused(self):
         self.start_watcher()
         plain = os.path.join(self.tmp, "plain")

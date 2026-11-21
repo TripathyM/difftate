@@ -146,6 +146,8 @@ class FolderEntry:
         while not stopping.is_set():
             try:
                 with self.lock:
+                    if stopping.is_set():
+                        break  # stop() has run this entry's run down: a new run would be nobody's
                     self.loop.poll(self.follow_branch)
                 shown_error = None
             except Exception as e:  # one folder's trouble is not the others'
@@ -185,6 +187,8 @@ class Watcher:
         names a folder adds it. Raises the core's NotFound for a path that is
         in no checked-out folder, or a base that isn't one."""
         entry = self.folders.get(self._tops.get(path))
+        if entry is not None and not os.path.isdir(entry.root):
+            entry = None  # the folder is gone: ask git again (it refuses, or finds where it moved)
         if entry is None:  # git says which folder it is, once for each way a request spells it
             found = self.wiring.difftate_folder(path)
             if found is None:
