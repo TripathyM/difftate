@@ -56,6 +56,7 @@ class FolderEntry:
         self.unreadable = None  # (branch, base) whose review couldn't be read (warned once)
         self.warnings = {}  # (branch, base): the warnings about that review, shown by its viewers
         self.thread = None
+        self.served_elsewhere = lambda entry, branch: False  # whether another entry's folder has <branch> checked out
         self.gone = lambda entry: False  # called by the loop with this entry: whether its folder is gone (and dropped)
 
     def label(self):
@@ -121,7 +122,8 @@ class FolderEntry:
                       f"still showing the review of {self.branch} against {self.base}")
             self.unreadable = key
             return
-        self.branch, self.base, self.key, self.wanted_base, self.unreadable = branch, base, key, None, None
+        left, self.branch = self.branch, branch
+        self.base, self.key, self.wanted_base, self.unreadable = base, key, None, None
         shown = self.shown
         try:
             shown.check(shown.current())
@@ -129,6 +131,10 @@ class FolderEntry:
         except NotFound:
             print(f"{self.banner(branch, shown.current())}: not on this branch")
             shown.switch("")
+        if left and left != branch and not self.served_elsewhere(self, left):
+            # No served folder has the branch it leaves: its waiting threads wait, and say so
+            self.loop.hold_for_branch(left)
+            print(f"The review of {left} waits: no served folder has the branch checked out")
         self.review = review
         self.loop.switch_review(review)
 
@@ -240,6 +246,14 @@ class Watcher:
                 print(f"Warning: could not serve {root} again ({e}): dropped it")
         self.remember()
 
+    def served_elsewhere(self, entry, branch):
+        """Whether a folder of <entry>'s repository, served besides it, has <branch> checked out now."""
+        for other in list(self.folders.values()):
+            if (other is not entry and other.folder == entry.folder
+                    and self.wiring.review_branch(other.root, other.base) == branch):
+                return True
+        return False
+
     def check_gone(self, entry):
         """Whether <entry>'s folder is gone (removed, or no longer a checked-out
         folder); if so, drop it from the table and the list, and end its runs."""
@@ -291,6 +305,7 @@ class Watcher:
             self.log.about(entry.label)
         entry.start("")
         entry.gone = self.check_gone
+        entry.served_elsewhere = self.served_elsewhere
         self.folders[found.root] = entry
         self.remember()
         entry.thread = threading.Thread(target=entry.run, args=(self.opts["interval"], self.stopping, self.log),

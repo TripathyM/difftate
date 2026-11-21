@@ -1451,6 +1451,27 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertEqual(self.api("GET", "/api/review")["id"], first["id"])
         self.assertEqual(self.api("GET", "/api/threads"), [before], "the first review, untouched")
 
+    def test_a_thread_waits_while_no_folder_has_its_branch_and_gets_its_reply_when_one_does(self):
+        git(self.repo, self.env, "commit", "-q", "-am", "Say hello")
+        self.start_watcher()
+        first = self.open_thread("Why an f-string here?")["id"]
+        wait_for("a working progress note", lambda: self.note(first, "progress", "Working"))
+        second = self.open_thread("Rename greet?", line=1)["id"]
+        wait_for("a queued note", lambda: self.note(second, "queued"))
+
+        git(self.repo, self.env, "checkout", "-q", "-b", "other", "main")
+        self.release_agent()
+        wait_for("the review of other", lambda: self.api("GET", "/api/review")["branch"] == "other")
+
+        wait_for("the review of feature to wait", lambda: "The review of feature waits: no served folder has the "
+                                                          "branch checked out" in self.terminal())
+        self.assertEqual(len(self.prompts()), 1, "no run for the waiting thread while the branch is checked out nowhere")
+        self.checkout("feature")
+        wait_for("the reply", lambda: self.state(second) == "replied")
+        self.assertEqual(len(self.prompts()), 2)
+        self.assertEqual([k for k, _ in self.comments(second)], ["comment", "progress", "reply"],
+                         "the note went when the run started")
+
     def test_a_run_in_progress_during_a_switch_finishes_on_its_own_threads(self):
         git(self.repo, self.env, "commit", "-q", "-am", "Say hello")
         self.start_watcher()

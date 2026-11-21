@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from .ports import CodingAgentRun, ReviewForDispatch
 
 QUEUED_NOTE = "🕒 **Queued** — agent is busy with another comment, will pick this up next."
+NO_BRANCH_NOTE = ("🕒 **Waiting** — branch `{branch}` is checked out in no folder difftate serves: "
+                  "check it out to get a reply.")
 PICKED_UP_NOTE = "🕒 **Queued** — picked up by the next run (below)."
 THINKING_NOTE = "⏳ **Thinking…** (0s)"
 TAMPERED = ("⚠️ The stored review was changed outside difftate during this run "
