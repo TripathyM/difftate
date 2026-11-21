@@ -404,7 +404,7 @@ class OpeningTheReview(NeovimHarness, unittest.TestCase):
         wait_for("gitsigns on the base", lambda: nvim.gitsigns_base() == self.head(ref="main"))
         wait_for("the review's hunk", lambda: nvim.hunks() == [[1, 1]])
         self.assertEqual(nvim.status(), "review open · live · git signs show changes since main")
-        self.assertIn("review open · live · git signs show changes since main", nvim.messages())
+        wait_for("the note in the messages", lambda: "review open · live · git signs show changes since main" in nvim.messages())
 
     def test_nvim_plus_difftate_open_opens_the_review_at_start_up(self):
         self.commit()
