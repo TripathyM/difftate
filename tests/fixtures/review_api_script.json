@@ -14,7 +14,8 @@
    "checkedOut": "feature",
    "mode": "live",
    "held": [],
-   "folder": "<repo>"
+   "folder": "<repo>",
+   "warnings": []
   }
  },
  {
@@ -4524,7 +4525,8 @@
    "checkedOut": "other",
    "mode": "live",
    "held": [],
-   "folder": "<repo>"
+   "folder": "<repo>",
+   "warnings": []
   }
  },
  {
@@ -4866,7 +4868,8 @@
    "checkedOut": "feature",
    "mode": "live",
    "held": [],
-   "folder": "<repo>"
+   "folder": "<repo>",
+   "warnings": []
   }
  },
  {
@@ -5093,7 +5096,8 @@
     "<id-22>",
     "<id-24>"
    ],
-   "folder": "<repo>"
+   "folder": "<repo>",
+   "warnings": []
   }
  },
  {

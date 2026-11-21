@@ -496,6 +496,36 @@ class WhileTheReviewIsOpen(NeovimHarness, unittest.TestCase):
         wait_for("gitsigns on the new merge-base", lambda: nvim.gitsigns_base() == self.head(ref="main"))
         self.assertEqual(nvim.status(), "review open · live · git signs show changes since main")
 
+    def test_a_store_changed_outside_difftate_is_notified_once_as_a_warning_and_changes_no_option_or_key(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("Add a docstring")
+        nvim = self.nvim()
+        self.attached(nvim)
+        before = nvim.lua("return T.snapshot()")
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        nvim.lua("T.notes = {}; vim.notify = function(m, level, o) table.insert(T.notes, { m, level, o and o.title }) end")
+        path = next(os.path.join(top, "events.jsonl") for top, _, names in os.walk(os.path.join(self.repo, ".git"))
+                    if os.path.basename(top) == self.api("GET", "/api/review")["id"] and "events.jsonl" in names)
+        with open(path) as f:
+            text = f.read()
+        with open(path, "w") as f:
+            f.write(text.replace("Add a docstring", "Fine."))
+
+        wait_for("the notification", lambda: any("changed outside" in n[0] for n in nvim.lua("return T.notes")))
+        time.sleep(1)  # five more polls, each still carrying the warning
+
+        notes = [n for n in nvim.lua("return T.notes") if "changed outside" in n[0]]
+        self.assertEqual(len(notes), 1, f"shown once: {notes}")
+        self.assertIn("changed outside difftate", notes[0][0])
+        self.assertEqual(notes[0][1], 3, "at warning level (vim.log.levels.WARN)")
+        self.assertEqual(notes[0][2], "difftate")
+        nvim.command("DifftateClose")
+        wait_for("gitsigns on the index", lambda: nvim.gitsigns_base() is None)
+        self.assertEqual(nvim.lua("return T.snapshot()"), before)
+
     def test_requests_never_block_the_editor_even_when_the_watcher_hangs(self):
         self.commit()
         self.start_watcher()

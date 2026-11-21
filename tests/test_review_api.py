@@ -64,7 +64,7 @@ def serve(repo, folder, history):
     review = bind_review(store, git.GitCodeReader(repo, "main", "feature", about["id"]),
                          HistoryFiles({"review": about["id"]}, history), about)
     shown = ShownView("", lambda view: git.need_view(repo, view))
-    entry = SimpleNamespace(review=review, shown=shown, root=repo)
+    entry = SimpleNamespace(review=review, shown=shown, root=repo, shown_warnings=lambda: [])
     api = ReviewApi(lambda given, base: entry, os.path.join(os.path.dirname(history), "watcher-home"),
                     default_reviewer=git.user_name)
     api.test_folder = repo
@@ -430,8 +430,10 @@ class ServedOnFakes:
             if name not in self.agents:
                 raise NotFound(f"no agent '{name}' in the agent list: {', '.join(self.agents)}")
 
+        self.warnings = []
         entry = SimpleNamespace(review=self.review, shown=ShownView(view, a_fake_view), root=tmp,
-                                who_replies=agent, check_agent=check_agent)
+                                who_replies=agent, check_agent=check_agent,
+                                shown_warnings=lambda: list(self.warnings))
 
         def folders(folder, base):
             if folder != tmp:
@@ -450,6 +452,14 @@ class ServedOnFakes:
 
 
 class TheReviewApiOnFakes(ServedOnFakes, unittest.TestCase):
+    def test_a_review_comes_with_its_warnings_each_with_an_id_and_a_time(self):
+        self.serve()
+        self.assertEqual(self.ask("GET", "/api/review")[1]["warnings"], [])
+        warning = {"id": "w1", "time": "2026-01-02T03:04:05+00:00", "text": "the store was restored"}
+        self.warnings.append(warning)
+
+        self.assertEqual(self.ask("GET", "/api/review")[1]["warnings"], [warning])
+
     def test_every_request_must_name_its_folder(self):
         self.serve()
 
