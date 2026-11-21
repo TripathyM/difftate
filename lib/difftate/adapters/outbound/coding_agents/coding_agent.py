@@ -3,7 +3,7 @@ work."""
 from __future__ import annotations
 
 import os
-from typing import Callable, Dict, List, NamedTuple, Sequence, Tuple
+from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from ....core.dispatch.model import CouldNotStart, News
 from .events import ReadsEvents
@@ -27,7 +27,8 @@ class CodingAgent:
     reply_command = REPLY_COMMAND
 
     def __init__(self, cmd: str, model: str = "", cwd: str = ".",
-                 off_limits: Callable[[], OffLimits] = OffLimits):
+                 off_limits: Callable[[], OffLimits] = OffLimits, env: Optional[Dict[str, str]] = None):
+        self.env = env or {}  # what the command needs in its environment, on top of ours
         self.cmd = cmd
         self.model = model
         self.cwd = cwd
@@ -49,5 +50,5 @@ class CodingAgent:
         except OSError as e:
             raise CouldNotStart(f"could not make the run's folder ({e})")
         argv, first = self.command(prompt, folder)
-        env: Dict[str, str] = dict(os.environ, DT_RUN_DIR=folder.path)
+        env: Dict[str, str] = {**os.environ, **self.env, "DT_RUN_DIR": folder.path}
         return ProcessRun(argv, self.cwd, env, self.events(), folder, first)

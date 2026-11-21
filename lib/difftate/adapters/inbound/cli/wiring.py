@@ -31,7 +31,6 @@ class Loop:
 class Wiring:
     """The adapters, for the command line.
 
-    coding_agents: the names --tool accepts.
     viewers: name -> open(url, root), whether it could be reached (--open).
     difftate_home: the difftate folder of the machine (~/.difftate): the
         watcher's running files, token, lock and log, and the review history.
@@ -46,10 +45,17 @@ class Wiring:
     reply_in_run(run_dir, thread, body): leave a run's answer in its folder
         <run_dir> (the reply channel); the thread's full id. Raises ReplyRefused,
         or OSError.
-    coding_agent(tool, cmd, model): the coding agent, with an object for each
-        folder: its name, cmd and for_folder(cwd, folder), the agent whose runs
-        work in <cwd> and may not write the review's <folder>; raises the core's
-        CouldNotStart when its command isn't found.
+    coding_agent(cwd, folder): the coding agent whose runs work in <cwd> and
+        may not write the review's <folder>: its name and start(prompt, threads),
+        which chooses the agent when a run starts (the repository's, else the
+        machine's default, from the agent list as it is then) and raises the
+        core's CouldNotStart for an agent that isn't listed or whose command
+        isn't found.
+    agent_choice(cwd): the agent that replies in the repository of <cwd>: an
+        object with name, source ("repository" or "machine"), names (the
+        list's) and path (the list's file); raises the core's NotFound.
+    set_agent(cwd, name): set the repository's agent; raises the core's
+        NotFound for a name not in the list or a command not found.
     base(cwd, given): the review's base; raises the core's NotFound.
     need_view(cwd, view): <view>, once it is a view; raises NotFound.
     review_branch(cwd, base): what the review is of, or None with no commit.
@@ -64,7 +70,6 @@ class Wiring:
         against <base> kept in <folder> is Done (a core DoneStatus), read
         without starting or changing anything; raises the core's NotFound
         for a branch with no commit and no review, or CouldNotRead."""
-    coding_agents: Sequence[str]
     viewers: Mapping[str, Callable[[str, str], bool]]
     difftate_home: str
     difftate_folder: Callable[[str], Optional[Any]]
@@ -72,7 +77,9 @@ class Wiring:
     ask_running_watcher: Callable[..., Tuple[int, Any]]
     start_watcher: Callable[[Sequence[str]], Callable[[], bool]]
     reply_in_run: Callable[[str, str, str], str]
-    coding_agent: Callable[..., Any]
+    coding_agent: Callable[[str, str], Any]
+    agent_choice: Callable[[str], Any]
+    set_agent: Callable[[str, str], None]
     base: Callable[[str, str], str]
     need_view: Callable[[str, Any], str]
     review_branch: Callable[[str, str], Optional[str]]

@@ -16,10 +16,9 @@ def run_watcher(argv, wiring):
     sys.stdout = log
     watcher = None
     try:
-        opts = parse_watcher(argv, wiring.coding_agents)
+        opts = parse_watcher(argv)
         watcher = Watcher(opts, wiring)
         watcher.log = log
-        watcher.setup()
         # A signal asks it to stop, as `difftate stop` does; closing a terminal
         # doesn't: no terminal holds it
         signal.signal(signal.SIGINT, lambda signum, frame: watcher.stopping.set())

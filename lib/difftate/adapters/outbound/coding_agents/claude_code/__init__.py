@@ -42,7 +42,7 @@ class ClaudeCode(CodingAgent):
                 "--output-format", "stream-json", "--verbose"]
         if self.model:
             args += ["--model", self.model]
-        return [self.cmd, "-p", prompt, *args], [ModelChosen(self.model, "--model" if self.model else "")]
+        return [self.cmd, "-p", prompt, *args], [ModelChosen(self.model, "the agent list" if self.model else "")]
 
     def events(self) -> ClaudeEvents:
         return ClaudeEvents()

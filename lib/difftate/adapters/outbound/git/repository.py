@@ -71,6 +71,19 @@ def user_name(cwd: str) -> Optional[str]:
     return git(cwd, "config", "user.name") or None
 
 
+def agent_setting(cwd: str) -> Optional[str]:
+    """The agent the repository chose (difftate.agent in its own git config,
+    shared by its worktrees and never committed); None when it chose none."""
+    return git(cwd, "config", "--local", "difftate.agent") or None
+
+
+def set_agent_setting(cwd: str, name: str) -> None:
+    """Choose the agent <name> for the repository and all its worktrees."""
+    r = subprocess.run(["git", "-C", cwd, "config", "--local", "difftate.agent", name], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise CouldNotRead(f"could not write the repository's git config ({r.stderr.strip()})")
+
+
 def need_view(cwd: str, view: object) -> str:
     """<view> as given ("" for all changes), once it is known to be a view.
     Raises the core's NotFound when it isn't one."""

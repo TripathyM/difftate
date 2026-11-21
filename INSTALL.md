@@ -29,7 +29,7 @@ Run each check. Report all results together, then stop if anything **required** 
 
 The agent CLI check passes when at least one of the two prints a path to a real program, not an alias or function.
 
-Tell the user which agent will reply: `difftate` uses `claude` unless they start it with `--tool opencode`.
+Tell the user which agent will reply: `claude` unless they list others in the agent list (section 5).
 
 ## 2. Clone the repo
 
@@ -59,7 +59,7 @@ Use the folder from question 1 (default `~/difftate`). Call it `DT_HOME` below, 
 5. Show the user the full block, with `DT_HOME` filled in, and wait for a yes.
 6. Append the block to the end of `~/.zshrc`.
 
-Which coding agent and account reply is chosen by the `difftate` that starts the watcher: `difftate --cmd <command>` (a wrapper or alias that runs Claude with the right account), `--tool opencode`, `--model <model>`. A list of agents, chosen for each repository, replaces this in a later version. Don't add shell functions for it.
+Which coding agent and account reply is not a shell function or a `difftate` option: it is the agent list (section 5). Don't add shell functions for it.
 
 ## 4. Herdr (only if question 2 was yes)
 
@@ -72,7 +72,26 @@ Herdr is only where the Neovim viewer opens (`difftate --open nvim`): a **Review
    export DT_HERDR="HERDR_BIN"          # only when herdr-app isn't on PATH
    ```
 
-## 5. Verify
+## 5. The agent list (optional)
+
+Without a list, `claude` replies. To choose agents, write `~/.difftate/agents.toml` (`$DIFFTATE_HOME/agents.toml`): ask which coding agents and accounts they use, then write one `[agents.<name>]` table for each (`tool` = `claude` or `opencode`, `cmd` = the command or shell alias, `env` = what it needs, such as `{ CLAUDE_CONFIG_DIR = "~/.claude-personal" }`, optional `model`) and a `default`. A personal and a work account:
+
+```toml
+default = "personal"
+
+[agents.personal]
+tool = "claude"
+cmd = "ccp"
+env = { CLAUDE_CONFIG_DIR = "~/.claude-personal" }
+
+[agents.work]
+tool = "claude"
+cmd = "ccw"
+```
+
+Then, in each repository, `difftate agent <name>` says which of them replies there (for its worktrees too); the default replies in a repository with none. The file is read for each run: no restart.
+
+## 6. Verify
 
 1. `zsh -ic 'command -v difftate dt-export dt-reply'`: each prints a path under `DT_HOME/bin`.
 2. `zsh -ic 'difftate --help | head -1'` prints a line starting with `difftate`.
@@ -101,7 +120,7 @@ First, open a new terminal (or run `source ~/.zshrc`). Then `cd` into a git repo
 - The diff opens in the browser (`difftate --open nvim` opens the Neovim viewer instead). Comment on a line, and the agent replies in the same thread.
 - New changes show up by themselves, in the browser and in Neovim.
 - To look at a different view, run the new command: it switches the folder's view and opens the viewer again. Every view is the same review, so threads stay. The browser's **View** menu and Neovim's `<leader>rV` switch views too.
-- Use `difftate stop`, then `difftate --tool opencode` (or `--cmd`, `--model`), to change which agent replies.
+- Use `difftate agent <name>` in a repository to change which listed agent replies there (no restart); `difftate agent` says which it uses.
 
 ## Questions
 

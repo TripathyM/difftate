@@ -19,7 +19,6 @@ import time
 import traceback
 
 from ....core.changes.model import View
-from ....core.dispatch.model import CouldNotStart
 from ....core.review.model import CouldNotRead, NotFound
 from .options import Exit
 
@@ -174,12 +173,6 @@ class Watcher:
         self.log = None
         self._adding = threading.Lock()
 
-    def setup(self):
-        try:
-            self.agent = self.wiring.coding_agent(self.opts["tool"], self.opts["cmd"], self.opts["model"])
-        except CouldNotStart as e:
-            raise Exit(1, f"Error: {e}")
-
     def folder(self, path, base=""):
         """What the watcher serves for the checked-out folder <path> is in, with
         the review against <base> (the entry's base, or the repository's default
@@ -207,7 +200,7 @@ class Watcher:
     def add(self, found, base):
         """Serve the checked-out folder <found> (a DifftateFolders)."""
         entry = FolderEntry(self.wiring, found, self.wiring.base(found.root, base),
-                            self.agent.for_folder(found.root, found.reviews), self.tampered)
+                            self.wiring.coding_agent(found.root, found.reviews), self.tampered)
         if self.log:
             self.log.about(entry.label)
         entry.start("")
@@ -223,7 +216,7 @@ class Watcher:
         self.api = w.review_api(self.folder, w.difftate_home, self.stopping.set)
         self.api.start()
         print(f"[{now()}] difftate watcher started (pid {os.getpid()}, port {self.api.server.server_address[1]})")
-        print(f"  Coding agent: {self.opts['tool']} (cmd: {self.agent.cmd}); polling every {self.opts['interval']:g}s")
+        print(f"  Who replies: the repository's agent, else the machine's default, from the agent list; polling every {self.opts['interval']:g}s")
         print("  Each run starts a fresh agent session, in the folder of the review it is for")
         while not self.stopping.wait(0.5):
             pass

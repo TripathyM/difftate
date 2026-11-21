@@ -51,7 +51,7 @@ difftate stop               # stop the watcher
 
 **Where it keeps things:** the difftate folder in your home, `~/.difftate` (set `DIFFTATE_HOME` for another), readable only by you: `api.json` (port and pid) and `token` (the one review API token), `watcher.lock` (a second `difftate` while one starts waits for it), `log` (the watcher's messages, each line saying which folder and review it is about; `tail -f ~/.difftate/log`) and `history/`. No folder's git dir gets running files. The coding agent's runs may not write this folder or read the token.
 
-Until the list of coding agents exists, the `difftate` that **starts** the watcher chooses the agent for every review: `--tool claude|opencode` (default `claude`), `--cmd <command>` (run it through another command or alias) and `--model <model>`. A `difftate` that finds a watcher running ignores them; `difftate stop`, then `difftate --cmd …`, changes them.
+**Who replies** is the repository's agent, else the machine's default, from [the agent list](#the-agent-list). `difftate agent <name>` sets the repository's; `difftate agent` says which one it uses and where that comes from. Each run reads the choice when it starts, so changing it needs no restart and never disturbs a run in flight.
 
 Every run starts a fresh agent session of that coding agent. No earlier agent session is found or continued ([ADR 0005](docs/adr/0005-runs-start-fresh.md)), so it doesn't matter which coding agent or account wrote the code, or from which folder.
 
@@ -104,18 +104,34 @@ dt-export ~/work/app # the review of that folder, from anywhere: the reply comma
 
 The session replies with `dt-reply <thread> "<answer>"` (the export's command, with `--folder <folder>` when you gave one). Outside a run, `dt-reply` finds the watcher the same way, naming its folder, and posts the answer through the review API: it shows as the coding agent's reply, with no progress note, and the thread becomes `replied`. It may reply to any thread of the review, open, resolved or dismissed, and changes no thread status. `<thread>` is the 8 characters the export shows, or the whole id; an id that isn't in the review is refused. With no running difftate it says so and exits 1, posting nothing: `dt-reply` never writes the review itself. Inside a run (`DT_RUN_DIR` set) it works as before, through the run's folder, and never reaches the review API.
 
-## Example: another Claude setup
+## The agent list
 
-The coding agent and account that reply are the ones the watcher was started with. Say `ccp` is a wrapper that runs Claude with its own config dir, and you want it to reply:
+The coding agents that can reply are listed in one file on the machine, `~/.difftate/agents.toml` (`$DIFFTATE_HOME/agents.toml`): each entry a name, the coding agent (`tool`: `claude` or `opencode`), the command (`cmd`, a program or a shell alias), the environment it needs (`env`, optional) and a model (`model`, optional: the coding agent's own default when empty), plus the `default`. For a personal and a work account:
 
-```bash
-difftate stop
-difftate --cmd ccp                                   # the watcher starts with it, for every review
+```toml
+default = "personal"
+
+[agents.personal]
+tool = "claude"
+cmd = "ccp"                                          # the wrapper or alias that runs Claude
+env = { CLAUDE_CONFIG_DIR = "~/.claude-personal" }   # ~ is your home
+
+[agents.work]
+tool = "claude"
+cmd = "ccw"
+
+[agents.open]
+tool = "opencode"
+cmd = "opencode"
+model = "anthropic/claude-opus-5-5"
 ```
 
-Or plain `claude` with another config dir: `difftate stop`, then `CLAUDE_CONFIG_DIR=~/.claude-other difftate`.
+```bash
+difftate agent work      # this repository, and all its worktrees, are answered by `work`
+difftate agent           # which agent replies here, and whether the repository or the machine default says so
+```
 
-The watcher passes its environment to the coding agent, so `CLAUDE_CONFIG_DIR` set for the `difftate` that starts it reaches `claude`. A list of agents, chosen for each repository, replaces this later.
+The choice is kept in the repository's own git config (`difftate.agent`, shared by its worktrees, never committed). A name that isn't in the list is refused with the names; so is an agent whose command isn't found. A run whose agent has gone from the list, or whose command isn't found, fails with a note saying so, and the watcher keeps going. With no `agents.toml`, the list is one agent, `claude`.
 
 ## Review in Neovim
 
@@ -205,8 +221,8 @@ The coding agent's reply follows as a separate entry in the thread (kind `reply`
 **In the watcher's log** (`difftate log` comes later; for now `tail -f ~/.difftate/log`), each line starts with the folder and review it is about (`/work/app (feature): `):
 
 ```
-[07:40:23] New/changed threads detected — dispatching to claude
-  Model: claude-opus-5-5 (from --model)
+[07:40:23] New/changed threads detected — dispatching to personal
+  Model: claude-opus-5-5 (from the agent list)
 [07:40:24] 🚀 session 3f1c9a20 started · model claude-opus-5-5
 [07:40:25] 🔧 Read  src/app.ts
 [07:40:26] 💬 <agent text>
@@ -216,9 +232,9 @@ The coding agent's reply follows as a separate entry in the thread (kind `reply`
 
 ## Which model answers
 
-The model is `--model` when you give one, else the coding agent's own default. A Claude Code default is the current one, which running `/model` in *any* Claude session changes; to keep replies on one model, give `--model`.
+The model is the agent's `model` in [the agent list](#the-agent-list) when it gives one, else the coding agent's own default. A Claude Code default is the current one, which running `/model` in *any* Claude session changes; to keep replies on one model, give `model`.
 
-The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on every dispatch, and the 🚀 line shows the model the coding agent actually ran.
+The watcher prints `Model: <name> (from the agent list)` (or `Model: CLI default`) on every dispatch, and the 🚀 line shows the model the coding agent actually ran.
 
 **Cost note:** each run starts a fresh agent session, so a run's cost grows with its prompt, not with earlier runs.
 
@@ -231,7 +247,7 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 | `DT_OPEN` | `browser` | The viewer the review opens in: `browser`, `nvim` (the [Neovim viewer](#review-in-neovim)) or `both`. `--open` overrides it for one run |
 | `DT_HERDR` | unset (`herdr-app` on `PATH`) | Path to the Herdr app's binary, for `--open nvim` to open its Herdr tab when `herdr-app` isn't on `PATH` |
 | `DIFFTATE_HOME` | `~/.difftate` | The difftate folder of the machine: the watcher's port, pid and token, lock and log, and the review history. Tests and trials point it elsewhere |
-| `DT_INTERVAL` | `1` | Seconds between polls, for the `difftate` that starts the watcher. The tests set it small |
+| `DT_INTERVAL` | `1` | Seconds between polls, read by the `difftate` that starts the watcher. The tests set it small |
 
 ### Constants (edit the file)
 
@@ -244,7 +260,7 @@ The watcher prints `Model: <name> (from --model)` (or `Model: CLI default`) on e
 
 ### Command line (`difftate --help`)
 
-`difftate [<view>] [--base <branch>] [--open browser|nvim|both]`, with `--tool`, `--cmd` and `--model` for the `difftate` that starts the watcher (until the list of agents exists), and `--cwd` (a folder of the repository). `difftate-watch.py --help` lists the watcher process's own flags, which `difftate` passes it.
+`difftate [<view>] [--base <branch>] [--open browser|nvim|both]` and `--cwd` (a folder of the repository); `difftate agent [<name>]`; `difftate stop`; `difftate status`. Who replies is the agent list's, not an option. `difftate-watch.py --help` lists the watcher process's own flag, which `difftate` passes it.
 
 ### Internal env vars (set by the watcher, don't set yourself)
 
@@ -372,7 +388,7 @@ python3 tests/run.py fast    # what a Lua-only change needs: the Neovim viewer's
 
 `tests/run.py` (standard library only) runs one test at a time in each of its workers (one per CPU, at most 8) and lists the slowest; it takes module, class or test names too (`python3 tests/run.py test_watcher.WatcherTest`). `python3 -m unittest discover -s tests -v` still runs the same tests one after another.
 
-`tests/test_watcher.py` makes a temporary git repository and a temporary `DIFFTATE_HOME`, starts the real watcher with the `difftate` program and a fake coding agent (`tests/fake_agent.py`, through `--cmd`), and drives it through the review API; `tests/test_one_watcher.py` covers the one watcher: starting and stopping it, naming folders, and two worktrees on it. Nothing in the tests touches your own `~/.difftate` or a watcher running there. `tests/test_review_api.py` runs a scripted review through every review API route and compares each answer with `tests/fixtures/review_api_script.json`. The core's tests (`tests/test_core_*.py`) need no repository and no process. `tests/test_core_boundary.py` checks that the core imports no technology, and that only `main.py` wires adapters to the core: an adapter imports the core and itself, never another adapter (one named exception: the history files share the local store's event line format). `tests/test_stores.py` runs one test suite against every store (memory and local). `tests/test_neovim_viewer.py` starts the watcher, then a headless Neovim with only the plugin and gitsigns (`tests/nvim/init.lua`; never your own config, as HOME and the XDG folders are temporary), and drives it as the reviewer does; it needs `nvim` 0.10 or later and `DIFFTATE_TEST_GITSIGNS` set to a gitsigns.nvim checkout, and skips without (`DIFFTATE_TEST_GITSIGNS=~/.local/share/nvim/lazy/gitsigns.nvim` uses LazyVim's, read only). CI (`.github/workflows/ci.yml`) runs them with `tests/run.py` on the latest Python, runs the Neovim viewer's tests with Neovim and gitsigns installed, on every push and pull request.
+`tests/test_watcher.py` makes a temporary git repository and a temporary `DIFFTATE_HOME`, starts the real watcher with the `difftate` program and a fake coding agent (`tests/fake_agent.py`, named in the temporary agent list), and drives it through the review API; `tests/test_one_watcher.py` covers the one watcher: starting and stopping it, naming folders, and two worktrees on it. Nothing in the tests touches your own `~/.difftate` or a watcher running there. `tests/test_review_api.py` runs a scripted review through every review API route and compares each answer with `tests/fixtures/review_api_script.json`. The core's tests (`tests/test_core_*.py`) need no repository and no process. `tests/test_core_boundary.py` checks that the core imports no technology, and that only `main.py` wires adapters to the core: an adapter imports the core and itself, never another adapter (one named exception: the history files share the local store's event line format). `tests/test_stores.py` runs one test suite against every store (memory and local). `tests/test_neovim_viewer.py` starts the watcher, then a headless Neovim with only the plugin and gitsigns (`tests/nvim/init.lua`; never your own config, as HOME and the XDG folders are temporary), and drives it as the reviewer does; it needs `nvim` 0.10 or later and `DIFFTATE_TEST_GITSIGNS` set to a gitsigns.nvim checkout, and skips without (`DIFFTATE_TEST_GITSIGNS=~/.local/share/nvim/lazy/gitsigns.nvim` uses LazyVim's, read only). CI (`.github/workflows/ci.yml`) runs them with `tests/run.py` on the latest Python, runs the Neovim viewer's tests with Neovim and gitsigns installed, on every push and pull request.
 
 ## Troubleshooting
 
@@ -381,7 +397,7 @@ python3 tests/run.py fast    # what a Lua-only change needs: the Neovim viewer's
 | No progress note appears | The watcher's log (`~/.difftate/log`) for `could not post the progress note on thread …`; is the watcher still running (`difftate`)? |
 | Coding agent never finishes | Run the coding agent's command by hand with `< /dev/null`; look for auth or stdin hangs |
 | Wrong diff shown | Check the view (the browser's **View** menu, `GET /api/view`); rerun `difftate <view>` |
-| Answer from the wrong model | Check the `Model:` line; force it with `difftate --model <model>` |
+| Answer from the wrong model | Check the `Model:` line; set `model` on the agent in `agents.toml` |
 | Thread ignored | Its thread state is `replied` or `failed` (`GET /api/threads`): comment again to re-trigger |
 
 ## Roadmap

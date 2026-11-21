@@ -132,13 +132,13 @@ class StartingAndStopping(Harness, unittest.TestCase):
         self.assertTrue(self.running_pid())
 
     def test_a_watcher_that_cant_start_is_reported_with_its_log(self):
-        self.agent_cmd = os.path.join(self.tmp, "no-such-agent")
+        os.makedirs(os.path.join(self.difftate_home, "api.json"))  # it can't write its running files there
 
         run = self.difftate(*self.agent_args_for_difftate())
 
         self.assertEqual(run.returncode, 1, run.stdout)
         self.assertIn("the watcher did not start", run.stdout + run.stderr)
-        self.assertIn("no-such-agent", run.stdout + run.stderr, "the log says why")
+        self.assertIn("api.json", run.stdout + run.stderr, "the log says why")
         self.assertIsNone(self.running_pid())
 
 
@@ -346,7 +346,7 @@ class TamperingIsRoutedToTheEntryWhoseReviewWasTampered(unittest.TestCase):
 
     def watcher(self):
         warned = []
-        watcher = Watcher({"tool": "claude", "cmd": "", "model": "", "interval": 1}, SimpleNamespace())
+        watcher = Watcher({"interval": 1}, SimpleNamespace())
 
         def entry(name):
             loop = SimpleNamespace(warn_tampered=lambda ids, name=name: warned.append((name, list(ids))))
