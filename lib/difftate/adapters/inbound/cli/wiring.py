@@ -16,7 +16,9 @@ class Loop:
     runs a killed watcher left on <review>; busy() is whether a run holds the
     review (or its end isn't kept yet); stop(say) stops the run in
     progress. switch_review(review) dispatches <review>'s threads from now on
-    (the watcher follows the checked-out branch); warn_tampered(thread_ids)
+    (the watcher follows the checked-out branch); hold_for_branch(branch) puts
+    a note on the review's waiting threads saying to check <branch> out (the
+    watcher moves away from it, and no folder has it); warn_tampered(thread_ids)
     tells the run in progress that the stored review was changed outside
     difftate."""
     poll: Callable[[Callable[[], None]], None]
@@ -24,6 +26,7 @@ class Loop:
     recover_runs: Callable[[Any], None]
     stop: Callable[[bool], None]
     switch_review: Callable[[Any], None]
+    hold_for_branch: Callable[[str], None]
     warn_tampered: Callable[[Sequence[str]], None]
 
 

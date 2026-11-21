@@ -20,6 +20,7 @@ from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
 from difftate.core.dispatch.model import (  # noqa: E402
     Dispatch, Exited, Finished, ModelChosen, Output, Reply, Said, AgentSessionStarted, Step, Unparsed,
 )
+from difftate.core.dispatch.use_cases.hold_for_branch import hold_for_branch  # noqa: E402
 from difftate.core.dispatch.use_cases.stop_run import stop_run  # noqa: E402
 from difftate.core.dispatch.use_cases.poll import poll  # noqa: E402
 from difftate.core.dispatch.use_cases.recover_runs import recover_runs  # noqa: E402
@@ -365,6 +366,44 @@ class QueuedThreads(DispatchTest):
             ("comment", "Or to hello?"),
             ("progress", "⏳ **Thinking…** (0s)"),
         ])
+
+
+class WaitingForABranch(DispatchTest):
+    NOTE = ("🕒 **Waiting** — branch `feature` is checked out in no folder difftate serves: "
+            "check it out to get a reply.")
+
+    def test_a_waiting_thread_gets_a_note_when_no_folder_has_the_branch_and_the_run_reuses_it(self):
+        tid = self.a_thread()
+
+        hold_for_branch(self.dispatch, "feature")
+
+        self.assertEqual(self.comments(tid), [("comment", "Why an f-string here?"), ("queued", self.NOTE)])
+        self.assertEqual(self.state(tid), "waiting")
+        agent = FakeCodingAgent(FakeRun([[]]))
+        self.poll(agent)
+        self.assertEqual(self.comments(tid), [("comment", "Why an f-string here?"),
+                                              ("progress", "⏳ **Thinking…** (0s)")], "the note goes when the run starts")
+
+    def test_the_note_is_kept_once_and_replaces_a_busy_note(self):
+        first = self.a_thread()
+        agent = FakeCodingAgent(FakeRun([[]]))
+        self.poll(agent)
+        second = self.a_thread("Rename greet?")
+        self.poll(agent)  # busy: the second thread has a queued note
+
+        hold_for_branch(self.dispatch, "feature")
+        hold_for_branch(self.dispatch, "feature")
+
+        self.assertEqual(self.comments(second), [("comment", "Rename greet?"), ("queued", self.NOTE)])
+        self.assertEqual(self.comments(first)[-1][0], "progress", "a thread in the run has no such note")
+
+    def test_a_resolved_thread_gets_no_note(self):
+        tid = self.a_thread()
+        self.review.set_status("reviewer", tid, "resolved")
+
+        hold_for_branch(self.dispatch, "feature")
+
+        self.assertEqual(self.comments(tid), [("comment", "Why an f-string here?")])
 
 
 class StoppingARun(DispatchTest):

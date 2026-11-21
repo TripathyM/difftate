@@ -25,6 +25,7 @@ from .adapters.outbound.memory_store import MemoryStore
 from .adapters.outbound.terminal import Terminal
 from .core.changes.use_cases.changeset import changeset
 from .core.changes.use_cases.checked_out import checked_out
+from .core.dispatch.use_cases.hold_for_branch import hold_for_branch
 from .core.changes.use_cases.commit_messages import commit_messages
 from .core.dispatch.model import CouldNotStart, Dispatch
 from .core.dispatch.use_cases.poll import poll
@@ -280,6 +281,7 @@ def loop(review, coding_agent):
         recover_runs=functools.partial(recover_interrupted_runs, report=report),
         stop=functools.partial(stop_run, dispatch, report),
         switch_review=switch_review,
+        hold_for_branch=functools.partial(hold_for_branch, dispatch),
         warn_tampered=dispatch.warn_tampered,
     )
 

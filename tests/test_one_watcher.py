@@ -550,6 +550,22 @@ class TamperingIsRoutedToTheEntryWhoseReviewWasTampered(unittest.TestCase):
 
         self.assertEqual(warned, [("second", ["abcdef123456"])])
 
+    def test_a_branch_is_served_elsewhere_only_by_another_folder_of_the_same_repository(self):
+        branches = {"/a": "feature", "/b": "feature", "/c": "other", "/d": "feature"}
+        wiring = SimpleNamespace(review_branch=lambda root, base: branches[root])
+        watcher = Watcher({"interval": 1}, wiring)
+
+        def entry(root, folder):
+            return SimpleNamespace(root=root, base="main", folder=folder)
+        mine = entry("/a", "repo1")
+        watcher.folders = {"/a": mine, "/b": entry("/b", "repo2"), "/c": entry("/c", "repo1")}
+
+        self.assertFalse(watcher.served_elsewhere(mine, "feature"), "another repository's feature is another review")
+        self.assertFalse(watcher.served_elsewhere(mine, "gone"))
+        self.assertTrue(watcher.served_elsewhere(mine, "other"))
+        watcher.folders["/d"] = entry("/d", "repo1")
+        self.assertTrue(watcher.served_elsewhere(mine, "feature"))
+
     def test_an_entry_with_no_loop_yet_is_not_an_error(self):
         watcher, _, warned = self.watcher()
 
