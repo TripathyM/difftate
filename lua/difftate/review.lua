@@ -9,6 +9,7 @@ local git = require("difftate.git")
 local gitsigns = require("difftate.gitsigns")
 local look = require("difftate.look")
 local mode = require("difftate.mode")
+local done = require("difftate.done")
 local nav = require("difftate.nav")
 local pick = require("difftate.pick")
 local threads = require("difftate.threads")
@@ -111,6 +112,25 @@ local function read_mode(review, on_done)
   end)
 end
 
+-- Read whether the open <review> is Done (GET /api/done), for the statusline note and Done's key; then
+-- on_done(answer), or on_done(nil, err) when the review API didn't answer (what was known stays; a watcher
+-- without the route shows no Done and no error: the poll says when difftate stopped).
+local function read_done(review, on_done)
+  local stamp = review.done_stamp
+  api.request(review.watcher, "GET", "/api/done", function(answer, err)
+    if not answer then
+      on_done(nil, err)
+      return
+    end
+    -- A mark or an undo answered since this was asked: its answer is newer, so this one doesn't overwrite it
+    if current == review and review.done_stamp == stamp then
+      review.done = answer
+      vim.cmd("redrawstatus")
+    end
+    on_done(answer)
+  end)
+end
+
 -- One poll of the open <review>: the review API (the base may change after a
 -- checkout), the merge-base, then the threads. One at a time: a slow one is skipped over.
 local function poll(review)
@@ -140,8 +160,10 @@ local function poll(review)
       review.base_error = why
       look.redraw() -- gitsigns may have moved its hunks since: it only says so when their counts change
       read_mode(review, function()
-        read_threads(review, function()
-          review.polling = false
+        read_done(review, function()
+          read_threads(review, function()
+            review.polling = false
+          end)
         end)
       end)
     end)
@@ -198,13 +220,15 @@ function M.open(cwd, opts)
           return
         end
         read_mode(review, function()
-          if current ~= review then
-            return
-          end
-          say(M.status())
-          look.show(watcher.top, opts.diff)
-          read_threads(review, function()
-            start_polling(review, opts.poll_ms)
+          read_done(review, function()
+            if current ~= review then
+              return
+            end
+            say(M.status())
+            look.show(watcher.top, opts.diff)
+            read_threads(review, function()
+              start_polling(review, opts.poll_ms)
+            end)
           end)
         end)
       end)
@@ -495,6 +519,47 @@ function M.submit()
   end)
 end
 
+-- Done ---------------------------------------------------------------------------
+
+-- Mark the review Done, or undo it (<now> is what the review API said a moment ago); the answer is the new status
+local function put_done(review, marking, now)
+  api.request(review.watcher, "PUT", "/api/done", function(answer, err)
+    if not answer then
+      return failed(review, err)
+    end
+    review.done_stamp = (review.done_stamp or 0) + 1
+    if current == review then
+      review.done = answer
+      vim.cmd("redrawstatus")
+    end
+    say(marking and done.marked_message(answer) or done.undone_message(now))
+  end, { done = marking })
+end
+
+--- Mark the review Done at the commit its branch is at, or undo it. Open threads and runs still working are
+--- warned about first (as the browser does): the reviewer goes on or stops.
+function M.toggle_done()
+  local review = open_review("mark it Done")
+  if not review then
+    return
+  end
+  -- From what the review API says now, so a mark made in another viewer isn't marked again blindly
+  read_done(review, function(now, err)
+    if not now then
+      return failed(review, err)
+    end
+    local question = not done.is_done(now) and done.question(now) or nil
+    if not question then
+      return put_done(review, not done.is_done(now), now)
+    end
+    vim.ui.select({ "Mark Done anyway", "Stop" }, { prompt = question }, function(choice)
+      if choice == "Mark Done anyway" and current == review then
+        put_done(review, true, now)
+      end
+    end)
+  end)
+end
+
 -- ]r, [r and the pickers ------------------------------------------------------
 
 -- The review's threads and its changeset's files as they are now: then_(threads, files, diff
@@ -679,7 +744,12 @@ function M.status()
   if not (current and current.merge_base) then
     return ""
   end
-  local parts = { "review open", mode.label(current.mode) }
+  local parts = { "review open" }
+  for _, part in ipairs({ mode.label(current.mode) or false, done.label(current.done) or false }) do
+    if part then
+      table.insert(parts, part)
+    end
+  end
   if not current.signs then
     table.insert(parts, ("gitsigns isn't loaded: no git signs for changes since %s"):format(current.base))
   else
