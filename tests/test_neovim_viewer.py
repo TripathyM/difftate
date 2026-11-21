@@ -533,7 +533,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
             "toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT", "comment": "<leader>gC", "add_comment": "<leader>gA",
             "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG",
             "threads": "<leader>gP", "files": "<leader>gF", "next": "<leader>gN", "previous": "<leader>gB",
-            "mode": "<leader>gM", "submit": "<leader>gU", "done": "<leader>gD", "export": "<leader>gX", "viewed": "<leader>gV"}})
+            "mode": "<leader>gM", "submit": "<leader>gU", "done": "<leader>gD", "export": "<leader>gX", "viewed": "<leader>gV", "views": "<leader>gW"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -544,7 +544,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
 
         self.assertEqual(after["options"], before["options"])
         self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG",
-                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rS", "n  rD", "n  rE", "n  rv"})
+                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rS", "n  rD", "n  rE", "n  rv", "n  rV"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -3017,4 +3017,282 @@ class ReviewViewed(NeovimHarness, unittest.TestCase):
         nvim.keys("<leader>rv")
         wait_for("not viewed", lambda: self.viewed() == [])
 
+
+@needs(MISSING_GITSIGNS)
+class ChoosingTheView(NeovimHarness, unittest.TestCase):
+    """GET and PUT /api/view: the part of the review the reviewer looks at (GLOSSARY.md: View). gitsigns' base follows it."""
+
+    def short(self, ref):
+        return subprocess.run(["git", "-C", self.repo, "log", "-1", "--format=%h", ref], check=True,
+                              capture_output=True, text=True, env=self.env).stdout.strip()
+
+    def a_branch_of_three_commits(self):
+        """notes.py has 12 lines on main. The branch deletes line 4 (its first commit), edits what is then line 5
+        (second), line 7 (third), line 9 (staged) and line 11 (not staged): so every view has its own hunks."""
+        lines = [f"line {n}" for n in range(1, 13)]
+        before = "\n".join(lines) + "\n"
+        del lines[3]
+        self.branch_changes("notes.py", before, "\n".join(lines) + "\n")
+        for number, message in ((5, "Edit the middle"), (7, "Edit near the end")):
+            lines[number - 1] += " edited"
+            self.write("notes.py", "\n".join(lines) + "\n")
+            self.commit(message)
+        lines[8] += " edited"
+        self.write("notes.py", "\n".join(lines) + "\n")
+        git(self.repo, self.env, "add", "notes.py")
+        lines[10] += " edited"
+        self.write("notes.py", "\n".join(lines) + "\n")
+
+    def open_notes(self, **kwargs):
+        """The review open on notes.py, on all changes (its five hunks); the Neovim."""
+        self.a_branch_of_three_commits()
+        self.start_watcher()
+        nvim = self.nvim(None, "notes.py", before=kwargs.pop("before", FAKE_SELECT), **kwargs)
+        self.attached(nvim)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        wait_for("the five hunks", lambda: nvim.hunks() == [[0, 1]] + [[1, 1]] * 4)
+        return nvim
+
+    def choose(self, nvim, entry):
+        """Press the view key and choose the picker's <entry> (1-based)."""
+        nvim.keys("<leader>rV")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.pick(entry)
+
+    def view(self):
+        return self.api("GET", "/api/view")["view"]
+
+    def test_leader_rV_lists_the_views_and_the_last_commits_with_their_subjects(self):
+        nvim = self.open_notes()
+
+        nvim.keys("<leader>rV")
+
+        wait_for("the picker", lambda: nvim.menu())
+        menu = nvim.menu()
+        self.assertEqual(menu["via"], "ui.select")
+        self.assertEqual(menu["title"], "Review views")
+        self.assertEqual(menu["lines"], [
+            "All changes · against main · shown",
+            "Uncommitted changes",
+            "Unstaged changes",
+            f"Last commit · {self.short('HEAD')} Edit near the end",
+            f"Last 2 commits · down to {self.short('HEAD~1')} Edit the middle",
+            f"Last 3 commits · down to {self.short('HEAD~2')} Change the file",
+        ])
+
+    def test_each_view_points_gitsigns_at_its_base_and_names_itself_in_the_note(self):
+        nvim = self.open_notes()
+        main = self.head(ref="main")
+        views = [  # (entry, the API's view, gitsigns' base, its hunks, the message, what the note says)
+            (4, "HEAD~1", self.head(ref="HEAD~1"), [[1, 1]] * 3, "Showing the last commit",
+             "review open · showing the last commit · live · git signs show changes since HEAD~1"),
+            (5, "HEAD~2", self.head(ref="HEAD~2"), [[1, 1]] * 4, "Showing the last 2 commits",
+             "review open · showing the last 2 commits · live · git signs show changes since HEAD~2"),
+            (6, "HEAD~3", main, [[0, 1]] + [[1, 1]] * 4, "Showing the last 3 commits",
+             "review open · showing the last 3 commits · live · git signs show changes since HEAD~3"),
+            (2, "HEAD", self.head(), [[1, 1]] * 2, "Showing uncommitted changes",
+             "review open · showing uncommitted changes · live · git signs show changes since HEAD"),
+            (3, "unstaged", None, [[1, 1]], "Showing unstaged changes",
+             "review open · showing unstaged changes · live · git signs show unstaged changes"),
+            (1, "", main, [[0, 1]] + [[1, 1]] * 4, "Showing all changes",
+             "review open · live · git signs show changes since main"),
+        ]
+        for entry, view, base, hunks, message, note in views:
+            with self.subTest(view=view or "all changes"):
+                nvim.command("messages clear")
+
+                self.choose(nvim, entry)
+
+                wait_for("gitsigns on the view's base", lambda: nvim.gitsigns_base() == base and nvim.hunks() == hunks)
+                wait_for("the note", lambda: nvim.status() == note)
+                self.assertIn(message, nvim.messages())
+                self.assertEqual(self.view(), view, "the watcher keeps it: the other viewers show it too")
+
+    def test_choosing_the_view_already_shown_changes_nothing(self):
+        nvim = self.open_notes()
+        nvim.command("messages clear")
+
+        self.choose(nvim, 1)
+
+        wait_for("the message", lambda: "Already showing all changes" in nvim.messages())
+        self.assertEqual(nvim.gitsigns_base(), self.head(ref="main"))
+
+    def test_threads_on_lines_the_view_shows_are_drawn_the_rest_are_listed_not_placed(self):
+        nvim = self.open_notes()
+        self.batched()
+        self.api("POST", "/api/threads", {  # on the line the first commit deleted: only all changes (and the last 3 commits) show it
+            "anchor": {"file": "notes.py", "side": "old", "startLine": 4, "endLine": 4, "code": "line 4"},
+            "body": "Why drop line 4?"})
+        self.open_thread("Is this edit needed?", line=5, file="notes.py")
+        nvim.command("1")
+        wait_for("both drawn", lambda: len(nvim.threads()) == 2)
+
+        self.choose(nvim, 4)  # the last commit
+
+        wait_for("only the thread the view shows", lambda: [t["row"] for t in nvim.threads()] == [5])
+        self.assertEqual(nvim.signs(), [(5, "●")])
+        nvim.keys("<leader>rs")
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], [
+            "● notes.py:4 (deleted) · open · held until you submit · not in this view · Why drop line 4?",
+            "● notes.py:5 · open · held until you submit · Is this edit needed?",
+        ])
+
+        nvim.pick(1)  # a thread that is listed but on no line opens in its float
+
+        wait_for("its float", lambda: nvim.float_lines())
+        self.assertIn("Why drop line 4?", nvim.float_lines())
+        nvim.keys("q")
+        self.choose(nvim, 6)  # the last 3 commits show the deleted line again
+        wait_for("both drawn again", lambda: [t["row"] for t in nvim.threads()] == [3, 5])  # the deleted line's thread under line 3
+
+    def test_the_deleted_text_of_the_view_is_drawn_and_what_it_does_not_show_is_not(self):
+        nvim = self.open_notes()
+        wait_for("every old line drawn", lambda: len(nvim.look()["deleted"]) == 5)
+        self.assertIn(["line 4"], [d["lines"] for d in nvim.look()["deleted"]])
+
+        self.choose(nvim, 4)  # the last commit: three edited lines, not the deleted one
+
+        wait_for("their old text", lambda: len(nvim.look()["deleted"]) == 3)
+        self.assertNotIn(["line 4"], [d["lines"] for d in nvim.look()["deleted"]])
+
+    def test_closing_the_review_in_a_view_puts_gitsigns_back_on_the_index(self):
+        nvim = self.open_notes()
+        self.choose(nvim, 5)
+        wait_for("the view", lambda: nvim.gitsigns_base() == self.head(ref="HEAD~2"))
+
+        nvim.command("DifftateClose")
+
+        wait_for("gitsigns on the index", lambda: nvim.gitsigns_base() is None)
+        self.assertIn("Review closed: git signs show changes since the index again", nvim.messages())
+        self.assertEqual(nvim.status(), "")
+
+    def test_closing_the_review_in_the_unstaged_view_puts_back_the_base_the_reviewer_gave_gitsigns(self):
+        nvim = self.open_notes(before=FAKE_SELECT + "; require('gitsigns').change_base('HEAD~1', true)")
+        self.choose(nvim, 3)
+        wait_for("gitsigns on the index", lambda: nvim.gitsigns_base() is None)
+
+        nvim.command("DifftateClose")
+
+        wait_for("the reviewer's base again", lambda: nvim.gitsigns_base() == "HEAD~1")
+        self.assertIn("Review closed: git signs show changes since HEAD~1 again", nvim.messages())
+
+    def test_hunk_motions_walk_only_the_changes_of_the_view(self):
+        nvim = self.open_notes()
+        self.choose(nvim, 4)  # the last commit: lines 7, 9 and 11
+        wait_for("its three hunks", lambda: nvim.hunks() == [[1, 1]] * 3)
+        nvim.command("1")
+        visited = []
+
+        for _ in range(3):
+            line = nvim.at()[1]
+            nvim.lua("require('gitsigns').nav_hunk('next')")
+            wait_for("the cursor to move", lambda: nvim.at()[1] != line)
+            visited.append(nvim.at()[1])
+
+        self.assertEqual(visited, [7, 9, 11], "line 5 (an earlier commit) and the deleted line 4 are not walked")
+
+    def test_a_view_another_viewer_chose_is_followed_within_a_poll(self):
+        nvim = self.open_notes()
+
+        self.api("PUT", "/api/view", {"view": "HEAD~2"})
+
+        wait_for("gitsigns on it", lambda: nvim.gitsigns_base() == self.head(ref="HEAD~2") and nvim.hunks() == [[1, 1]] * 4)
+        self.assertEqual(nvim.status(), "review open · showing the last 2 commits · live · git signs show changes since HEAD~2")
+
+    def test_the_staged_view_stays_in_the_browser_here_it_is_said_and_all_changes_are_shown(self):
+        nvim = self.open_notes()
+
+        self.api("PUT", "/api/view", {"view": "staged"})
+
+        wait_for("the note", lambda: nvim.status() == "review open · showing all changes: staged changes are only in the browser · live · git signs show changes since main")
+        self.assertEqual(nvim.gitsigns_base(), self.head(ref="main"))
+        nvim.keys("<leader>rV")
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertNotIn("Staged changes", nvim.menu()["lines"])
+
+    def test_a_refused_view_says_why_and_leaves_everything_as_it_was(self):
+        nvim = self.open_notes()
+        nvim.lua("local request = require('difftate.api').request; require('difftate.api').request = function(w, method, path, on_answer, payload, raw)"
+                 " if method == 'PUT' and path == '/api/view' then vim.schedule(function() on_answer(nil, { message = 'no view nonsense' }) end) return end"
+                 " return request(w, method, path, on_answer, payload, raw) end")
+        nvim.command("messages clear")
+
+        self.choose(nvim, 4)
+
+        wait_for("the message", lambda: "Can't show the last commit: no view nonsense" in nvim.messages())
+        self.assertEqual(nvim.gitsigns_base(), self.head(ref="main"))
+        self.assertEqual(self.view(), "")
+
+    def test_a_view_git_cannot_find_here_is_said_and_all_changes_are_shown_the_review_still_opens(self):
+        self.a_branch_of_three_commits()
+        self.start_watcher()
+        self.api("PUT", "/api/view", {"view": "HEAD~3"})
+        git(self.repo, self.env, "reset", "-q", "--hard", "HEAD~2")  # the branch is shorter than the view says
+        nvim = self.nvim(None, "notes.py")
+        self.attached(nvim)
+
+        nvim.command("DifftateOpen")
+
+        wait_for("the note", lambda: nvim.status() == "review open · showing all changes: git can't find HEAD~3 · live · git signs show changes since main")
+        wait_for("gitsigns on all changes", lambda: nvim.gitsigns_base() == self.head(ref="main"))
+        self.assertIn("git can't find HEAD~3, the view: showing all changes", nvim.messages())
+
+    def test_the_watcher_stopping_is_said_in_the_usual_words(self):
+        nvim = self.open_notes()
+        self.watcher.send_signal(signal.SIGINT)
+        self.watcher.wait(15)
+        nvim.command("messages clear")
+
+        self.choose(nvim, 4)
+
+        wait_for("the message", lambda: "No difftate is running for" in nvim.messages())
+
+    def test_with_no_review_open_it_says_so_and_opens_no_picker(self):
+        self.commit()
+        nvim = self.nvim(before=FAKE_SELECT)
+
+        nvim.keys("<leader>rV")
+
+        wait_for("the message", lambda: "No review is open: open it to choose the view" in nvim.messages())
+        self.assertIsNone(nvim.menu())
+
+    def test_a_comment_written_in_a_view_is_anchored_to_the_code_on_disk(self):
+        nvim = self.open_notes()
+        self.choose(nvim, 4)
+        wait_for("the view", lambda: nvim.gitsigns_base() == self.head(ref="HEAD~1"))
+        nvim.command("7")
+
+        nvim.keys("<leader>rc")
+        wait_for("the compose float", lambda: nvim.compose_float())
+        nvim.write_text("Why edit this?")
+        nvim.command("write")
+
+        wait_for("the thread", lambda: [t for t in self.api("GET", "/api/threads") if t["anchor"]])
+        anchor = [t for t in self.api("GET", "/api/threads") if t["anchor"]][0]["anchor"]
+        self.assertEqual((anchor["file"], anchor["side"], anchor["startLine"], anchor["code"]),
+                         ("notes.py", "new", 7, "line 8 edited"))
+
+    def test_the_key_is_free_in_lazyvim_core_and_can_be_changed_or_turned_off(self):
+        nvim = self.nvim(opts={"keys": {"views": "<leader>gV"}})
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rV', 'n')"), "")
+        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>gV', 'n')"), "")
+        off = self.nvim(opts={"keys": {"views": False}})
+        self.assertEqual(off.lua("return vim.fn.maparg('<leader>rV', 'n')"), "")
+        taken = self.nvim(before="vim.keymap.set('n', '<leader>rV', '<cmd>echo \"also\"<cr>', { desc = 'Also' })")
+        self.assertIn("<leader>rV is already mapped (Also): set opts.keys.views to another key", taken.messages())
+
+    def test_switching_views_and_closing_change_no_option_or_key_of_the_reviewers_window_or_buffer(self):
+        nvim = self.open_notes()
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+
+        for entry in (4, 3, 2, 1):
+            self.choose(nvim, entry)
+            wait_for("the view", lambda: self.view() == ["", "HEAD", "unstaged", "HEAD~1"][entry - 1])
+        wait_for("all changes", lambda: nvim.gitsigns_base() == self.head(ref="main"))
+        nvim.command("DifftateClose")
+
+        wait_for("gitsigns on the index", lambda: nvim.gitsigns_base() is None)
         self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
