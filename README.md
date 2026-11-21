@@ -145,7 +145,7 @@ return {
   {
     "TripathyM/difftate", -- or, from a clone: dir = "~/difftate", name = "difftate",
     main = "difftate",
-    opts = {}, -- keys = { toggle = "<leader>rr", expand = "<leader>re", thread = "<leader>rt", comment = "<leader>rc", add_comment = "<leader>ra", resolve = "<leader>rR", reopen = "<leader>rO", general = "<leader>rG", threads = "<leader>rs", files = "<leader>rf", next = "]r", previous = "[r", mode = "<leader>rM", agent = "<leader>rA", submit = "<leader>rS", done = "<leader>rD", export = "<leader>rE", viewed = "<leader>rv", views = "<leader>rV" } is the default; false maps none
+    opts = {}, -- keys = { toggle = "<leader>rr", expand = "<leader>re", thread = "<leader>rt", comment = "<leader>rc", add_comment = "<leader>ra", resolve = "<leader>rR", reopen = "<leader>rO", general = "<leader>rG", threads = "<leader>rs", files = "<leader>rf", next = "]r", previous = "[r", mode = "<leader>rM", agent = "<leader>rA", submit = "<leader>rS", done = "<leader>rD", export = "<leader>rE", viewed = "<leader>rv", views = "<leader>rV", browser = "<leader>rB" } is the default; false maps none
   },
   -- The note "review open · live · git signs show changes since <base>" in the statusline
   -- (batched: "review open · batched · 2 held · git signs ..."), while a review is open

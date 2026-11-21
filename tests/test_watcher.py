@@ -894,6 +894,28 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertNotEqual(links[1], link)
         self.launch_page(links[1])
 
+    def test_difftate_browser_starts_the_watcher_if_none_runs_and_opens_the_link_naming_the_folder(self):
+        # `difftate browser` is `difftate --open browser`: it starts the watcher when none runs, then
+        # opens the link whatever DT_OPEN says
+        with open(os.path.join(self.tmp, "bin", "open"), "w") as f:
+            f.write(f'#!/bin/sh\necho "$@" >> {os.path.join(self.tmp, "opened")}\n')
+        self.env["DT_OPEN"] = "nvim"
+        run = self.difftate("browser", *self.agent_args_for_difftate())
+        self.difftate_output = run.stdout + run.stderr
+        self.assertEqual(run.returncode, 0, self.difftate_output)
+        self.read_running_files()
+
+        [link] = wait_for("the browser to open", self.opened_urls)
+        self.assertRegex(link, rf"^http://127\.0\.0\.1:{self.port}/\?launch=[\w-]+&folder=[\w%.-]+$")
+        self.assertIn("folder=" + urllib.parse.quote(os.path.realpath(self.repo), safe=""), link, "the link names the folder")
+        self.assertIn(link, self.difftate_output, "difftate shows the link too")
+
+        # With a watcher running, it starts none and opens the page again with a new launch code
+        self.assertEqual(self.difftate("browser").returncode, 0)
+        links = wait_for("the browser to open again", lambda: len(self.opened_urls()) == 2 and self.opened_urls())
+        self.assertNotEqual(links[1], link)
+        self.assertEqual(self.running_pid(), self.watcher.pid, "it started no second watcher")
+
     @staticmethod
     def lines(path):
         try:

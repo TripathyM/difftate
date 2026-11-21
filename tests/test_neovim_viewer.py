@@ -626,7 +626,8 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
             "toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT", "comment": "<leader>gC", "add_comment": "<leader>gA",
             "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG",
             "threads": "<leader>gP", "files": "<leader>gF", "next": "<leader>gN", "previous": "<leader>gB",
-            "mode": "<leader>gM", "agent": "<leader>gH", "submit": "<leader>gU", "done": "<leader>gD", "export": "<leader>gX", "viewed": "<leader>gV", "views": "<leader>gW"}})
+            "mode": "<leader>gM", "agent": "<leader>gH", "submit": "<leader>gU", "done": "<leader>gD", "export": "<leader>gX", "viewed": "<leader>gV", "views": "<leader>gW",
+            "browser": "<leader>gY"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -637,7 +638,8 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
 
         self.assertEqual(after["options"], before["options"])
         self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG",
-                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rA", "n  rS", "n  rD", "n  rE", "n  rv", "n  rV"})
+                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rA", "n  rS", "n  rD", "n  rE", "n  rv", "n  rV",
+                                                                 "n  rB"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -2056,6 +2058,49 @@ class ReviewModeAndSubmit(NeovimHarness, unittest.TestCase):
         nvim.keys("<leader>rS")
 
         wait_for("the error", lambda: nvim.messages().count("No difftate is running: run `difftate` in a terminal") == 2)
+
+    # The browser is a stand-in that records the URL it is asked to open (vim.ui.open, which
+    # `open` or xdg-open runs in a real Neovim): nothing opens a browser in a test
+    RECORD_BROWSER = ("_G.difftate_opened = {}; vim.ui.open = function(url) "
+                      "table.insert(_G.difftate_opened, url) end")
+
+    def test_leader_rB_opens_the_folders_review_in_the_browser_with_a_launch_code(self):
+        self.commit()
+        self.start_watcher()
+        nvim = self.nvim(before=self.RECORD_BROWSER)
+        self.attached(nvim)
+
+        nvim.keys("<leader>rB")
+
+        opened = wait_for("the browser to be asked", lambda: nvim.lua("return _G.difftate_opened") or None)
+        self.assertTrue(opened, nvim.messages())
+        [link] = opened
+        self.assertRegex(link, rf"^http://127\.0\.0\.1:{self.port}/\?launch=[\w-]+&folder=[\w%.-]+$")
+        self.assertIn("folder=" + urllib.parse.quote(os.path.realpath(self.repo), safe=""), link, "the link names the folder")
+        self.assertNotIn(self.token, link, "the review token never leaves its file")
+        self.assertIsNone(nvim.gitsigns_base(), "the review isn't opened here: <leader>rB asks for nothing else")
+
+    def test_the_browser_key_comes_from_opts_keys_false_maps_none_and_a_taken_one_stays_theirs(self):
+        nvim = self.nvim(opts={"keys": {"browser": "<leader>gY"}})
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rB', 'n')"), "")
+        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>gY', 'n')"), "")
+        unmapped = self.nvim(opts={"keys": {"browser": False}})
+        self.assertEqual(unmapped.lua("return vim.fn.maparg('<leader>rB', 'n')"), "")
+        taken = self.nvim(before="vim.keymap.set('n', '<leader>rB', '<cmd>echo \"mine\"<cr>', { desc = 'Mine' })")
+        self.assertEqual(taken.lua("return vim.fn.maparg('<leader>rB', 'n')"), '<Cmd>echo "mine"<CR>')
+        self.assertIn("<leader>rB is already mapped (Mine): set opts.keys.browser to another key", taken.messages())
+
+    def test_leader_rB_with_no_watcher_says_so_and_opens_nothing(self):
+        self.commit()
+        nvim = self.nvim(before=self.RECORD_BROWSER)
+        self.attached(nvim)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rB")
+
+        wait_for("the message", lambda: "No difftate is running: run `difftate` in a terminal" in nvim.messages())
+        self.assertEqual(nvim.lua("return #_G.difftate_opened"), 0)
+        self.assertIsNone(self.running_pid(), "and it started nothing")
 
     def test_a_refusal_from_the_api_is_shown_as_it_says(self):
         nvim = self.an_open_review()

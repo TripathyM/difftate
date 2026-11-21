@@ -3,10 +3,12 @@ for the machine when none runs, and ends. It is the only thing that starts the
 watcher (ADR 0008): viewers and scripts only find the one that runs.
 
   difftate [<view>] [--base <branch>] [--open browser|nvim|both]
+  difftate browser [<view>] [--base <branch>]
   difftate stop
   difftate restart
   difftate log
 
+`difftate browser` is the same with --open browser: the review opens in the browser, at its link.
 It adds the folder (the watcher serves a folder from the first request that
 names it), shows the view when one is given, and opens the viewer itself: the
 watcher never opens one. `difftate stop` stops the watcher through the review
@@ -71,6 +73,9 @@ def run_difftate(argv, wiring):
             if len(argv) > 1:
                 raise Exit(1, f"Error: log takes no argument\n{USAGE}")
             return _log(wiring)
+        if argv[:1] == ["browser"]:
+            # `difftate browser` is `difftate --open browser`: the last --open wins, so it opens the browser
+            return _open([*argv[1:], "--open", viewers.BROWSER], wiring)
         return _open(argv, wiring)
     except Exit as e:
         if e.message:
