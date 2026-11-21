@@ -1,5 +1,6 @@
 -- The review open in this Neovim: at most one, of the checked-out folder Neovim
 -- was in when it opened.
+local agent = require("difftate.agent")
 local api = require("difftate.api")
 local compose = require("difftate.compose")
 local diff = require("difftate.diff")
@@ -152,6 +153,36 @@ local function read_mode(review, on_done)
   end)
 end
 
+-- Take <answer> (what the review API says of the agent: { agent, source, names }) as the agent of the
+-- open <review>, for the statusline note
+local function know_agent(review, answer)
+  if current == review then
+    review.agent = answer
+    vim.cmd("redrawstatus")
+  end
+end
+
+-- Read who replies in the open <review> (GET /api/agent), for the statusline note; then on_done(answer),
+-- or on_done(nil, err) when the review API didn't answer or the agent list can't be read (the note then
+-- names no agent: it doesn't say so on every poll).
+local function read_agent(review, on_done)
+  local stamp = review.agent_stamp
+  api.request(review.watcher, "GET", "/api/agent", function(answer, err)
+    if not answer then
+      if review.agent_stamp == stamp and not (err and err.missing) then
+        know_agent(review, nil)
+      end
+      on_done(nil, err)
+      return
+    end
+    -- A choice answered since this was asked: its answer is newer, so this one doesn't overwrite it
+    if review.agent_stamp == stamp then
+      know_agent(review, answer)
+    end
+    on_done(answer)
+  end)
+end
+
 -- Take <answer> (what the review API says of Done) as the state of the open <review>, for the
 -- statusline note, which redraws now rather than on its own timers
 local function know_done(review, answer)
@@ -235,9 +266,11 @@ local function poll(review)
         review.base_error = why
         look.redraw() -- gitsigns may have moved its hunks since: it only says so when their counts change
         read_mode(review, function()
-          read_done(review, function()
-            read_threads(review, function()
-              review.polling = false
+          read_agent(review, function()
+            read_done(review, function()
+              read_threads(review, function()
+                review.polling = false
+              end)
             end)
           end)
         end)
@@ -300,14 +333,16 @@ function M.open(cwd, opts)
             say(why, vim.log.levels.WARN)
           end
           read_mode(review, function()
-            read_done(review, function()
-              if current ~= review then
-                return
-              end
-              say(M.status())
-              look.show(watcher.top, opts.diff)
-              read_threads(review, function()
-                start_polling(review, opts.poll_ms)
+            read_agent(review, function()
+              read_done(review, function()
+                if current ~= review then
+                  return
+                end
+                say(M.status())
+                look.show(watcher.top, opts.diff)
+                read_threads(review, function()
+                  start_polling(review, opts.poll_ms)
+                end)
               end)
             end)
           end)
@@ -571,6 +606,39 @@ function M.toggle_mode()
       say(mode.changed_message(answer.mode, answer.submitted))
       changed(review, answer)
     end, { mode = mode.other(now) })
+  end)
+end
+
+--- Choose the agent that replies in this review from the machine's list, or go back to the repository's. A
+--- run in progress keeps its agent: the next run uses the choice.
+function M.pick_agent()
+  local review = open_review("choose the agent")
+  if not review then
+    return
+  end
+  -- From the agent the review API has now, so a choice made in another viewer isn't undone blindly
+  read_agent(review, function(now, err)
+    if not now then
+      return failed(review, err)
+    end
+    pick.choose(agent.entries(now), "Review agent", function(chosen)
+      if current ~= review then
+        return
+      end
+      local already = agent.already(now, chosen)
+      if already then
+        say(already)
+        return
+      end
+      api.request(review.watcher, "PUT", "/api/agent", function(answer, err)
+        if not answer then
+          return failed(review, err)
+        end
+        review.agent_stamp = (review.agent_stamp or 0) + 1
+        know_agent(review, answer)
+        say(agent.changed_message(answer, chosen))
+      end, { agent = chosen })
+    end)
   end)
 end
 
@@ -965,6 +1033,7 @@ function M.status()
   add(current.unreadable and ("showing all changes: git can't find " .. current.view)
     or view.status_part(current.view))
   add(mode.label(current.mode))
+  add(agent.label(current.agent))
   add(done.label(current.done))
   local signs = view.signs_phrase(shown_view(current), current.base)
   if not current.signs then

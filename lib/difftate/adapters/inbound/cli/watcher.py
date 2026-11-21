@@ -125,6 +125,15 @@ class FolderEntry:
             if not self.loop.busy():
                 self.follow_branch()
 
+    def who_replies(self):
+        """The agent that replies in the review shown now, and where that comes
+        from (see wiring.agent_choice); raises the core's NotFound."""
+        return self.wiring.agent_choice(self.root, self.review.read_agent_override())
+
+    def check_agent(self, name):
+        """Raises the core's NotFound, naming the list, for an agent a run can't start."""
+        self.wiring.check_agent(name)
+
     def banner(self, branch, view):
         return f"The review of {branch} against {self.base}, showing {view_name(view)}"
 

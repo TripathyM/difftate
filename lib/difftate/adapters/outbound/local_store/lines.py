@@ -7,6 +7,7 @@ existing reviews hold):
   run → RunStarted           run-ended → RunEnded       viewed → FileViewed
   done → DoneMarked          undone → DoneUndone        done-cleared → DoneCleared
   mode → ModeChanged         submitted → ReviewSubmitted
+  agent → AgentOverridden
 A "note" line is a note's final body: notes are stored only once final. A
 note given to the store before it is final (the core gives none: lasting)
 keeps "final": false in its line, so it reads back as it was given; no such
@@ -24,7 +25,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from ....core.review.model import (
-    Anchor, Comment, CommentAdded, DoneCleared, DoneMarked, DoneUndone, Event, FileViewed, ModeChanged, NoteWritten,
+    AgentOverridden, Anchor, Comment, CommentAdded, DoneCleared, DoneMarked, DoneUndone, Event, FileViewed, ModeChanged, NoteWritten,
     ReviewSubmitted, RunEnded, RunStarted, ThreadMoved, ThreadOpened, ThreadOutdated, ThreadStatusChanged,
 )
 
@@ -73,6 +74,8 @@ def event_from_line(line: Dict[str, Any]) -> Event:
         return DoneCleared(line["commit"], line["time"])
     if kind == "mode":
         return ModeChanged(line["mode"], line["time"])
+    if kind == "agent":
+        return AgentOverridden(line["agent"], line["time"])
     if kind == "submitted":
         return ReviewSubmitted(tuple(line["threads"]), line["time"])
     raise KeyError(f"no event in a {kind!r} line")
@@ -141,6 +144,8 @@ def line_from_event(event: Event) -> Dict[str, Any]:
         return {"type": "done-cleared", "commit": event.commit, "time": event.time}
     if isinstance(event, ModeChanged):
         return {"type": "mode", "mode": event.mode, "time": event.time}
+    if isinstance(event, AgentOverridden):
+        return {"type": "agent", "agent": event.agent, "time": event.time}
     if isinstance(event, ReviewSubmitted):
         return {"type": "submitted", "threads": list(event.threads), "time": event.time}
     raise TypeError(f"no line for {event!r}")

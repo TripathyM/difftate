@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(ROOT, "lib"))
 from difftate.adapters.outbound.local_store import LocalStore  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
 from difftate.core.review.model import (  # noqa: E402
-    Anchor, Comment, CommentAdded, DoneCleared, DoneMarked, DoneUndone, FileViewed, ModeChanged, NoteWritten,
+    AgentOverridden, Anchor, Comment, CommentAdded, DoneCleared, DoneMarked, DoneUndone, FileViewed, ModeChanged, NoteWritten,
     ReviewSubmitted, RunEnded, RunStarted, ThreadMoved, ThreadOpened, ThreadOutdated, ThreadStatusChanged,
 )
 
@@ -39,7 +39,8 @@ WORK = [RunStarted("run-1", (T1, T2), ("c1", "c2"), {T1: (), T2: ("r0",)}, TIME)
         ThreadStatusChanged(T2, "resolved", TIME), ThreadMoved(T1, 5, 6, "b" * 40, TIME),
         ThreadOutdated(T1, TIME), FileViewed("app.py", "c" * 40, TIME), FileViewed("app.py", None, TIME),
         DoneMarked("d" * 40, TIME), DoneUndone("d" * 40, TIME), DoneMarked("d" * 40, TIME),
-        DoneCleared("e" * 40, TIME), ModeChanged("batched", TIME), ReviewSubmitted((T1, T2), TIME), ModeChanged("live", TIME)]
+        DoneCleared("e" * 40, TIME), ModeChanged("batched", TIME), ReviewSubmitted((T1, T2), TIME), ModeChanged("live", TIME),
+        AgentOverridden("work", TIME), AgentOverridden("", TIME)]
 # A reviewer name on comments and status changes, beside ones with none
 NAMED = [ThreadOpened(T1, None, TIME), CommentAdded(T1, Comment("c1", "reviewer", "comment", "Ready?", TIME, 1, "Ada")),
          CommentAdded(T1, Comment("c2", "reviewer", "comment", "Tests? ✨", TIME, 2, "security-bot")),

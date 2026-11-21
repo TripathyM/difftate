@@ -41,9 +41,11 @@ from .core.review.use_cases.list_viewed import list_viewed
 from .core.review.use_cases.mark_viewed import mark_viewed
 from .core.review.use_cases.move_with_code import move_with_code
 from .core.review.use_cases.open_thread import open_thread
+from .core.review.use_cases.read_agent_override import read_agent_override
 from .core.review.use_cases.read_done import read_done
 from .core.review.use_cases.read_mode import read_mode
 from .core.review.use_cases.recover_runs import recover_runs
+from .core.review.use_cases.set_agent_override import set_agent_override
 from .core.review.use_cases.set_done import set_done
 from .core.review.use_cases.set_mode import set_mode
 from .core.review.use_cases.set_status import set_status
@@ -107,6 +109,8 @@ def bind_review(store, code, history, about):
         read_done=functools.partial(read_done, store, code),
         set_mode=one_at_a_time(set_mode, store, notes, history),
         read_mode=functools.partial(read_mode, store),
+        set_agent_override=one_at_a_time(set_agent_override, store, notes, history),
+        read_agent_override=functools.partial(read_agent_override, store),
         submit=one_at_a_time(submit, store, notes, history),
         export=one_at_a_time(export_review, store, notes, code, reply_command),
         changeset=functools.partial(changeset, code),
@@ -142,15 +146,17 @@ def read_agent_list():
         raise NotFound(str(e)) from e
 
 
-def agent_choice(cwd):
+def agent_choice(cwd, override=""):
     """The agent that replies in the repository of <cwd>, and where that comes
-    from: the repository's own setting, else the machine's default. Its name,
-    source ("repository" or "machine"), the list's names and path, and its
-    entry; raises the core's NotFound when the list is wrong or the setting
+    from: the review's own choice (<override>, "" for none), else the
+    repository's setting, else the machine's default. Its name, source
+    ("review", "repository" or "machine"), the list's names and path, and its
+    entry; raises the core's NotFound when the list is wrong or the choice
     names an agent that isn't in it."""
     agents = read_agent_list()
     chosen = REPOSITORY.agent_setting(cwd)
-    name, source = (chosen, "repository") if chosen else (agents.default, "machine")
+    name, source = ((override, "review") if override else (chosen, "repository") if chosen
+                    else (agents.default, "machine"))
     try:
         entry = agents.get(name)
     except agent_list.AgentListError as e:
@@ -158,9 +164,9 @@ def agent_choice(cwd):
     return SimpleNamespace(name=name, source=source, names=agents.names, path=agents.path, entry=entry)
 
 
-def set_agent(cwd, name):
-    """Make <name> the agent of the repository of <cwd> and of its worktrees.
-    Refused, with the names, when it isn't in the list or its command isn't found."""
+def check_agent(name):
+    """<name> is an agent a run can start: in the list, and its command found.
+    Refused with the core's NotFound, naming the list when it isn't."""
     agents = read_agent_list()
     try:
         entry = agents.get(name)
@@ -170,6 +176,12 @@ def set_agent(cwd, name):
         find_command(entry.cmd)
     except CouldNotStart as e:
         raise NotFound(f"agent '{name}': {e}") from e
+
+
+def set_agent(cwd, name):
+    """Make <name> the agent of the repository of <cwd> and of its worktrees.
+    Refused, with the names, when it isn't in the list or its command isn't found."""
+    check_agent(name)
     REPOSITORY.set_agent_setting(cwd, name)
 
 
@@ -183,21 +195,26 @@ class ChosenAtRunStart:
     for a list that is wrong, an agent that isn't in it, or a command that isn't found."""
     reply_command = CodingAgent.reply_command
 
-    def __init__(self, cwd, folder):
+    def __init__(self, cwd, folder, override=lambda: ""):
         self.cwd = cwd
         self.folder = folder
+        self.override = override  # the agent the reviewer chose for the review being run now ("" for none)
+
+    def for_review(self, override):
+        """The same agent, with the choice of the review that <override>() reads."""
+        return ChosenAtRunStart(self.cwd, self.folder, override)
 
     @property
     def name(self):
         """What the run is dispatched to, as the log names it."""
         try:
-            return agent_choice(self.cwd).name
+            return agent_choice(self.cwd, self.override()).name
         except NotFound:
-            return REPOSITORY.agent_setting(self.cwd) or "agent"
+            return self.override() or REPOSITORY.agent_setting(self.cwd) or "agent"
 
     def start(self, prompt, threads):
         try:
-            entry = agent_choice(self.cwd).entry
+            entry = agent_choice(self.cwd, self.override()).entry
         except NotFound as e:
             raise CouldNotStart(str(e)) from e
         found = find_command(entry.cmd)
@@ -242,6 +259,7 @@ def start_watcher(args):
 def loop(review, coding_agent):
     report = REPORTER()
     dispatch = Dispatch(review)
+    coding_agent = coding_agent.for_review(lambda: dispatch.review.read_agent_override())
 
     def switch_review(review):
         dispatch.review = review
@@ -289,6 +307,7 @@ def wiring():
         reply_in_run=reply_in_run,
         coding_agent=coding_agent,
         agent_choice=agent_choice,
+        check_agent=check_agent,
         set_agent=set_agent,
         base=REPOSITORY.base,
         need_view=REPOSITORY.need_view,
