@@ -10,6 +10,7 @@ local gitsigns = require("difftate.gitsigns")
 local look = require("difftate.look")
 local mode = require("difftate.mode")
 local done = require("difftate.done")
+local export = require("difftate.export")
 local nav = require("difftate.nav")
 local pick = require("difftate.pick")
 local threads = require("difftate.threads")
@@ -563,6 +564,39 @@ function M.toggle_done()
       end
     end)
   end)
+end
+
+-- Export -------------------------------------------------------------------------
+
+--- Copy the review's export (GET /api/export) to the system clipboard, for an agent session the
+--- reviewer starts, as the browser does; to the unnamed register where there is no clipboard.
+--- It names the review's folder in its reply command, so the session can reply from anywhere.
+--- Exporting changes no thread.
+function M.export()
+  local review = open_review("export")
+  if not review then
+    return
+  end
+  local path = "/api/export?folder=" .. vim.uri_encode(review.watcher.top, "rfc3986")
+  api.request(review.watcher, "GET", path, function(text, err)
+    if not text then
+      if err.missing then
+        return failed(review, err)
+      end
+      return say(export.failed_message(err.message), vim.log.levels.ERROR)
+    end
+    local problem = export.problem(text)
+    if problem then
+      return say(export.failed_message(problem), vim.log.levels.ERROR)
+    end
+    if vim.fn.has("clipboard") == 1 then
+      vim.fn.setreg("+", text)
+      say(export.copied_message(text))
+    else
+      vim.fn.setreg('"', text)
+      say(export.in_register_message())
+    end
+  end, nil, true)
 end
 
 -- ]r, [r and the pickers ------------------------------------------------------

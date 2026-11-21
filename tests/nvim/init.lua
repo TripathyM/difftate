@@ -19,6 +19,22 @@ if gitsigns and gitsigns ~= "" then
   require("gitsigns").setup({})
 end
 
+-- A fake clipboard provider, so no test touches the real clipboard: what is copied to "+" or "*"
+-- lands in T.clipboard (a test that wants none sets vim.g.loaded_clipboard_provider = 1 in
+-- DIFFTATE_TEST_BEFORE)
+local copied = { ["+"] = {}, ["*"] = {} }
+vim.g.clipboard = {
+  name = "difftate-test",
+  copy = {
+    ["+"] = function(lines) copied["+"] = lines end,
+    ["*"] = function(lines) copied["*"] = lines end,
+  },
+  paste = {
+    ["+"] = function() return { copied["+"], "v" } end,
+    ["*"] = function() return { copied["*"], "v" } end,
+  },
+}
+
 -- Options and global keys, for the tests that check the plugin only adds
 _G.T = {}
 function T.snapshot(win)

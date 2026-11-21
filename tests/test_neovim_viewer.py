@@ -21,6 +21,8 @@ import sys
 import tempfile
 import time
 import unittest
+import urllib.parse
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -531,7 +533,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
             "toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT", "comment": "<leader>gC", "add_comment": "<leader>gA",
             "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG",
             "threads": "<leader>gP", "files": "<leader>gF", "next": "<leader>gN", "previous": "<leader>gB",
-            "mode": "<leader>gM", "submit": "<leader>gU", "done": "<leader>gD"}})
+            "mode": "<leader>gM", "submit": "<leader>gU", "done": "<leader>gD", "export": "<leader>gX"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -542,7 +544,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
 
         self.assertEqual(after["options"], before["options"])
         self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG",
-                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rS", "n  rD"})
+                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rS", "n  rD", "n  rE"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -2661,3 +2663,148 @@ class TheDiffLookAddsOnly(NeovimHarness, unittest.TestCase):
         self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
         self.assertEqual(nvim.lua("return T.settings()"), settings)
         self.assertEqual(nvim.lua("return T.foreign_extmarks(0)"), foreign)
+
+
+@needs(MISSING_GITSIGNS)
+class ReviewExport(NeovimHarness, unittest.TestCase):
+    """GET /api/export, put where the reviewer pastes it (the system clipboard, as the browser does)."""
+
+    def export_text(self):
+        request = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/export?folder=" + urllib.parse.quote(os.path.realpath(self.repo)),
+                                         headers={"Authorization": f"Bearer {self.token}"})
+        with urllib.request.urlopen(request, timeout=10) as r:
+            return r.read().decode()
+
+    def events_text(self):
+        reviews = os.path.join(self.repo, ".git", "difftate", "reviews")
+        texts = []
+        for review in sorted(os.listdir(reviews)):
+            with open(os.path.join(reviews, review, "events.jsonl")) as f:
+                texts.append(f.read())
+        return texts
+
+    def clipboard(self, nvim):
+        return nvim.lua("return vim.fn.getreg('+')")
+
+    def test_leader_rE_copies_the_export_to_the_clipboard_and_says_what_it_holds(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("Is this right?", line=2)
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rE")
+
+        wait_for("the message", lambda: "Export copied (1 thread needs an answer): paste it into an agent session" in nvim.messages())
+        text = self.clipboard(nvim)
+        self.assertIn("Is this right?", text)
+        self.assertEqual(text.rstrip("\n"), self.export_text().rstrip("\n"),
+                         "the same text as GET /api/export?folder=<the review's folder>: its reply command works from anywhere")
+
+    def test_the_message_counts_the_threads_that_need_an_answer(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        self.a_thread("First?", line=1)
+        self.a_thread("Second?", line=2)
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rE")
+
+        wait_for("the message", lambda: "Export copied (2 threads need an answer): paste it into an agent session" in nvim.messages())
+
+    def test_with_no_thread_needing_an_answer_it_says_so(self):
+        nvim = self.an_open_review()
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rE")
+
+        wait_for("the message", lambda: "Export copied (no thread needs an answer): paste it into an agent session" in nvim.messages())
+        self.assertIn("Review export", self.clipboard(nvim))
+
+    def test_exporting_changes_no_thread_and_writes_no_event(self):
+        self.commit()
+        self.start_watcher()
+        self.batched()
+        tid = self.a_thread("Is this right?", line=2)
+        nvim = self.nvim()
+        nvim.command("DifftateOpen")
+        self.drawn(nvim)
+        before = (self.api("GET", "/api/threads?view="), self.thread(tid))
+        events = self.events_text()
+
+        nvim.keys("<leader>rE")
+        wait_for("the export", lambda: "Review export" in self.clipboard(nvim))
+
+        self.assertEqual((self.api("GET", "/api/threads?view="), self.thread(tid)), before)
+        self.assertEqual(self.events_text(), events)
+
+    def test_without_a_system_clipboard_it_goes_to_the_unnamed_register_and_says_so(self):
+        self.commit()
+        self.start_watcher()
+        nvim = self.nvim(before="vim.g.loaded_clipboard_provider = 1")
+        self.attached(nvim)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rE")
+
+        wait_for("the message", lambda: "No system clipboard here: the export is in the unnamed register (paste it with p)" in nvim.messages())
+        self.assertIn("Review export", nvim.lua("return vim.fn.getreg('\"')"))
+
+    def test_an_empty_answer_is_not_an_export(self):
+        nvim = self.an_open_review()
+        nvim.lua("require('difftate.api').request = function(watcher, method, path, on_answer)"
+                 " vim.schedule(function() on_answer('') end) end")
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rE")
+
+        wait_for("the message", lambda: "Could not export: The watcher gave no export (is it up to date?)" in nvim.messages())
+        self.assertEqual(self.clipboard(nvim), "")
+
+    def test_a_refused_export_says_why_and_copies_nothing(self):
+        nvim = self.an_open_review()
+        nvim.lua("require('difftate.api').request = function(watcher, method, path, on_answer)"
+                 " vim.schedule(function() on_answer(nil, { message = 'the commit messages could not be read' }) end) end")
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rE")
+
+        wait_for("the message", lambda: "Could not export: the commit messages could not be read" in nvim.messages())
+        self.assertEqual(self.clipboard(nvim), "")
+
+    def test_the_watcher_stopping_is_said_in_the_usual_words(self):
+        nvim = self.an_open_review()
+        self.watcher.send_signal(signal.SIGINT)
+        self.watcher.wait(15)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rE")
+
+        wait_for("the message", lambda: "No difftate is running for" in nvim.messages())
+        self.assertNotIn("Could not export", nvim.messages(), "said once, in the usual words")
+
+    def test_nothing_is_exported_when_no_review_is_open(self):
+        nvim = self.nvim()
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rE")
+
+        wait_for("the message", lambda: "No review is open: open it to export" in nvim.messages())
+
+    def test_the_key_is_free_in_lazyvim_core_and_can_be_changed_or_turned_off(self):
+        nvim = self.nvim(opts={"keys": {"export": "<leader>gX"}})
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rE', 'n')"), "")
+        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>gX', 'n')"), "")
+        off = self.nvim(opts={"keys": {"export": False}})
+        self.assertEqual(off.lua("return vim.fn.maparg('<leader>rE', 'n')"), "")
+        taken = self.nvim(before="vim.keymap.set('n', '<leader>rE', '<cmd>echo \"also\"<cr>', { desc = 'Also' })")
+        self.assertIn("<leader>rE is already mapped (Also): set opts.keys.export to another key", taken.messages())
