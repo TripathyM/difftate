@@ -15,8 +15,8 @@ from types import SimpleNamespace
 
 from .adapters.inbound import cli
 from .adapters.inbound.review_api import ReviewApi, ShownView, ask_running_watcher, running_watcher, token_file
-from .adapters.outbound import git
-from .adapters.outbound.coding_agents import ClaudeCode, OffLimits, OpenCode, find_command
+from .adapters.outbound import agent_list, git
+from .adapters.outbound.coding_agents import ClaudeCode, CodingAgent, OffLimits, OpenCode, find_command
 from .adapters.outbound.coding_agents.reply_channel import ReplyError, RunFolder, reply_command
 from .adapters.outbound.git import GitCodeReader
 from .adapters.outbound.history_files import HistoryFiles
@@ -26,7 +26,7 @@ from .adapters.outbound.terminal import Terminal
 from .core.changes.use_cases.changeset import changeset
 from .core.changes.use_cases.checked_out import checked_out
 from .core.changes.use_cases.commit_messages import commit_messages
-from .core.dispatch.model import Dispatch
+from .core.dispatch.model import CouldNotStart, Dispatch
 from .core.dispatch.use_cases.poll import poll
 from .core.dispatch.use_cases.recover_runs import recover_runs as recover_interrupted_runs
 from .core.dispatch.use_cases.stop_run import stop_run
@@ -58,7 +58,7 @@ REVIEW_HISTORY = HistoryFiles   # for recording review history
 CODE_READER = GitCodeReader     # for reading the code
 REPOSITORY = git                # the repository: its difftate folders, base, branch, views and kept snapshots (goes with CODE_READER)
 REPORTER = Terminal             # for reporting
-CODING_AGENTS = {a.name: a for a in (ClaudeCode, OpenCode)}  # for asking the coding agent: --tool picks one
+CODING_AGENTS = {a.name: a for a in (ClaudeCode, OpenCode)}  # for asking the coding agent: an entry of the agent list picks one
 VIEWERS = {"browser": cli.open_browser, "nvim": cli.open_in_nvim}  # where the review opens: --open picks
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -134,25 +134,86 @@ def open_review(folder, cwd, branch, base, on_tamper):
     return bind_review(store, CODE_READER(cwd, base, branch, about["id"]), history, about)
 
 
-def coding_agent(tool, cmd, model):
-    """The coding agent <tool>, started with <cmd> (its default when empty)
-    and <model>: .for_folder(cwd, folder) is the one whose runs work in <cwd>.
+def read_agent_list():
+    """The machine's agent list, read now; raises the core's NotFound when it is wrong."""
+    try:
+        return agent_list.load(difftate_home())
+    except agent_list.AgentListError as e:
+        raise NotFound(str(e)) from e
+
+
+def agent_choice(cwd):
+    """The agent that replies in the repository of <cwd>, and where that comes
+    from: the repository's own setting, else the machine's default. Its name,
+    source ("repository" or "machine") and the list's names; raises the core's
+    NotFound when the list is wrong or the setting names an agent that isn't in it."""
+    agents = read_agent_list()
+    chosen = REPOSITORY.agent_setting(cwd)
+    name, source = (chosen, "repository") if chosen else (agents.default, "machine")
+    try:
+        agents.get(name)
+    except agent_list.AgentListError as e:
+        raise NotFound(f"the {source}'s agent {e}") from e
+    return SimpleNamespace(name=name, source=source, names=agents.names, path=agents.path)
+
+
+def set_agent(cwd, name):
+    """Make <name> the agent of the repository of <cwd> and of its worktrees.
+    Refused, with the names, when it isn't in the list or its command isn't found."""
+    agents = read_agent_list()
+    try:
+        entry = agents.get(name)
+    except agent_list.AgentListError as e:
+        raise NotFound(str(e)) from e
+    try:
+        find_command(entry.cmd)
+    except CouldNotStart as e:
+        raise NotFound(f"agent '{name}': {e}") from e
+    REPOSITORY.set_agent_setting(cwd, name)
+
+
+class ChosenAtRunStart:
+    """The coding agent of the repository of <cwd>, chosen again each time a
+    run starts (the repository's setting, else the machine's default, read from
+    the list as it is then): changing it never disturbs a run in flight.
     A run may not write the review's <folder>, or the difftate folder of the
     machine (the watcher's running files, its log and the review history), and may not read
-    that or the one review API token. Raises the core's CouldNotStart when the
-    command isn't found."""
-    chosen = CODING_AGENTS[tool]
-    found = find_command(cmd or chosen.default_cmd)
+    that or the one review API token. Starting raises the core's CouldNotStart
+    for a list that is wrong, an agent that isn't in it, or a command that isn't found."""
+    reply_command = CodingAgent.reply_command
 
-    def for_folder(cwd, folder):
+    def __init__(self, cwd, folder):
+        self.cwd = cwd
+        self.folder = folder
+
+    @property
+    def name(self):
+        """What the run is dispatched to, as the log names it."""
+        try:
+            return agent_choice(self.cwd).name
+        except NotFound:
+            return REPOSITORY.agent_setting(self.cwd) or "agent"
+
+    def start(self, prompt, threads):
+        try:
+            agents = read_agent_list()
+            entry = agents.get(REPOSITORY.agent_setting(self.cwd) or agents.default)
+        except (NotFound, agent_list.AgentListError) as e:
+            raise CouldNotStart(str(e)) from e
+        found = find_command(entry.cmd)
         home = difftate_home()
 
         def off_limits():
-            return OffLimits(keep_out=[folder, home], secrets=[token_file(home), home])
+            return OffLimits(keep_out=[self.folder, home], secrets=[token_file(home), home])
 
-        return chosen(found, model, cwd=cwd, off_limits=off_limits)
+        return CODING_AGENTS[entry.tool](found, entry.model, cwd=self.cwd, off_limits=off_limits,
+                                         env=entry.env).start(prompt, threads)
 
-    return SimpleNamespace(name=tool, cmd=found, for_folder=for_folder)
+
+def coding_agent(cwd, folder):
+    """The coding agent whose runs work in <cwd> (the review's checked-out
+    folder), and may not write the review's <folder>."""
+    return ChosenAtRunStart(cwd, folder)
 
 
 def shown_view(view, check, on_switch):
@@ -219,7 +280,6 @@ def reply_in_run(run_dir, thread, body):
 
 def wiring():
     return cli.Wiring(
-        coding_agents=list(CODING_AGENTS),
         viewers=VIEWERS,
         difftate_home=difftate_home(),
         difftate_folder=REPOSITORY.difftate_folder,
@@ -228,6 +288,8 @@ def wiring():
         start_watcher=start_watcher,
         reply_in_run=reply_in_run,
         coding_agent=coding_agent,
+        agent_choice=agent_choice,
+        set_agent=set_agent,
         base=REPOSITORY.base,
         need_view=REPOSITORY.need_view,
         review_branch=REPOSITORY.review_branch,
@@ -245,10 +307,12 @@ def main(argv):
 
 
 def difftate_main(argv):
-    """bin/difftate: `status` reads a review's Done state; anything else opens
+    """bin/difftate: `status` reads a review's Done state; `agent` says or sets who replies; anything else opens
     the folder's review (starting the watcher if none runs) or stops the watcher."""
     if argv[:1] == ["status"]:
         return cli.run_status(argv[1:], wiring())
+    if argv[:1] == ["agent"]:
+        return cli.run_agent(argv[1:], wiring())
     return cli.run_difftate(argv, wiring())
 
 

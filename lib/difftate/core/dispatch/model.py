@@ -44,8 +44,8 @@ def short(text: str, n: int) -> str:
 # ── News: what a run tells Dispatch ──────────────────────────────────────────
 @dataclass(frozen=True)
 class ModelChosen:
-    """The model the run uses, and where that came from (the watcher's
-    --model); model "" for the coding agent's default."""
+    """The model the run uses, and where that came from (the agent
+    list's model); model "" for the coding agent's default."""
     model: str
     source: str = ""
 

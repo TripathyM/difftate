@@ -65,13 +65,13 @@ def run_difftate(argv, wiring):
 
 
 def _open(argv, wiring):
-    opts = parse(argv, wiring.coding_agents, viewers.where_to_open(wiring.viewers))
+    opts = parse(argv, viewers.where_to_open(wiring.viewers))
     found = wiring.difftate_folder(opts["cwd"])
     if found is None:
         raise Exit(1, f"Error: {opts['cwd']} is not a checked-out folder of a git repository")
     root = found.root
     pid = one_watcher.ensure(wiring.difftate_home, wiring.running_watcher, lambda: wiring.start_watcher(
-        ["--tool", opts["tool"], "--cmd", opts["cmd"], "--model", opts["model"], "--interval", str(opts["interval"])]))
+        ["--interval", str(opts["interval"])]))
     # The first request that names the folder adds it (and switches to the base, when one is named)
     status, review = _ask(wiring, "GET", with_folder("/api/review", root, opts["base"]))
     if status != 200:

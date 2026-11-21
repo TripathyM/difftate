@@ -113,7 +113,7 @@ class TheCommandLine(unittest.TestCase):
         self.assertEqual(argv[:3], ["claude", "-p", "The prompt."])
         self.assertNotIn("--resume", argv)
         self.assertEqual(argv[argv.index("--model") + 1], "claude-opus-5-5")
-        self.assertEqual(first, [ModelChosen("claude-opus-5-5", "--model")])
+        self.assertEqual(first, [ModelChosen("claude-opus-5-5", "the agent list")])
 
     def test_claude_code_with_no_model_given_uses_its_default(self):
         argv, first = self.command(ClaudeCode("claude"))

@@ -1,7 +1,8 @@
 """Seam 1: the running watcher.
 
 Each test creates a temporary git repository, starts the real watcher with the
-`difftate` program (a fake agent swapped in through `--cmd`), and drives it
+`difftate` program (a fake agent named in the agent list of the temporary
+difftate folder), and drives it
 through the review API. HOME and DIFFTATE_HOME point into the temporary
 folder, so the watcher's running files, its log and the review history stay
 there too.
@@ -138,6 +139,8 @@ class Harness:
         self.extra_args = []
         self.watcher = None
         self.agent_cmd = FAKE_AGENT
+        self.agent_model = ""
+        self.custom_list = None
 
     def tearDown(self):
         # The watcher a test started, and any other one in this test's difftate folder
@@ -159,8 +162,22 @@ class Harness:
         return subprocess.run([sys.executable, DIFFTATE, *args], cwd=folder or self.repo, env=self.env,
                               stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
 
+    def write_agent_list(self, text=None):
+        """The machine's agent list in the temporary difftate folder: the fake
+        agent (agent_cmd, agent_model), or <text>."""
+        if text is not None:
+            self.custom_list = text  # `difftate` runs write it again: it stays
+        text = self.custom_list
+        os.makedirs(self.difftate_home, exist_ok=True)
+        model = f"model = {json.dumps(self.agent_model)}\n" if self.agent_model else ""
+        with open(os.path.join(self.difftate_home, "agents.toml"), "w") as f:
+            f.write(text if text is not None else
+                    f'default = "fake"\n[agents.fake]\ntool = "claude"\ncmd = {json.dumps(self.agent_cmd)}\n{model}')
+
     def agent_args_for_difftate(self):
-        return ["--tool", "claude", "--cmd", self.agent_cmd, *self.extra_args]
+        """What `difftate` is given besides the agent, which the list names."""
+        self.write_agent_list()
+        return list(self.extra_args)
 
     def running_pid(self):
         """The pid in the difftate folder's api.json, or None."""
@@ -339,7 +356,7 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertEqual([c["author"] for c in self.thread(tid)["comments"]], ["reviewer", "difftate", "agent"])
 
         out = self.terminal()
-        self.assertRegex(out, r"\[\d\d:\d\d:\d\d\] New/changed threads detected — dispatching to claude")
+        self.assertRegex(out, r"\[\d\d:\d\d:\d\d\] New/changed threads detected — dispatching to fake")
         self.assertIn("🔧 Read  app.py", out)
         self.assertRegex(out, r"✅ done in \d+s, \$0\.0123")
 
@@ -414,7 +431,7 @@ class WatcherTest(Harness, unittest.TestCase):
         final = wait_for("the failed progress note", lambda: self.note(tid, "progress", "no reply"))
         self.assertTrue(final.startswith("❌ **Failed** after "), final)
         self.assertIn("could not start", final)
-        self.assertIn("could not start claude", self.terminal())
+        self.assertIn("could not start fake", self.terminal())
         self.assertIsNone(self.watcher.poll(), "the watcher keeps going:\n" + self.terminal())
 
         os.chmod(self.agent_cmd, 0o755)
@@ -653,14 +670,14 @@ class WatcherTest(Harness, unittest.TestCase):
                 self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
                 self.assertIn(f"Unknown flag: {args[0]}", run.stdout + run.stderr)
 
-    def test_the_banner_names_the_coding_agent_and_each_run_starts_fresh_with_its_default_model(self):
+    def test_the_banner_says_who_replies_and_each_run_starts_fresh_with_its_default_model(self):
         self.release_agent()
         self.start_watcher()
         tid = self.open_thread("Why an f-string here?")["id"]
         wait_for("the replied state", lambda: self.state(tid) == "replied")
 
         out = self.terminal()
-        self.assertIn(f"Coding agent: claude (cmd: {FAKE_AGENT})", out)
+        self.assertIn("Who replies: the repository's agent, else the machine's default", out)
         self.assertIn("starts a fresh agent session", out)
         for gone in ("Session:", "resume mode", "Headless"):
             self.assertNotIn(gone, out)
@@ -668,8 +685,8 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertNotIn("--model", self.agent_args())
         self.assertIn("Model: CLI default", out)
 
-    def test_a_run_uses_the_model_given_with_model(self):
-        self.extra_args = ["--model", "claude-opus-5-5"]
+    def test_a_run_uses_the_model_the_agent_list_gives(self):
+        self.agent_model = "claude-opus-5-5"
         self.release_agent()
         self.start_watcher()
         tid = self.open_thread("Why an f-string here?")["id"]
@@ -678,7 +695,7 @@ class WatcherTest(Harness, unittest.TestCase):
         args = self.agent_args()
         self.assertEqual(args[args.index("--model") + 1], "claude-opus-5-5")
         self.assertNotIn("--resume", args)
-        self.assertIn("Model: claude-opus-5-5 (from --model)", self.terminal())
+        self.assertIn("Model: claude-opus-5-5 (from the agent list)", self.terminal())
 
     def test_only_a_reviewer_opens_a_thread_or_changes_its_status(self):
         self.silence_agent()  # keep the coding agent out of the thread
@@ -1522,6 +1539,105 @@ class WatcherTest(Harness, unittest.TestCase):
         git(self.repo, self.env, "commit", "-q", "-m", "only one")
         wait_for("the review of lone", lambda: self.api("GET", "/api/review")["branch"] == "lone")
         self.assertEqual(self.api("GET", "/api/view")["view"], "")
+
+
+class WhoRepliesTest(Harness, unittest.TestCase):
+    """Each run uses the repository's agent, else the machine default, read when
+    the run starts (#164). Two entries of the list run the same fake agent with
+    different environments, so which one ran shows in the folder it wrote to."""
+
+    def setUp(self):
+        super().setUp()
+        self.dirs = {name: os.path.join(self.tmp, f"agent-{name}") for name in ("personal", "work")}
+        self.list_text = "".join(
+            f'[agents.{name}]\ntool = "claude"\ncmd = "{FAKE_AGENT}"\nenv = {{ FAKE_AGENT_DIR = "{folder}" }}\n'
+            for name, folder in self.dirs.items())
+        self.set_list("personal")
+        for folder in self.dirs.values():
+            os.makedirs(folder)
+            with open(os.path.join(folder, "go"), "w"):
+                pass
+
+    def set_list(self, default):
+        self.write_agent_list(f'default = "{default}"\n{self.list_text}')
+
+    def ran(self, name):
+        """How many runs the agent <name> had so far."""
+        try:
+            with open(os.path.join(self.dirs[name], "prompts")) as f:
+                return sum(1 for _ in f)
+        except FileNotFoundError:
+            return 0
+
+    def ask(self, body):
+        tid = self.open_thread(body)["id"]
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        return tid
+
+    def difftate_agent(self, *args):
+        return subprocess.run([sys.executable, DIFFTATE, "agent", *args], cwd=self.repo, env=self.env,
+                              capture_output=True, text=True, timeout=60)
+
+    def test_a_repository_with_no_agent_of_its_own_uses_the_machine_default_with_the_listed_environment(self):
+        self.start_watcher()
+
+        self.ask("Why an f-string here?")
+
+        self.assertEqual((self.ran("personal"), self.ran("work")), (1, 0))
+
+    def test_the_repositorys_agent_replaces_the_default_and_a_change_applies_to_the_next_run_with_no_restart(self):
+        self.start_watcher()
+        self.ask("First question?")
+
+        run = self.difftate_agent("work")
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.ask("Second question?")
+        self.assertEqual((self.ran("personal"), self.ran("work")), (1, 1))
+        self.assertIn("dispatching to work", self.terminal())
+
+        self.set_list("work")
+        subprocess.run(["git", "-C", self.repo, "config", "--local", "--unset", "difftate.agent"], check=True, env=self.env)
+        self.ask("Third question?")
+        self.assertEqual((self.ran("personal"), self.ran("work")), (1, 2), "the default is read when the run starts")
+
+    def test_a_worktree_uses_the_agent_its_repository_chose(self):
+        self.difftate_agent("work")
+        folder = self.add_worktree("other")
+        self.start_watcher()
+        tid = self.api("POST", "/api/threads", {
+            "anchor": {"file": "app.py", "side": "new", "startLine": 2, "endLine": 2, "code": "    return 'hey ' + name"},
+            "body": "Why?"}, folder=folder)["id"]
+
+        wait_for("the replied state", lambda: next(
+            t for t in self.api("GET", "/api/threads", folder=folder) if t["id"] == tid)["state"] == "replied")
+
+        self.assertEqual((self.ran("personal"), self.ran("work")), (0, 1))
+
+    def test_a_run_whose_agent_is_not_listed_fails_naming_the_list_and_the_watcher_keeps_going(self):
+        self.start_watcher()
+        subprocess.run(["git", "-C", self.repo, "config", "--local", "difftate.agent", "gone"], check=True, env=self.env)
+
+        tid = self.open_thread("Why an f-string here?")["id"]
+
+        final = wait_for("the failed progress note", lambda: self.note(tid, "progress", "no reply"))
+        self.assertIn("no agent 'gone'", final)
+        self.assertIn("personal, work", final)
+        self.assertIsNone(self.watcher.poll(), "the watcher keeps going")
+
+        self.difftate_agent("work")
+        self.api("POST", f"/api/threads/{tid}/comments", {"body": "Please try again."})
+        wait_for("the replied state", lambda: self.state(tid) == "replied")
+        self.assertEqual(self.ran("work"), 1)
+
+    def test_a_run_whose_command_isnt_found_fails_with_a_clear_note(self):
+        self.start_watcher()
+        self.write_agent_list('default = "lost"\n[agents.lost]\ntool = "claude"\ncmd = "no-such-agent-binary"\n')
+
+        tid = self.open_thread("Why an f-string here?")["id"]
+
+        final = wait_for("the failed progress note", lambda: self.note(tid, "progress", "no reply"))
+        self.assertIn("command 'no-such-agent-binary' not found", final)
+        self.assertIn("could not start lost", self.terminal())
 
 
 class BatchedReviewTest(Harness, unittest.TestCase):

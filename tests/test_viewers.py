@@ -140,17 +140,17 @@ class ViewersTest(unittest.TestCase):
         self.assertIn("nvim", viewers.where_to_open(main.VIEWERS))
 
     def test_open_herdr_is_refused_like_any_unknown_value_naming_the_three_values(self):
-        for argv, env in ((["--tool", "claude", "--open", "herdr"], {}), (["--tool", "claude"], {"DT_OPEN": "herdr"})):
+        for argv, env in ((["--open", "herdr"], {}), ([], {"DT_OPEN": "herdr"})):
             with mock.patch.dict(os.environ, env), self.assertRaises(options.Exit) as raised:
-                options.parse(argv, ["claude"], viewers.where_to_open(main.VIEWERS))
+                options.parse(argv, viewers.where_to_open(main.VIEWERS))
             self.assertEqual(raised.exception.code, 1)
             self.assertIn("must be browser, nvim or both, not 'herdr'", raised.exception.message)
 
     def test_open_accepts_nvim_and_the_help_names_the_three_values(self):
-        opts = options.parse(["--tool", "claude", "--open", "nvim"], ["claude"], viewers.where_to_open(main.VIEWERS))
+        opts = options.parse(["--open", "nvim"], viewers.where_to_open(main.VIEWERS))
         self.assertEqual(opts["open"], "nvim")
         with mock.patch.dict(os.environ, {"DT_OPEN": "nvim"}):
-            opts = options.parse(["--tool", "claude"], ["claude"], viewers.where_to_open(main.VIEWERS))
+            opts = options.parse([], viewers.where_to_open(main.VIEWERS))
         self.assertEqual(opts["open"], "nvim")
         self.assertRegex(options.USAGE, r"browser, nvim or both")
         self.assertNotIn("herdr:", options.USAGE)

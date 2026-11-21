@@ -7,11 +7,13 @@ USAGE = """difftate — Open the review of this folder, starting the watcher (on
 Usage:
   difftate [<view>] [--base <branch>] [--open browser|nvim|both]
   difftate stop
+  difftate agent [<name>]
   difftate status [--json] [--branch <branch>] [--base <branch>] [--cwd <path>]
 
 The watcher serves the review of every checked-out folder that a request names, in the
 background, and dispatches waiting threads to the coding agent in that folder. `difftate` starts
 it when none runs, adds this folder, opens its review, and ends. `difftate stop` stops it.
+`difftate agent <name>` sets which listed agent replies in this repository; with no name it says which does.
 
 Options:
   <view>                 The view to show (default: leave it). HEAD~2: the commits after it;
@@ -25,11 +27,8 @@ Options:
   --cwd <path>           A folder of the repository (default: current directory)
   --help                 Show this help
 
-Until the list of coding agents exists, these choose the agent for every review, and count
-only for the `difftate` that starts the watcher:
-  --tool <tool>          claude (default) or opencode
-  --cmd <binary>         Override the CLI binary or shell alias (e.g. a wrapper around claude)
-  --model <model>        Model for the coding agent (default: the coding agent's own default)
+Who replies is not an option: it is the repository's agent (`difftate agent <name>`), else the
+machine's default, from the agent list in the difftate folder (agents.toml).
 
 Each run starts a fresh agent session of the coding agent.
 
@@ -39,10 +38,10 @@ watcher's port, pid and token, its log, and the review history."""
 WATCHER_USAGE = """difftate-watch.py — The watcher: one for the machine, started in the background by `difftate`.
 
 Usage:
-  difftate-watch.py [--tool <claude|opencode>] [--cmd <binary>] [--model <model>] [--interval <seconds>]"""
+  difftate-watch.py [--interval <seconds>]"""
 
-FLAGS = {"--base": "base", "--tool": "tool", "--model": "model", "--cwd": "cwd", "--cmd": "cmd", "--open": "open"}
-WATCHER_FLAGS = {"--tool": "tool", "--model": "model", "--cmd": "cmd", "--interval": "interval"}
+FLAGS = {"--base": "base", "--cwd": "cwd", "--open": "open"}
+WATCHER_FLAGS = {"--interval": "interval"}
 
 
 class Exit(Exception):
@@ -72,11 +71,10 @@ def interval_of(text):
     return interval
 
 
-def parse(argv, coding_agents, open_in, env=None):
-    """The options of `difftate` in <argv>. --tool names one of <coding_agents>,
-    and --open one of <open_in>. Raises Exit for --help and for a wrong option."""
+def parse(argv, open_in, env=None):
+    """The options of `difftate` in <argv>. --open names one of <open_in>. Raises Exit for --help and for a wrong option."""
     env = os.environ if env is None else env
-    opts = {"view": "", "base": "", "tool": "claude", "model": "", "cwd": "", "cmd": "",
+    opts = {"view": "", "base": "", "cwd": "",
             "open": env.get("DT_OPEN") or "browser", "interval": env.get("DT_INTERVAL") or "1"}
     positional = []
     i = 0
@@ -98,15 +96,13 @@ def parse(argv, coding_agents, open_in, env=None):
     opts["cwd"] = opts["cwd"] or os.getcwd()
     if opts["open"] not in open_in:
         raise Exit(1, f"Error: --open (or DT_OPEN) must be {one_of(open_in)}, not '{opts['open']}'")
-    if opts["tool"] not in coding_agents:
-        raise Exit(1, f"Error: unsupported tool '{opts['tool']}'. Supported: {' '.join(coding_agents)}")
     opts["interval"] = interval_of(opts["interval"])
     return opts
 
 
-def parse_watcher(argv, coding_agents):
+def parse_watcher(argv):
     """The options of the watcher process itself, which `difftate` starts."""
-    opts = {"tool": "claude", "model": "", "cmd": "", "interval": "1"}
+    opts = {"interval": "1"}
     i = 0
     while i < len(argv):
         arg = argv[i]
@@ -117,7 +113,5 @@ def parse_watcher(argv, coding_agents):
                        else f"Error: {arg} needs a value")
         opts[WATCHER_FLAGS[arg]] = argv[i + 1]
         i += 2
-    if opts["tool"] not in coding_agents:
-        raise Exit(1, f"Error: unsupported tool '{opts['tool']}'. Supported: {' '.join(coding_agents)}")
     opts["interval"] = interval_of(opts["interval"])
     return opts
