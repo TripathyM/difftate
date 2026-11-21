@@ -4,12 +4,14 @@ watcher (ADR 0008): viewers and scripts only find the one that runs.
 
   difftate [<view>] [--base <branch>] [--open browser|nvim|both]
   difftate stop
+  difftate restart
   difftate log
 
 It adds the folder (the watcher serves a folder from the first request that
 names it), shows the view when one is given, and opens the viewer itself: the
 watcher never opens one. `difftate stop` stops the watcher through the review
-API; a run in flight ends failed "(the watcher stopped)".
+API; a run in flight ends failed "(the watcher stopped)". `difftate restart` stops it
+(if it runs) and starts it again: it serves again the folders it served.
 """
 import os
 import sys
@@ -18,7 +20,7 @@ import urllib.parse
 
 from ....core.changes.model import View
 from . import one_watcher, viewers
-from .options import USAGE, Exit, parse
+from .options import USAGE, Exit, interval_of, parse
 
 # How long `difftate stop` waits for the watcher to end its runs and exit
 STOPPING_S = 30
@@ -61,6 +63,10 @@ def run_difftate(argv, wiring):
             if len(argv) > 1:
                 raise Exit(1, f"Error: stop takes no argument\n{USAGE}")
             return _stop(wiring)
+        if argv[:1] == ["restart"]:
+            if len(argv) > 1:
+                raise Exit(1, f"Error: restart takes no argument\n{USAGE}")
+            return _restart(wiring)
         if argv[:1] == ["log"]:
             if len(argv) > 1:
                 raise Exit(1, f"Error: log takes no argument\n{USAGE}")
@@ -123,11 +129,36 @@ def _log(wiring):
         return 0
 
 
+def _restart(wiring):
+    """Stop the watcher if one runs, and start one: it serves again the folders
+    the stopped one served."""
+    _stop_running(wiring, wiring.running_watcher(wiring.difftate_home))
+    interval = opts_interval()
+    pid = one_watcher.ensure(wiring.difftate_home, wiring.running_watcher,
+                             lambda: wiring.start_watcher(["--interval", str(interval)]))
+    print(f"difftate restarted (pid {pid})")
+    return 0
+
+
+def opts_interval():
+    """The watcher's interval: $DT_INTERVAL, else the default."""
+    return interval_of(os.environ.get("DT_INTERVAL") or "1")
+
+
 def _stop(wiring):
     pid = wiring.running_watcher(wiring.difftate_home)
     if not pid:
         print("difftate is not running")
         return 0
+    _stop_running(wiring, pid)
+    print(f"difftate stopped (pid {pid})")
+    return 0
+
+
+def _stop_running(wiring, pid):
+    """Ask the watcher <pid> (None: none runs) to stop, and wait until it has."""
+    if not pid:
+        return
     status, answer = _ask(wiring, "POST", "/api/stop", {})
     if status != 200:
         raise Exit(1, f"Error: difftate refused to stop: {_said(answer, status)}")
@@ -136,5 +167,3 @@ def _stop(wiring):
         if time.time() > deadline:
             raise Exit(1, f"Error: difftate (pid {pid}) didn't stop within {STOPPING_S}s")
         time.sleep(0.1)
-    print(f"difftate stopped (pid {pid})")
-    return 0
