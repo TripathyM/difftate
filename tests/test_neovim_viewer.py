@@ -505,10 +505,10 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
     def test_the_key_comes_from_opts_keys_and_false_maps_none(self):
         self.commit()
         self.start_watcher()
-        nvim = self.nvim(opts={"poll_ms": 200, "keys": {"toggle": "<leader>rv"}})
+        nvim = self.nvim(opts={"poll_ms": 200, "keys": {"toggle": "<leader>gR"}})
         self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rr', 'n')"), "")
 
-        nvim.keys("<leader>rv")
+        nvim.keys("<leader>gR")
 
         wait_for("the review to open", lambda: nvim.status() != "")
         unmapped = self.nvim(opts={"keys": {"toggle": False}})
@@ -533,7 +533,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
             "toggle": "<leader>gR", "expand": "<leader>gE", "thread": "<leader>gT", "comment": "<leader>gC", "add_comment": "<leader>gA",
             "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG",
             "threads": "<leader>gP", "files": "<leader>gF", "next": "<leader>gN", "previous": "<leader>gB",
-            "mode": "<leader>gM", "submit": "<leader>gU", "done": "<leader>gD", "export": "<leader>gX"}})
+            "mode": "<leader>gM", "submit": "<leader>gU", "done": "<leader>gD", "export": "<leader>gX", "viewed": "<leader>gV"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -544,7 +544,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
 
         self.assertEqual(after["options"], before["options"])
         self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG",
-                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rS", "n  rD", "n  rE"})
+                                                                 "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rS", "n  rD", "n  rE", "n  rv"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -2808,3 +2808,209 @@ class ReviewExport(NeovimHarness, unittest.TestCase):
         self.assertEqual(off.lua("return vim.fn.maparg('<leader>rE', 'n')"), "")
         taken = self.nvim(before="vim.keymap.set('n', '<leader>rE', '<cmd>echo \"also\"<cr>', { desc = 'Also' })")
         self.assertIn("<leader>rE is already mapped (Also): set opts.keys.export to another key", taken.messages())
+
+
+@needs(MISSING_GITSIGNS)
+class ReviewViewed(NeovimHarness, unittest.TestCase):
+    """GET and PUT /api/viewed: the current buffer's file marked viewed, or not, as the browser's checkbox does."""
+
+    def viewed(self):
+        return self.api("GET", "/api/viewed")["files"]
+
+    def a_review_with_an_unchanged_file(self):
+        """notes.txt is on main and the branch alike (not in the changeset); app.py changed. Neovim is on notes.txt."""
+        git(self.repo, self.env, "checkout", "-q", "--", "app.py")
+        git(self.repo, self.env, "checkout", "-q", "main")
+        self.write("notes.txt", "Notes\n")
+        self.commit("Add notes")
+        git(self.repo, self.env, "checkout", "-q", "-B", "feature")
+        self.write("app.py", "def greet(name):\n    return f'hello {name}'\n")
+        self.commit("Change app")
+        self.start_watcher()
+        nvim = self.nvim(None, "notes.txt")
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        return nvim
+
+    def stub_put_viewed(self, nvim, message):
+        nvim.lua("require('difftate.api').request = (function(real) return function(watcher, method, path, on_answer, payload)"
+                 " if method == 'PUT' and path == '/api/viewed' then"
+                 f" vim.schedule(function() on_answer(nil, {{ message = {vim_string(message)} }}) end) return end"
+                 " return real(watcher, method, path, on_answer, payload) end end)(require('difftate.api').request)")
+
+    # Toggle -------------------------------------------------------------------
+
+    def test_leader_rv_marks_the_current_file_viewed_and_says_so_and_the_key_again_unmarks_it(self):
+        nvim = self.an_open_review()
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rv")
+
+        wait_for("the message", lambda: "Viewed app.py" in nvim.messages())
+        self.assertEqual(self.viewed(), ["app.py"])
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rv")
+
+        wait_for("the message", lambda: "Not viewed: app.py" in nvim.messages())
+        self.assertEqual(self.viewed(), [])
+
+    def test_the_toggle_goes_from_what_the_review_api_has_so_a_mark_made_elsewhere_is_not_marked_again(self):
+        nvim = self.an_open_review()
+        self.api("PUT", "/api/viewed", {"file": "app.py"})
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rv")
+
+        wait_for("the message", lambda: "Not viewed: app.py" in nvim.messages())
+        self.assertEqual(self.viewed(), [])
+
+    def test_only_the_current_file_is_toggled(self):
+        self.write("util.py", "x = 1\n")
+        nvim = self.an_open_review()
+        self.api("PUT", "/api/viewed", {"file": "util.py"})
+
+        nvim.keys("<leader>rv")
+
+        wait_for("app.py viewed", lambda: "app.py" in self.viewed())
+        self.assertEqual(self.viewed(), ["app.py", "util.py"])
+
+    def test_a_file_in_a_subfolder_is_marked_by_its_path_in_the_repository(self):
+        os.makedirs(os.path.join(self.repo, "pkg"))
+        self.write("pkg/tool.py", "y = 2\n")
+        self.commit()
+        self.start_watcher()
+        nvim = self.nvim(None, "pkg/tool.py")
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+
+        nvim.keys("<leader>rv")
+
+        wait_for("the message", lambda: "Viewed pkg/tool.py" in nvim.messages())
+        self.assertEqual(self.viewed(), ["pkg/tool.py"])
+
+    # The files picker --------------------------------------------------------------
+
+    def test_the_files_picker_follows_each_toggle_on_its_next_open(self):
+        nvim = self.an_open_review()
+        nvim.lua(FAKE_SELECT)
+
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], ["  app.py  +1 −1"])
+        nvim.pick(1)
+        nvim.keys("<leader>rv")
+        wait_for("viewed", lambda: self.viewed() == ["app.py"])
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], ["✓ app.py  +1 −1 · viewed"])
+        nvim.pick(1)
+        nvim.keys("<leader>rv")
+        wait_for("not viewed", lambda: self.viewed() == [])
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+
+        self.assertEqual(nvim.menu()["lines"], ["  app.py  +1 −1"])
+
+    def test_a_file_whose_diff_changed_loses_its_mark_and_the_picker_shows_that(self):
+        nvim = self.an_open_review()
+        nvim.lua(FAKE_SELECT)
+        nvim.keys("<leader>rv")
+        wait_for("viewed", lambda: self.viewed() == ["app.py"])
+
+        self.write("app.py", "def greet(name):\n    return f'hello, {name}!'\n")
+        wait_for("the mark cleared", lambda: self.viewed() == [])
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], ["  app.py  +1 −1"])
+
+    # A file that is not changed ------------------------------------------------------
+
+    def test_a_file_not_in_the_changeset_says_so_and_changes_nothing(self):
+        nvim = self.a_review_with_an_unchanged_file()
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rv")
+
+        wait_for("the message", lambda: "notes.txt is not in the changeset: nothing to mark viewed" in nvim.messages())
+        self.assertEqual(self.viewed(), [])
+
+    def test_a_buffer_that_is_not_a_file_says_to_open_a_changed_file(self):
+        nvim = self.an_open_review()
+        nvim.command("enew")
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rv")
+
+        wait_for("the message", lambda: "Open a changed file to mark it viewed" in nvim.messages())
+        self.assertEqual(self.viewed(), [])
+
+    def test_a_file_outside_the_reviews_folder_says_so_and_marks_nothing(self):
+        outside = os.path.join(self.tmp, "elsewhere.py")
+        with open(outside, "w") as f:
+            f.write("z = 3\n")
+        nvim = self.an_open_review()
+        nvim.command("edit " + outside)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rv")
+
+        wait_for("the message", lambda: "is not in" in nvim.messages() and "the folder of the review" in nvim.messages())
+        self.assertEqual(self.viewed(), [])
+
+    # Errors ------------------------------------------------------------------------
+
+    def test_with_no_review_open_it_says_so_and_marks_nothing(self):
+        self.commit()
+        self.start_watcher()
+        nvim = self.nvim()
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rv")
+
+        wait_for("the message", lambda: "No review is open: open it to mark a file viewed" in nvim.messages())
+        self.assertEqual(self.viewed(), [])
+
+    def test_a_stopped_watcher_is_said(self):
+        nvim = self.an_open_review()
+        self.stop_watcher()
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rv")
+
+        wait_for("the error", lambda: "No difftate is running for" in nvim.messages())
+
+    def test_a_409_is_shown_as_the_api_says(self):
+        nvim = self.an_open_review()
+        message = "another branch is checked out: go back to feature to mark a file viewed"
+        self.stub_put_viewed(nvim, message)
+        nvim.command("messages clear")
+
+        nvim.keys("<leader>rv")
+
+        wait_for("the API's own words", lambda: message in nvim.messages())
+        self.assertEqual(self.viewed(), [])
+
+    # The key -----------------------------------------------------------------------
+
+    def test_the_key_is_free_in_lazyvim_core_and_can_be_changed_or_turned_off(self):
+        nvim = self.nvim(opts={"keys": {"viewed": "<leader>gV"}})
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rv', 'n')"), "")
+        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>gV', 'n')"), "")
+        off = self.nvim(opts={"keys": {"viewed": False}})
+        self.assertEqual(off.lua("return vim.fn.maparg('<leader>rv', 'n')"), "")
+        taken = self.nvim(before="vim.keymap.set('n', '<leader>rv', '<cmd>echo \"also\"<cr>', { desc = 'Also' })")
+        self.assertIn("<leader>rv is already mapped (Also): set opts.keys.viewed to another key", taken.messages())
+
+    def test_the_viewed_key_changes_no_option_or_key_of_the_reviewers_window_or_buffer(self):
+        nvim = self.an_open_review()
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+
+        nvim.keys("<leader>rv")
+        wait_for("viewed", lambda: self.viewed() == ["app.py"])
+        nvim.keys("<leader>rv")
+        wait_for("not viewed", lambda: self.viewed() == [])
+
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)

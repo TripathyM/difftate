@@ -599,6 +599,50 @@ function M.export()
   end, nil, true)
 end
 
+-- Viewed files --------------------------------------------------------------------
+
+--- Mark the file of the current buffer viewed, or not (PUT /api/viewed), as the browser's checkbox does:
+--- the review API keeps the mark until the file's diff changes. From what it says now, so a mark made in
+--- another viewer isn't marked again blindly. A file that isn't in the changeset says so and changes nothing.
+function M.toggle_viewed()
+  local review = open_review("mark a file viewed")
+  if not review then
+    return
+  end
+  local buf = vim.api.nvim_get_current_buf()
+  local path, why = path_in_review(review, buf)
+  if not path then
+    local not_a_file = vim.bo[buf].buftype ~= "" or vim.api.nvim_buf_get_name(buf) == ""
+    say(not_a_file and "Open a changed file to mark it viewed" or why)
+    return
+  end
+  api.request(review.watcher, "GET", "/api/changeset?view=", function(changeset, err)
+    if not changeset then
+      return failed(review, err)
+    end
+    local changed = false
+    for _, file in ipairs(nav.files(changeset.diff or "")) do
+      changed = changed or file.path == path
+    end
+    if not changed then
+      say(("%s is not in the changeset: nothing to mark viewed"):format(path))
+      return
+    end
+    api.request(review.watcher, "GET", "/api/viewed", function(now, err2)
+      if not now then
+        return failed(review, err2)
+      end
+      local viewed = not vim.tbl_contains(now.files or {}, path)
+      api.request(review.watcher, "PUT", "/api/viewed", function(answer, err3)
+        if not answer then
+          return failed(review, err3)
+        end
+        say(viewed and ("Viewed " .. path) or ("Not viewed: " .. path))
+      end, { file = path, viewed = viewed })
+    end)
+  end)
+end
+
 -- ]r, [r and the pickers ------------------------------------------------------
 
 -- The review's threads and its changeset's files as they are now: then_(threads, files, diff
