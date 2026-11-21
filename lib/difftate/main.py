@@ -160,7 +160,9 @@ def agent_choice(cwd, override=""):
     try:
         entry = agents.get(name)
     except agent_list.AgentListError as e:
-        raise NotFound(f"the {source}'s agent {e}") from e
+        if source != "review":
+            raise NotFound(f"the {source}'s agent {e}") from e
+        entry = None  # a review's choice the list lost since: viewers still show it, so it can be cleared; a run refuses it
     return SimpleNamespace(name=name, source=source, names=agents.names, path=agents.path, entry=entry)
 
 
@@ -214,9 +216,13 @@ class ChosenAtRunStart:
 
     def start(self, prompt, threads):
         try:
-            entry = agent_choice(self.cwd, self.override()).entry
+            chosen = agent_choice(self.cwd, self.override())
         except NotFound as e:
             raise CouldNotStart(str(e)) from e
+        entry = chosen.entry
+        if entry is None:
+            raise CouldNotStart(f"the review's agent '{chosen.name}' is not in the agent list ({chosen.path}): "
+                                f"{', '.join(chosen.names)}; choose another or clear it")
         found = find_command(entry.cmd)
         home = difftate_home()
 

@@ -82,7 +82,7 @@ class Wiring:
     start_watcher: Callable[[Sequence[str]], Callable[[], bool]]
     reply_in_run: Callable[[str, str, str], str]
     coding_agent: Callable[[str, str], Any]
-    agent_choice: Callable[..., Any]
+    agent_choice: Callable[..., Any]  # (cwd, override="")
     check_agent: Callable[[str], None]
     set_agent: Callable[[str, str], None]
     base: Callable[[str, str], str]

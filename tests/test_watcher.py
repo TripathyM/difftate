@@ -1673,6 +1673,19 @@ class WhoRepliesTest(Harness, unittest.TestCase):
         self.assertIn("personal, work", body)
         self.assertEqual(self.api("GET", "/api/agent")["source"], "machine")
 
+    def test_an_override_the_list_lost_is_still_shown_and_can_be_cleared_and_its_run_fails_naming_the_list(self):
+        self.start_watcher()
+        self.api("PUT", "/api/agent", {"agent": "work"})
+        self.write_agent_list('default = "personal"\n[agents.personal]\ntool = "claude"\ncmd = "%s"\n' % FAKE_AGENT)
+
+        self.assertEqual(self.api("GET", "/api/agent"),
+                         {"agent": "work", "source": "review", "names": ["personal"]})
+        tid = self.open_thread("Why an f-string here?")["id"]
+        final = wait_for("the failed progress note", lambda: self.note(tid, "progress", "no reply"))
+        self.assertIn("review's agent 'work' is not in the agent list", final)
+
+        self.assertEqual(self.api("PUT", "/api/agent", {"agent": ""})["agent"], "personal")
+
     def test_a_run_in_flight_keeps_its_agent_and_the_next_run_uses_the_new_one(self):
         os.remove(os.path.join(self.dirs["personal"], "go"))  # the run waits for its agent
         self.start_watcher()
