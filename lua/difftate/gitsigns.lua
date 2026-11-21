@@ -1,7 +1,8 @@
 -- gitsigns' base: the one thing the Neovim viewer changes that it doesn't own (spec #124,
--- Additive only). While a review is open, every buffer's base is where the branch left
--- the review's base, so the reviewer's own hunk keys move through the changeset. On
--- close it goes back to the base gitsigns had before (the index, unless the reviewer
+-- Additive only). While a review is open, every buffer's base is that of the view shown
+-- (review.lua): by default where the branch left the review's base, so the reviewer's own
+-- hunk keys move through the changeset; a commit for the view of the commits after it; the
+-- index for the unstaged view. On close it goes back to the base gitsigns had before (the index, unless the reviewer
 -- set another), exactly.
 local M = {}
 

@@ -1,8 +1,8 @@
 -- The Neovim viewer (GLOSSARY.md): difftate's review in the reviewer's own Neovim
 -- (ADR 0007). A client of the review API, like the browser and the Herdr viewer.
 --
--- Modules: done (Done, as text), export (the export, as text), review (the open review: opening, polling, closing, writing), api (the review
--- API through curl), mode (the review mode and Submit, as text), look (the deleted text and
+-- Modules: done (Done, as text), export (the export, as text), view (the view, as text), review
+-- (the open review: opening, polling, closing, writing), api (the review API through curl), mode (the review mode and Submit, as text), look (the deleted text and
 -- the tint of the diff), compose (the float comments are written in), gitsigns (its base
 -- while the review is open), git, draw (the threads in the buffers), threads (their text),
 -- wrap, diff (the changeset's diff),
@@ -42,6 +42,7 @@ local defaults = {
     submit = "<leader>rS", -- submit the held threads of a batched review
     done = "<leader>rD", -- mark the review Done at the branch's commit, or undo it
     export = "<leader>rE", -- copy the review's export to the clipboard, for an agent session
+    views = "<leader>rV", -- choose the view: all changes, the last commits, uncommitted, unstaged
     viewed = "<leader>rv", -- mark the current file viewed, or not
   },
 }
@@ -67,6 +68,7 @@ local actions = {
   submit = { function() review.submit() end, "Submit the held threads" },
   done = { function() review.toggle_done() end, "Mark the review Done, or undo it" },
   export = { function() review.export() end, "Copy the review's export for an agent session" },
+  views = { function() review.pick_view() end, "Choose the view of the review" },
   viewed = { function() review.toggle_viewed() end, "Mark this file viewed, or not" },
 }
 

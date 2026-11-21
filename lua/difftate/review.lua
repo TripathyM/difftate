@@ -14,6 +14,7 @@ local export = require("difftate.export")
 local nav = require("difftate.nav")
 local pick = require("difftate.pick")
 local threads = require("difftate.threads")
+local view = require("difftate.view")
 
 local M = {}
 
@@ -27,22 +28,59 @@ local function no_watcher(top)
   return ("No difftate is running for %s: start it there, then open the review again"):format(top)
 end
 
--- Point gitsigns at the merge-base of the review's base and HEAD, when it moved
--- since the last time; then on_done(), or on_done(why) when git can't find it.
+-- The view the review shows: the review's view, or all changes when it is the staged one (only the
+-- browser shows it) or one git can't find here (a view chosen on a longer branch, say)
+local function shown_view(review)
+  return review.unreadable and "" or view.shown(review.view)
+end
+
+-- Point gitsigns at the base of the view shown, when it moved since the last time; then on_done(), or
+-- on_done(why, fatal) when git can't: fatal when it can't find where the branch left the base; a view
+-- it can't find is not (the review shows all changes meanwhile, so the reviewer can choose another). All changes: where the branch left the review's base (the
+-- merge-base of the base and HEAD); the unstaged view: the index (gitsigns' own default); any other
+-- view is a commit (HEAD~2, HEAD, ...), which gitsigns compares the file on disk with.
 local function follow_base(review, on_done)
   git.run(review.watcher.top, { "merge-base", review.base, "HEAD" }, function(commit, err)
     if current ~= review then
       return
     end
     if not commit then
-      on_done(("git can't find where this branch left %s: %s"):format(review.base, err))
+      on_done(("git can't find where this branch left %s: %s"):format(review.base, err), true)
       return
     end
-    if commit ~= review.merge_base then
-      review.merge_base = commit
-      review.signs = gitsigns.point_at(commit)
+    review.merge_base = commit
+    local function point(target) -- a commit, or nil for the index
+      local key = target or "the index"
+      if key ~= review.pointed then
+        review.pointed = key
+        review.signs = gitsigns.point_at(target)
+      end
+      on_done()
     end
-    on_done()
+    local shown = view.shown(review.view)
+    review.unreadable = false
+    if shown == "" then
+      point(commit)
+    elseif shown == "unstaged" then
+      point(nil)
+    else
+      git.run(review.watcher.top, { "rev-parse", "--verify", shown .. "^{commit}" }, function(sha, why)
+        if current ~= review then
+          return
+        end
+        if view.shown(review.view) ~= shown then
+          on_done() -- the view changed while git looked: the change follows its own base, and this one is stale
+          return
+        end
+        if not sha then
+          review.unreadable = true
+          point(commit)
+          on_done(("git can't find %s, the view: showing all changes (%s)"):format(shown, why))
+          return
+        end
+        point(sha)
+      end)
+    end
   end)
 end
 
@@ -51,7 +89,8 @@ end
 -- time; then on_done(). A failed read leaves what is drawn, and says nothing: the
 -- review request of the same poll says it when difftate stopped answering.
 local function read_threads(review, on_done)
-  api.request(review.watcher, "GET", "/api/threads?view=", function(listed)
+  local shown = shown_view(review)
+  api.request(review.watcher, "GET", view.query("/api/threads", shown), function(listed)
     if current ~= review then
       return
     end
@@ -64,7 +103,7 @@ local function read_threads(review, on_done)
       if current ~= review then
         return
       end
-      local key = vim.json.encode(listed) .. (diff_text or "")
+      local key = view.shown(shown) .. "\0" .. vim.json.encode(listed) .. (diff_text or "")
       if key ~= review.drawn_key then
         review.drawn_key = key
         draw.show(review.watcher.top, listed, diff_text)
@@ -76,7 +115,7 @@ local function read_threads(review, on_done)
       draw_them()
       return
     end
-    api.request(review.watcher, "GET", "/api/changeset?view=", function(changeset)
+    api.request(review.watcher, "GET", view.query("/api/changeset", shown), function(changeset)
       if not changeset then
         on_done() -- without the diff the deleted lines can't be placed: leave what is drawn
         return
@@ -140,6 +179,32 @@ local function read_done(review, on_done)
   end)
 end
 
+-- Take <answer> (what the review API says of the view: { view }) as the view of the open <review>. The
+-- watcher keeps the view, so another viewer's choice is followed too.
+local function know_view(review, answer)
+  if current == review then
+    review.view = answer.view or ""
+    vim.cmd("redrawstatus")
+  end
+end
+
+-- Read the view the viewers show (GET /api/view); then on_done(answer), or on_done(nil, err) when the review API
+-- didn't answer (a watcher without the route shows all changes: what was known stays).
+local function read_view(review, on_done)
+  local stamp = review.view_stamp
+  api.request(review.watcher, "GET", "/api/view", function(answer, err)
+    if not answer then
+      on_done(nil, err)
+      return
+    end
+    -- A choice answered since this was asked: its answer is newer, so this one doesn't overwrite it
+    if review.view_stamp == stamp then
+      know_view(review, answer)
+    end
+    on_done(answer)
+  end)
+end
+
 -- One poll of the open <review>: the review API (the base may change after a
 -- checkout), the merge-base, then the threads. One at a time: a slow one is skipped over.
 local function poll(review)
@@ -162,16 +227,18 @@ local function poll(review)
     end
     review.lost = false
     review.base = answer.base
-    follow_base(review, function(why)
-      if why and why ~= review.base_error then
-        say(why, vim.log.levels.WARN) -- once, not every poll
-      end
-      review.base_error = why
-      look.redraw() -- gitsigns may have moved its hunks since: it only says so when their counts change
-      read_mode(review, function()
-        read_done(review, function()
-          read_threads(review, function()
-            review.polling = false
+    read_view(review, function()
+      follow_base(review, function(why)
+        if why and why ~= review.base_error then
+          say(why, vim.log.levels.WARN) -- once, not every poll
+        end
+        review.base_error = why
+        look.redraw() -- gitsigns may have moved its hunks since: it only says so when their counts change
+        read_mode(review, function()
+          read_done(review, function()
+            read_threads(review, function()
+              review.polling = false
+            end)
           end)
         end)
       end)
@@ -220,23 +287,28 @@ function M.open(cwd, opts)
         say(err.missing and no_watcher(watcher.top) or err.message, vim.log.levels.WARN)
         return
       end
-      review.watcher, review.base = watcher, answer.base
-      follow_base(review, function(why)
-        if why then
-          current = nil
-          gitsigns.restore()
-          say(why, vim.log.levels.WARN)
-          return
-        end
-        read_mode(review, function()
-          read_done(review, function()
-            if current ~= review then
-              return
-            end
-            say(M.status())
-            look.show(watcher.top, opts.diff)
-            read_threads(review, function()
-              start_polling(review, opts.poll_ms)
+      review.watcher, review.base, review.view = watcher, answer.base, ""
+      read_view(review, function()
+        follow_base(review, function(why, fatal)
+          if fatal then
+            current = nil
+            gitsigns.restore()
+            say(why, vim.log.levels.WARN)
+            return
+          end
+          if why then
+            say(why, vim.log.levels.WARN)
+          end
+          read_mode(review, function()
+            read_done(review, function()
+              if current ~= review then
+                return
+              end
+              say(M.status())
+              look.show(watcher.top, opts.diff)
+              read_threads(review, function()
+                start_polling(review, opts.poll_ms)
+              end)
             end)
           end)
         end)
@@ -643,6 +715,63 @@ function M.toggle_viewed()
   end)
 end
 
+-- Views ----------------------------------------------------------------------------
+
+-- Show <chosen> in every viewer (PUT /api/view: the watcher keeps it), then point git signs at its base and
+-- draw the threads the view shows
+local function switch_view(review, chosen)
+  api.request(review.watcher, "PUT", "/api/view", function(answer, err)
+    if current ~= review then
+      return
+    end
+    if not answer then
+      say(err.missing and no_watcher(review.watcher.top)
+        or ("Can't show %s: %s"):format(view.label(chosen), err.message), vim.log.levels.ERROR)
+      return
+    end
+    review.view_stamp = (review.view_stamp or 0) + 1
+    know_view(review, { view = answer.view or chosen })
+    say("Showing " .. view.label(chosen))
+    follow_base(review, function(why)
+      if why then
+        say(why, vim.log.levels.WARN)
+      end
+      review.base_error = why
+      look.redraw()
+      refresh(review)
+    end)
+  end, { view = chosen })
+end
+
+--- The views picker: all changes, the uncommitted and the unstaged ones, and the last commit and the last
+--- few commits with their subjects (the staged view stays in the browser). The chosen view is shown in every
+--- viewer, as the browser's menu does.
+function M.pick_view()
+  local review = open_review("choose the view")
+  if not review then
+    return
+  end
+  local range = (review.merge_base or review.base) .. "..HEAD"
+  git.run(review.watcher.top, { "log", "--format=%h %s", "-n", "30", range }, function(out)
+    if current ~= review then
+      return
+    end
+    local commits = vim.tbl_filter(function(line)
+      return line ~= ""
+    end, vim.split(out or "", "\n"))
+    pick.choose(view.entries(commits, review.view, review.base), "Review views", function(chosen)
+      if current ~= review then
+        return
+      end
+      if chosen == review.view then
+        say("Already showing " .. view.label(chosen))
+        return
+      end
+      switch_view(review, chosen)
+    end)
+  end)
+end
+
 -- ]r, [r and the pickers ------------------------------------------------------
 
 -- The review's threads and its changeset's files as they are now: then_(threads, files, diff
@@ -651,11 +780,11 @@ local function snapshot(review, then_)
   local function failed(err)
     say(err.missing and no_watcher(review.watcher.top) or err.message, vim.log.levels.ERROR)
   end
-  api.request(review.watcher, "GET", "/api/threads?view=", function(listed, err)
+  api.request(review.watcher, "GET", view.query("/api/threads", shown_view(review)), function(listed, err)
     if not listed then
       return failed(err)
     end
-    api.request(review.watcher, "GET", "/api/changeset?view=", function(changeset, why)
+    api.request(review.watcher, "GET", view.query("/api/changeset", shown_view(review)), function(changeset, why)
       if not changeset then
         return failed(why)
       end
@@ -833,12 +962,15 @@ function M.status()
       table.insert(parts, part)
     end
   end
+  add(current.unreadable and ("showing all changes: git can't find " .. current.view)
+    or view.status_part(current.view))
   add(mode.label(current.mode))
   add(done.label(current.done))
+  local signs = view.signs_phrase(shown_view(current), current.base)
   if not current.signs then
-    table.insert(parts, ("gitsigns isn't loaded: no git signs for changes since %s"):format(current.base))
+    table.insert(parts, ("gitsigns isn't loaded: no git signs for %s"):format(signs))
   else
-    table.insert(parts, ("git signs show changes since %s"):format(current.base))
+    table.insert(parts, ("git signs show %s"):format(signs))
   end
   return table.concat(parts, " · ")
 end
