@@ -2670,9 +2670,9 @@ class TheDiffLookAddsOnly(NeovimHarness, unittest.TestCase):
         nvim.keys("<leader>re")  # expanded
         nvim.command("vsplit")
         nvim.lua("vim.api.nvim_buf_set_lines(0, 0, 0, false, { 'zero = 0' })")  # an edit, not saved
-        wait_for("it drawn again", lambda: nvim.look()["tinted"][0] == (1, "DifftateAdd"))
+        wait_for("it drawn again", lambda: nvim.look()["tinted"][:1] == [(1, "DifftateAdd")])
         nvim.command("silent undo")  # the buffer is unmodified again
-        wait_for("it drawn as it was", lambda: nvim.look()["tinted"][0] == (2, "DifftateAdd"))
+        wait_for("it drawn as it was", lambda: nvim.look()["tinted"][:1] == [(2, "DifftateAdd")])
 
         self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before, "no option, no key, while the look is drawn")
         self.assertEqual(nvim.lua("return T.settings()"), settings, "gitsigns' line highlight, word diff and deleted lines stay off; the colorscheme's groups stay")
