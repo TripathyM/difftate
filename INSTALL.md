@@ -25,7 +25,7 @@ Run each check. Report all results together, then stop if anything **required** 
 |---|---|---|
 | zsh (required) | `command -v zsh` | difftate is zsh-only; stop |
 | git (required) | `git --version` | macOS: `xcode-select --install` |
-| python3 3.9 or later (required, for the watcher) | `python3 --version` | macOS: `xcode-select --install`, or `brew install python` |
+| latest python3 (required, for the watcher) | `python3 --version`, and `command -v python3` should be Homebrew's (`/opt/homebrew/bin/python3`) | macOS: `brew install python`. The built-in `/usr/bin/python3` (Command Line Tools, 3.9) is no longer supported |
 | An agent CLI (one is required) | `zsh -c 'whence -p claude'` and `zsh -c 'whence -p opencode'`, run separately | Install [Claude Code](https://docs.claude.com/en/docs/claude-code) or [OpenCode](https://opencode.ai) |
 
 The agent CLI check passes when at least one of the two prints a path. Use `whence -p`, not `command -v`: `command -v` also reports aliases and functions, and difftate needs the real program.

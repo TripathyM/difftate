@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""difftate's watcher (Python 3.9+, standard library only).
+"""difftate's watcher (latest Python, standard library only).
 
 The difftate / dtc / dto shell functions start it. Run with --help for its options.
 """

@@ -6,19 +6,13 @@ on:
 
 jobs:
   test:
-    name: Tests (Python ${{ matrix.python }})
-    # Ubuntu 26.04 (ubuntu-latest since October 2026) has no Python 3.9 build
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        # The oldest supported Python, and the newest
-        python: ["3.9", "3.x"]
+    name: Tests (latest Python)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          python-version: "3.x"
       - run: python -m unittest discover -s tests -v
 
   # The Neovim viewer's tests skip where Neovim or gitsigns is missing, as in the job
