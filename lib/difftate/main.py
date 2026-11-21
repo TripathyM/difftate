@@ -145,16 +145,17 @@ def read_agent_list():
 def agent_choice(cwd):
     """The agent that replies in the repository of <cwd>, and where that comes
     from: the repository's own setting, else the machine's default. Its name,
-    source ("repository" or "machine") and the list's names; raises the core's
-    NotFound when the list is wrong or the setting names an agent that isn't in it."""
+    source ("repository" or "machine"), the list's names and path, and its
+    entry; raises the core's NotFound when the list is wrong or the setting
+    names an agent that isn't in it."""
     agents = read_agent_list()
     chosen = REPOSITORY.agent_setting(cwd)
     name, source = (chosen, "repository") if chosen else (agents.default, "machine")
     try:
-        agents.get(name)
+        entry = agents.get(name)
     except agent_list.AgentListError as e:
         raise NotFound(f"the {source}'s agent {e}") from e
-    return SimpleNamespace(name=name, source=source, names=agents.names, path=agents.path)
+    return SimpleNamespace(name=name, source=source, names=agents.names, path=agents.path, entry=entry)
 
 
 def set_agent(cwd, name):
@@ -196,9 +197,8 @@ class ChosenAtRunStart:
 
     def start(self, prompt, threads):
         try:
-            agents = read_agent_list()
-            entry = agents.get(REPOSITORY.agent_setting(self.cwd) or agents.default)
-        except (NotFound, agent_list.AgentListError) as e:
+            entry = agent_choice(self.cwd).entry
+        except NotFound as e:
             raise CouldNotStart(str(e)) from e
         found = find_command(entry.cmd)
         home = difftate_home()

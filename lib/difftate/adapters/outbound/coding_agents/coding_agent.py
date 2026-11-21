@@ -50,5 +50,5 @@ class CodingAgent:
         except OSError as e:
             raise CouldNotStart(f"could not make the run's folder ({e})")
         argv, first = self.command(prompt, folder)
-        env: Dict[str, str] = dict(os.environ, **self.env, DT_RUN_DIR=folder.path)
+        env: Dict[str, str] = {**os.environ, **self.env, "DT_RUN_DIR": folder.path}
         return ProcessRun(argv, self.cwd, env, self.events(), folder, first)

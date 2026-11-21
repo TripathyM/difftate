@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A fake Claude Code for watcher tests, swapped in through `--cmd`.
+"""A fake Claude Code for watcher tests, named in the agent list.
 
 Called like `claude -p <prompt> ... --output-format stream-json --verbose`.
 It prints Claude-style events, then answers every thread under "Reply to these
