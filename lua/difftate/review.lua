@@ -7,6 +7,7 @@ local draw = require("difftate.draw")
 local float = require("difftate.float")
 local git = require("difftate.git")
 local gitsigns = require("difftate.gitsigns")
+local look = require("difftate.look")
 local nav = require("difftate.nav")
 local pick = require("difftate.pick")
 local threads = require("difftate.threads")
@@ -109,6 +110,7 @@ local function poll(review)
         say(why, vim.log.levels.WARN) -- once, not every poll
       end
       review.base_error = why
+      look.redraw() -- gitsigns may have moved its hunks since: it only says so when their counts change
       read_threads(review, function()
         review.polling = false
       end)
@@ -166,6 +168,7 @@ function M.open(cwd, opts)
           return
         end
         say(M.status())
+        look.show(watcher.top, opts.diff)
         read_threads(review, function()
           start_polling(review, opts.poll_ms)
         end)
@@ -185,6 +188,7 @@ function M.close()
   float.close()
   compose.close() -- what is typed stays, for when a review is open again
   draw.clear()
+  look.clear()
   local base = gitsigns.restore()
   say(("Review closed: git signs show changes since %s again"):format(base or "the index"))
 end

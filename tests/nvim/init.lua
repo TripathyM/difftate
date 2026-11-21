@@ -44,6 +44,26 @@ function T.snapshot(win)
   return { options = options, keys = keys }
 end
 
+-- The virtual lines of one extmark, as { text, width, hls }: <text> without the padding chunk
+-- the plugin ends a line with (spaces up to the window's width), <width> with it, <hls> the
+-- highlight of every chunk (a list of groups joined with "+")
+local function virt_lines_of(details)
+  local out = {}
+  for _, chunks in ipairs(details.virt_lines) do
+    local text, hls, full = {}, {}, {}
+    for i, chunk in ipairs(chunks) do
+      local hl = type(chunk[2]) == "table" and table.concat(chunk[2], "+") or chunk[2] or ""
+      table.insert(full, chunk[1])
+      table.insert(hls, hl)
+      if not (i >= 2 and i == #chunks and chunk[1]:match("^ *$")) then
+        table.insert(text, chunk[1])
+      end
+    end
+    table.insert(out, { text = table.concat(text), width = vim.fn.strdisplaywidth(table.concat(full)), hls = hls })
+  end
+  return out
+end
+
 -- What the plugin drew in buffer <buf>: its virtual lines as text and its signs
 function T.drawn(buf)
   local ns = vim.api.nvim_get_namespaces()["difftate_threads"]
@@ -55,12 +75,8 @@ function T.drawn(buf)
     local d = m[4]
     if d.virt_lines then
       local lines = {}
-      for _, chunks in ipairs(d.virt_lines) do
-        local text = {}
-        for _, chunk in ipairs(chunks) do
-          table.insert(text, chunk[1])
-        end
-        table.insert(lines, table.concat(text))
+      for _, line in ipairs(virt_lines_of(d)) do
+        table.insert(lines, line.text)
       end
       table.insert(out.threads, { row = m[2] + 1, above = d.virt_lines_above or false, lines = lines })
     end
@@ -69,6 +85,79 @@ function T.drawn(buf)
     end
   end
   return out
+end
+
+-- The boxes of the threads drawn in buffer <buf>: for each, its lines as { width, hls }
+function T.boxes(buf)
+  local ns = vim.api.nvim_get_namespaces()["difftate_threads"]
+  local out = {}
+  for _, m in ipairs(ns and vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true }) or {}) do
+    if m[4].virt_lines then
+      table.insert(out, virt_lines_of(m[4]))
+    end
+  end
+  return out
+end
+
+-- The diff look drawn in buffer <buf> (the plugin's namespace difftate_diff): the deleted
+-- text as { row (1-based), above, lines, widths, hls, priority } and the tinted lines as { row, hl }
+function T.look(buf)
+  local ns = vim.api.nvim_get_namespaces()["difftate_diff"]
+  local out = { deleted = {}, tinted = {} }
+  for _, m in ipairs(ns and vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true }) or {}) do
+    local d = m[4]
+    if d.virt_lines then
+      local lines, widths, hls = {}, {}, {}
+      for _, line in ipairs(virt_lines_of(d)) do
+        table.insert(lines, line.text)
+        table.insert(widths, line.width)
+        table.insert(hls, line.hls)
+      end
+      table.insert(out.deleted, { row = m[2] + 1, above = d.virt_lines_above or false, lines = lines, widths = widths,
+                                  hls = hls, priority = d.priority })
+    end
+    if d.line_hl_group then
+      table.insert(out.tinted, { m[2] + 1, d.line_hl_group })
+    end
+  end
+  return out
+end
+
+-- The screen's text, one string per row (trailing spaces cut): what the reviewer reads
+function T.screen()
+  vim.cmd("redraw")
+  local rows = {}
+  for row = 1, vim.o.lines do
+    local text = {}
+    for col = 1, vim.o.columns do
+      table.insert(text, vim.fn.screenstring(row, col))
+    end
+    table.insert(rows, (table.concat(text):gsub("%s+$", "")))
+  end
+  return rows
+end
+
+-- Every extmark of buffer <buf> in a namespace that is neither the plugin's nor gitsigns': the
+-- plugin must draw in its own namespaces only
+function T.foreign_extmarks(buf)
+  local out = {}
+  for name, ns in pairs(vim.api.nvim_get_namespaces()) do
+    if not (vim.startswith(name, "difftate") or vim.startswith(name, "gitsigns")) then
+      out[name] = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+    end
+  end
+  return out
+end
+
+-- gitsigns' settings that draw the diff itself, and the highlight groups the plugin links to
+function T.settings()
+  local config = require("gitsigns.config").config
+  local hls = {}
+  for _, name in ipairs({ "DiffAdd", "DiffDelete", "DiffChange", "NormalFloat", "Normal", "CursorLine" }) do
+    hls[name] = vim.api.nvim_get_hl(0, { name = name })
+  end
+  return { gitsigns = { linehl = config.linehl, numhl = config.numhl, word_diff = config.word_diff,
+                        show_deleted = config.show_deleted, signcolumn = config.signcolumn }, hls = hls }
 end
 
 -- Run <code> (a Lua chunk) and answer {"ok", "value"} as JSON, for the test to read

@@ -151,11 +151,22 @@ function M.lines(thread, columns, expanded)
   return out
 end
 
---- <thread>'s virtual lines for an extmark: { { { bar }, { text } } } (a bar, then the line).
+--- <thread>'s virtual lines for an extmark, as a box <columns> wide: { { chunk } } for each line,
+--- a bar, the line and spaces up to <columns>, all on the box's background (DifftateBox). The
+--- deleted code a thread quotes keeps its own colour to the end of the line.
 function M.virt_lines(thread, columns, expanded)
   local out = {}
   for _, line in ipairs(M.lines(thread, columns - #BAR, expanded)) do
-    table.insert(out, { { BAR, "DifftateBar" }, { line.text, line.hl } })
+    local deleted = line.hl == "DifftateDeleted"
+    local room = columns - vim.fn.strdisplaywidth(BAR) - vim.fn.strdisplaywidth(line.text)
+    local chunks = {
+      { BAR, { "DifftateBox", "DifftateBar" } },
+      { line.text, deleted and "DifftateDeleted" or { "DifftateBox", line.hl } },
+    }
+    if room > 0 then
+      table.insert(chunks, { (" "):rep(room), deleted and "DifftateDeleted" or "DifftateBox" })
+    end
+    table.insert(out, chunks)
   end
   return out
 end

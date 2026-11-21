@@ -19,6 +19,7 @@ The Herdr viewer imitates Vim inside a Herdr mod, so every motion, picker and ju
 ## Consequences
 
 - The review opens in Neovim only when the reviewer asks (`<leader>rr`), since gitsigns compares against the base while it is open; coding outside a review keeps gitsigns on the index. While it is open, a note on screen says that git signs show changes since the base. Apart from that switch, the plugin only adds keys and commands that LazyVim's core doesn't use: the reviewer is learning stock LazyVim, and nothing outside a review may differ from its docs.
+- A deleted line is not in any buffer, so what changed is shown from gitsigns' hunks instead: the plugin draws the deleted text as virtual lines and tints the added lines, in a namespace and highlight groups of its own, without turning on any gitsigns option (it only reads `get_hunks`). That is the one place the plugin draws a diff; the tint can be switched off (`diff.tint`) to use gitsigns' own line highlight instead.
 - The staged-only view doesn't fit: gitsigns always compares the file on disk. It stays in the browser.
 - A deleted line is not in any buffer, so the Neovim viewer shows threads on the old side but can't start one there.
 - A comment is anchored to the file on disk, so commenting on a buffer with unsaved changes is refused until it is saved.

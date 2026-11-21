@@ -6,30 +6,20 @@
 --
 -- Additive only (spec #124): it sets no option and no key. Highlight groups are the
 -- plugin's own, linked (by default) to the colorscheme's.
+local columns_of = require("difftate.columns").of
 local diff = require("difftate.diff")
+local gap = require("difftate.gap")
+local highlights = require("difftate.highlights")
 local threads = require("difftate.threads")
 
 local M = {}
 
 local ns = vim.api.nvim_create_namespace("difftate_threads")
 local group = "DifftateThreads"
-local DEFAULT_COLUMNS = 80
 
 -- What is drawn: the open review's top folder, its threads (the API's JSON), the files
 -- of its diff (for threads on deleted lines), and every drawn thread by buffer
 local drawn -- { top, threads, files, expanded, marks = { [buf] = { [thread id] = mark } } }
-
-local LINKS = {
-  DifftateBar = "Comment", DifftateHead = "Title", DifftateDim = "Comment", DifftateReviewer = "Identifier",
-  DifftateAgent = "String", DifftateNote = "Comment", DifftateBody = "Normal", DifftateDeleted = "DiffDelete",
-  DifftateCode = "Comment", DifftateSign = "DiagnosticSignInfo", DifftateNumber = "DiagnosticInfo",
-}
-
-local function define_highlights()
-  for name, link in pairs(LINKS) do
-    vim.api.nvim_set_hl(0, name, { link = link, default = true })
-  end
-end
 
 local function real(path)
   return vim.uv.fs_realpath(path) or path
@@ -47,26 +37,6 @@ local function buffers_by_path()
     end
   end
   return out
-end
-
--- The text columns the thread has in <buf>: those of the narrowest window showing it in
--- this tab page (any tab page, when it isn't shown here), so that it never needs a
--- sideways scroll
-local function columns_of(buf)
-  local columns
-  local here = vim.api.nvim_tabpage_list_wins(0)
-  local shown = vim.fn.win_findbuf(buf)
-  local nearby = vim.tbl_filter(function(win)
-    return vim.tbl_contains(here, win)
-  end, shown)
-  for _, win in ipairs(#nearby > 0 and nearby or shown) do
-    if vim.api.nvim_win_get_config(win).relative == "" then
-      local info = vim.fn.getwininfo(win)[1]
-      local text = vim.api.nvim_win_get_width(win) - (info and info.textoff or 0)
-      columns = math.min(columns or text, text)
-    end
-  end
-  return columns or DEFAULT_COLUMNS
 end
 
 -- Where the thread is drawn, as the review API places it: { row (1-based, 0: above the
@@ -126,7 +96,8 @@ local function draw_thread(buf, thread, where, columns)
   end
   mark = mark or {}
   mark.row, mark.first, mark.above, mark.sig = where.row, where.first, above, sig
-  mark.virt = vim.api.nvim_buf_set_extmark(buf, ns, row0, 0, {
+  -- In a gap the threads on the line before come before those on deleted lines (gap.lua)
+  mark.virt = vim.api.nvim_buf_set_extmark(buf, ns, row0, threads.is_old(thread) and gap.threads_on_deleted or gap.threads, {
     id = virt_id,
     virt_lines = threads.virt_lines(thread, columns, drawn.expanded),
     virt_lines_above = above,
@@ -217,10 +188,10 @@ end
 --- threads on deleted lines, the changeset's <diff_text>.
 function M.show(top, thread_list, diff_text)
   if not drawn then
-    define_highlights()
+    highlights.define()
     drawn = { top = real(top), expanded = false, marks = {} }
     watch_the_editor()
-    vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = define_highlights })
+    vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = highlights.define })
   end
   drawn.threads = thread_list
   drawn.files = diff_text and diff.parse(diff_text) or {}
