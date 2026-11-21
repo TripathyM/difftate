@@ -2918,7 +2918,11 @@ class ReviewViewed(NeovimHarness, unittest.TestCase):
         nvim.keys("<leader>rv")
         wait_for("viewed", lambda: self.viewed() == ["app.py"])
 
-        self.write("app.py", "def greet(name):\n    return f'hello, {name}!'\n")
+        # Replaced whole, so no poll sees the file half written
+        replacement = os.path.join(self.tmp, "app.py.new")
+        with open(replacement, "w") as f:
+            f.write("def greet(name):\n    return f'hello, {name}!'\n")
+        os.replace(replacement, os.path.join(self.repo, "app.py"))
         wait_for("the mark cleared", lambda: self.viewed() == [])
         nvim.keys("<leader>rf")
 
