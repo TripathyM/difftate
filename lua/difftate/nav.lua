@@ -1,7 +1,6 @@
 -- Moving through a review: the order its threads are visited in (]r, [r) and listed in
 -- (the threads picker), and the rows of the pickers. Pure: no editor, so each is
--- tested through the keys that use it. The order is the Herdr viewer's
--- (herdr/mods/difftate/threads.js): general threads first, then the files' threads in the
+-- tested through the keys that use it. The order (the deleted Herdr viewer's, ADR 0008): general threads first, then the files' threads in the
 -- changeset's order and by line.
 local diff = require("difftate.diff")
 local threads = require("difftate.threads")

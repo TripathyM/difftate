@@ -1,7 +1,7 @@
 -- What a thread looks like, as text: the lines drawn under its anchor, the one line it
 -- shrinks to, and the markdown of the read float. Thread JSON is the review API's
 -- (lib/difftate/adapters/inbound/review_api/json_format.py); the words are the
--- Herdr viewer's (herdr/mods/difftate/batched.js, main.js layoutThread).
+-- deleted Herdr viewer's (ADR 0008).
 local wrap = require("difftate.wrap")
 
 local M = {}

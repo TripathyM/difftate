@@ -22,12 +22,10 @@ Optional:
   --interval <seconds>   Polling interval in seconds (default: 1)
   --cmd <binary>         Override the CLI binary or shell alias (e.g. a wrapper around claude)
   --model <model>        Model for the coding agent (default: the coding agent's own default)
-  --open <where>         browser, nvim, herdr or both (default: $DT_OPEN, else browser).
+  --open <where>         browser, nvim or both (default: $DT_OPEN, else browser).
                          The viewer to open, not the host. nvim: the Neovim viewer, in a
                          "Review · <folder>" tab running nvim when difftate runs where Herdr is reachable (or
                          switches to it), else the command to run is printed.
-                         herdr: the Herdr viewer, frozen: a Review tab in the Herdr app, or
-                         the browser if Herdr can't be reached
   --help                 Show this help
 
 Each run starts a fresh agent session of the coding agent.
@@ -56,7 +54,7 @@ class Exit(Exception):
 
 
 def one_of(names):
-    """("browser", "herdr", "both") as "browser, herdr or both"."""
+    """("browser", "nvim", "both") as "browser, nvim or both"."""
     names = list(names)
     return " or ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else "".join(names)
 

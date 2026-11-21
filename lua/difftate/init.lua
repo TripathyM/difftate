@@ -1,5 +1,5 @@
 -- The Neovim viewer (GLOSSARY.md): difftate's review in the reviewer's own Neovim
--- (ADR 0007). A client of the review API, like the browser and the Herdr viewer.
+-- (ADR 0007). A client of the review API, like the browser viewer.
 --
 -- Modules: done (Done, as text), export (the export, as text), view (the view, as text), review
 -- (the open review: opening, polling, closing, writing), api (the review API through curl), mode (the review mode and Submit, as text), look (the deleted text and
@@ -18,7 +18,7 @@ local review = require("difftate.review")
 local M = {}
 
 local defaults = {
-  -- How often the open review asks the review API, as the Herdr viewer does
+  -- How often the open review asks the review API
   poll_ms = 2000,
   -- How the review draws what changed against its base (from gitsigns' hunks, in the plugin's own
   -- namespace): the deleted text is always drawn where it was; tint = false leaves the added and

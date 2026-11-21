@@ -17,7 +17,7 @@ without it gets 401.
                                         progress ends, "waitingForRun" is true and
                                         "checkedOut" names the branch it moves to
   GET   /api/view                       the view viewers show: {"view"}
-  PUT   /api/view                       show another view: {"view", "open"?: browser|herdr|both
+  PUT   /api/view                       show another view: {"view", "open"?: browser|nvim|both
                                         (also open the viewer on it)}
   GET   /api/changeset[?view=<view>]    the review's changeset in the view (default: the
                                         one viewers show), from git: {"view", "base",
@@ -147,12 +147,11 @@ from .json_format import (NOTE_KINDS, BadRequest, anchor_from_json, changeset_js
 
 MAX_BODY = 1 << 20
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO = os.path.normpath(os.path.join(_HERE, "..", "..", "..", "..", ".."))
-# The browser viewer's files: (path on disk, Content-Type). Its diff parser is the Review tab's.
+# The browser viewer's files: (path on disk, Content-Type).
 PAGE_FILES = {
     "/": (os.path.join(_HERE, "web", "index.html"), "text/html; charset=utf-8"),
     "/app.js": (os.path.join(_HERE, "web", "app.js"), "text/javascript; charset=utf-8"),
-    "/diff.js": (os.path.join(_REPO, "herdr", "mods", "difftate", "diff.js"), "text/javascript; charset=utf-8"),
+    "/diff.js": (os.path.join(_HERE, "web", "diff.js"), "text/javascript; charset=utf-8"),
 }
 # The core's errors, as HTTP statuses. A bad view is the request's fault (400),
 # though the code reader says it isn't found: see a_view below.
@@ -236,7 +235,7 @@ def ask_running_watcher(folder, method, path, payload=None):
 
 
 def one_of(names):
-    """("browser", "herdr", "both") as "browser, herdr or both"."""
+    """("browser", "nvim", "both") as "browser, nvim or both"."""
     names = list(names)
     return " or ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else "".join(names)
 

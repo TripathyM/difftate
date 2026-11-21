@@ -49,7 +49,7 @@ from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
 from difftate.core.review.model import CouldNotRead, NotFound  # noqa: E402
 from difftate.main import bind_review  # noqa: E402
 
-OPEN_IN = ("browser", "herdr", "both")  # where a request may open the review (main.py's viewers)
+OPEN_IN = ("browser", "nvim", "both")  # where a request may open the review (main.py's viewers)
 
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "review_api_script.json")
 LONG = "".join(f"line_{n} = {n}\n" for n in range(1, 21))

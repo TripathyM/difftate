@@ -43,7 +43,7 @@ BLOB_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")  # a full object id (SHA-1 or
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
 SNAPSHOT_REFS = "refs/difftate/"  # + a review's id: the ref that keeps its snapshots
 # How long the diff of all changes read for a changeset serves its diff hashes
-# too: a viewer's poll asks for both within it (herdr/mods/difftate/main.js)
+# too: a viewer's poll asks for both within it (the Neovim viewer's poll, lua/difftate/init.lua)
 ONE_POLL = 1.0  # seconds
 
 

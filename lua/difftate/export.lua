@@ -1,5 +1,5 @@
 -- Export, as text (GLOSSARY.md: Export). Pure: no editor, no request. The words are the browser viewer's
--- (web/app.js exportReview) and the Herdr viewer's (herdr/mods/difftate/exported.js). <text> is what
+-- (web/app.js exportReview). <text> is what
 -- GET /api/export answers (text/plain).
 local M = {}
 

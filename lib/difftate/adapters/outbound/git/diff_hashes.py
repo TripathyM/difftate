@@ -92,7 +92,7 @@ def _files(diff: str) -> list:
 
 
 def _shown_path(b: dict) -> str:
-    """The path viewers show (herdr/mods/difftate/diff.js): the old one for a
+    """The path viewers show (web/diff.js): the old one for a
     deleted file, else the new one."""
     return b["old"] if b["deleted"] else b["new"]
 
