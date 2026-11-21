@@ -5,8 +5,8 @@ repository on the branch "feature" (test_watcher.Harness), then a headless
 Neovim in that folder with only the plugin (and gitsigns) loaded, from
 tests/nvim/init.lua: never the reviewer's config or data, as HOME and every
 XDG folder point into the temporary folder. The test runs commands and presses
-keys in that Neovim through its --listen socket, and checks what the reviewer
-would see: gitsigns' base and hunks, the plugin's messages and its status note.
+keys in that Neovim through its --listen socket (msgpack-RPC: tests/nvim_rpc.py),
+and checks what the reviewer would see: gitsigns' base and hunks, the plugin's messages and its status note.
 
 Needs `nvim` (0.10 or later) on PATH, and DIFFTATE_TEST_GITSIGNS naming a
 gitsigns.nvim checkout for the tests that check gitsigns; they skip without.
@@ -26,6 +26,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import nvim_rpc  # noqa: E402
 from test_watcher import Harness, git, wait_for  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -92,6 +93,7 @@ class Neovim:
     def __init__(self, test, folder, args=(), opts=None, gitsigns=True, extra_rtp=(), before=None):
         self.test = test
         self.socket = os.path.join(test.tmp, f"nvim-{len(test.neovims)}.sock")
+        self.rpc = None
         xdg = os.path.join(test.tmp, "xdg")
         self.env = dict(test.env, DIFFTATE_ROOT=ROOT, DIFFTATE_TEST_OPTS=json.dumps(opts or {"poll_ms": 200}),
                         DIFFTATE_TEST_GITSIGNS=GITSIGNS if gitsigns else "",
@@ -113,15 +115,27 @@ class Neovim:
     def answers(self):
         try:
             return self.expr("1", timeout=5) == "1"
-        except (subprocess.TimeoutExpired, AssertionError):
+        except (OSError, AssertionError):
             return False
 
     def expr(self, expr, timeout=10):
-        r = subprocess.run([NVIM, "--clean", "--headless", "--server", self.socket, "--remote-expr", expr],
-                           cwd=self.test.tmp, env=self.env, capture_output=True, text=True, timeout=timeout)
-        if r.returncode != 0:
-            raise AssertionError(f"--remote-expr {expr} failed: {r.stderr or r.stdout}")
-        return r.stdout
+        """What the Vim expression <expr> gives, as text (as `nvim --remote-expr` prints it). Asked over one
+        connection to the --listen socket, opened again after Neovim didn't answer in <timeout> seconds."""
+        try:
+            if self.rpc is None:
+                self.rpc = nvim_rpc.Client(self.socket, timeout)
+            value = self.rpc.request("nvim_eval", expr, timeout=timeout)
+        except nvim_rpc.RpcError as e:
+            raise AssertionError(f"nvim_eval {expr} failed: {e}")
+        except OSError:
+            self.close_rpc()  # an answer that comes late would be read as the next one's
+            raise
+        return value if isinstance(value, str) else str(value)
+
+    def close_rpc(self):
+        if self.rpc is not None:
+            self.rpc.close()
+            self.rpc = None
 
     def lua(self, code, timeout=10):
         """What the Lua chunk <code> returns, run in this Neovim."""
@@ -135,8 +149,10 @@ class Neovim:
         return self.lua(f"vim.cmd({vim_string(command)})")
 
     def keys(self, keys):
-        """Press <keys> in normal mode (<leader> is the space, as in LazyVim)."""
-        self.lua(f"vim.api.nvim_feedkeys(vim.keycode({vim_string(keys)}), 'mx', false)")
+        """Press <keys> in normal mode (<leader> is the space, as in LazyVim). The screen is drawn first, as
+        Neovim draws it before it waits for a key: what the reviewer sees when pressing one (the width of
+        an automatic sign column, say, is known only once it is drawn)."""
+        self.lua(f"vim.cmd('redraw'); vim.api.nvim_feedkeys(vim.keycode({vim_string(keys)}), 'mx', false)")
 
     def messages(self):
         return self.lua("return vim.fn.execute('messages')")
@@ -226,6 +242,7 @@ class Neovim:
         self.lua(f"vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(vim.json.decode([==[{json.dumps(text)}]==]), '\\n'))")
 
     def quit(self):
+        self.close_rpc()
         if self.process.poll() is None:
             self.process.kill()
             self.process.wait(10)
@@ -1368,6 +1385,7 @@ class CommentsInThreadsAndStatus(NeovimHarness, unittest.TestCase):
 
         wait_for("reopened", lambda: self.thread(self.tid)["status"] == "open")
         self.assertIn("No open thread on this line", nvim.messages())
+        wait_for("drawn in full again", lambda: len(nvim.threads()[0]["lines"]) > 1)
         nvim.keys("<leader>rO")
         self.assertIn("No resolved or dismissed thread on this line", nvim.messages())
 
@@ -1934,8 +1952,9 @@ class ReviewModeAndSubmit(NeovimHarness, unittest.TestCase):
 
         nvim.command("DifftateOpen")
 
-        wait_for("the note", lambda: nvim.status() != "")
-        self.assertEqual(nvim.status(), "review open · batched · 0 held · gitsigns isn't loaded: no git signs for changes since main")
+        # The note names the mode once the plugin has asked for it, just after the review opens
+        note = "review open · batched · 0 held · gitsigns isn't loaded: no git signs for changes since main"
+        wait_for("the note", lambda: nvim.status() == note)
 
     # Where there is nothing to do ----------------------------------------------
 
@@ -2356,6 +2375,7 @@ class TheDiffLook(NeovimHarness, unittest.TestCase):
 
         nvim = self.open_shapes()
 
+        wait_for("the look", lambda: nvim.look()["deleted"])  # the first drawing defines them
         links = nvim.lua("""
             local out = {}
             for _, name in ipairs({ "DifftateAdd", "DifftateDeleted", "DifftateBox", "DifftateBody" }) do
@@ -2650,9 +2670,9 @@ class TheDiffLookAddsOnly(NeovimHarness, unittest.TestCase):
         nvim.keys("<leader>re")  # expanded
         nvim.command("vsplit")
         nvim.lua("vim.api.nvim_buf_set_lines(0, 0, 0, false, { 'zero = 0' })")  # an edit, not saved
-        wait_for("it drawn again", lambda: nvim.look()["tinted"][0] == (1, "DifftateAdd"))
+        wait_for("it drawn again", lambda: nvim.look()["tinted"][:1] == [(1, "DifftateAdd")])
         nvim.command("silent undo")  # the buffer is unmodified again
-        wait_for("it drawn as it was", lambda: nvim.look()["tinted"][0] == (2, "DifftateAdd"))
+        wait_for("it drawn as it was", lambda: nvim.look()["tinted"][:1] == [(2, "DifftateAdd")])
 
         self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before, "no option, no key, while the look is drawn")
         self.assertEqual(nvim.lua("return T.settings()"), settings, "gitsigns' line highlight, word diff and deleted lines stay off; the colorscheme's groups stay")

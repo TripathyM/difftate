@@ -13,7 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      - run: python -m unittest discover -s tests -v
+      # Side by side, one worker per CPU (tests/run.py)
+      - run: python tests/run.py -v
 
   # The Neovim viewer's tests skip where Neovim or gitsigns is missing, as in the job
   # above: here both are installed, and DIFFTATE_TEST_NVIM_REQUIRED makes a skip a failure
@@ -39,7 +40,7 @@ jobs:
           git -C "$RUNNER_TEMP/gitsigns.nvim" fetch -q --depth 1 https://github.com/lewis6991/gitsigns.nvim "$GITSIGNS_COMMIT"
           git -C "$RUNNER_TEMP/gitsigns.nvim" checkout -q FETCH_HEAD
       - run: nvim --version
-      - run: python -m unittest discover -s tests -p "test_neovim_viewer.py" -v
+      - run: python tests/run.py fast -v
         env:
           DIFFTATE_TEST_GITSIGNS: ${{ runner.temp }}/gitsigns.nvim
           DIFFTATE_TEST_NVIM_REQUIRED: "1"

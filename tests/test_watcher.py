@@ -228,8 +228,16 @@ class Harness:
             "anchor": {"file": file, "side": "new", "startLine": line, "endLine": end, "code": code},
             "body": body}, **payload))
 
+    def listed(self, tid):
+        """The thread <tid> as the review shown lists it, or None when it doesn't (the watcher follows
+        the checkout: mid-rebase, say, it shows the review of the detached commit)."""
+        return next((t for t in self.api("GET", "/api/threads") if t["id"] == tid), None)
+
     def thread(self, tid):
-        return next(t for t in self.api("GET", "/api/threads") if t["id"] == tid)
+        thread = self.listed(tid)
+        if thread is None:
+            raise AssertionError(f"thread {tid[:8]} is not in the review shown")
+        return thread
 
     def comments(self, tid):
         return [(c["kind"], c["body"]) for c in self.thread(tid)["comments"]]
@@ -1370,7 +1378,12 @@ class WatcherTest(Harness, unittest.TestCase):
         git(base, self.env, "commit", "-q", "-am", "Import os")
         git(self.repo, self.env, "rebase", "-q", "main")
 
-        wait_for("the thread to move", lambda: self.anchor(tid) == (4, 4))
+        # A poll during the rebase (HEAD detached) shows that commit's review, and the next one the
+        # branch's again: the thread may be missing for a moment
+        def moved():
+            thread = self.listed(tid)
+            return thread and (thread["anchor"]["startLine"], thread["anchor"]["endLine"]) == (4, 4)
+        wait_for("the thread to move", moved)
         self.assertFalse(self.thread(tid)["outdated"])
 
     def test_a_thread_written_on_code_no_longer_there_is_outdated_at_once(self):
