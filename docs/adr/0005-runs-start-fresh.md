@@ -17,4 +17,4 @@ difftate used to continue the agent session that wrote the code, found as the ne
 
 - `--session`, `--no-session` and the session lookup in `difftate.zsh` go. `dtc`, `dto` and wrappers such as `--cmd ccp` stay: they pick the coding agent and account, not a session.
 - A "why?" thread on uncommitted changes is answered from the code alone, and an earlier run's reasoning survives only in its replies.
-- One watcher runs per checked-out folder, not per repository, so each worktree can have its own review open.
+- One watcher runs per checked-out folder, not per repository, so each worktree can have its own review open. (Superseded 2026-11-21 by ADR 0008: one watcher serves every checked-out folder on the machine, and each folder still has its own review.)
