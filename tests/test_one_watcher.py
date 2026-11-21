@@ -9,6 +9,7 @@ and a temporary difftate folder (DIFFTATE_HOME): nothing here touches the real
 import json
 import os
 import re
+import shutil
 import signal
 import stat
 import subprocess
@@ -350,6 +351,109 @@ class TwoWorktrees(Harness, unittest.TestCase):
         other = next(c["body"] for c in self.in_worktree("GET", "/api/threads")[0]["comments"] if c["kind"] == "progress")
         self.assertNotIn("changed outside difftate", other, "the other worktree's run was not told")
         self.assertEqual(theirs, self.in_worktree("GET", "/api/threads")[0]["id"])
+
+
+class Restarting(Harness, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.worktree = self.add_worktree("other")
+
+    def served(self):
+        """The folders the watcher remembers, as the difftate folder lists them."""
+        with open(os.path.join(self.difftate_home, "folders.json")) as f:
+            return sorted(entry["root"] for entry in json.load(f))
+
+    def restart(self):
+        run = self.difftate("restart")
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr + self.terminal())
+        self.read_running_files()
+        return run
+
+    def test_restart_with_no_watcher_running_just_starts_one(self):
+        self.write_agent_list()
+
+        run = self.restart()
+
+        self.assertTrue(alive(self.watcher.pid))
+        self.assertIn(f"difftate restarted (pid {self.watcher.pid})", run.stdout)
+
+    def test_restart_serves_both_worktrees_again_with_no_request_naming_them(self):
+        self.start_watcher()
+        self.assertEqual(self.difftate(folder=self.worktree).returncode, 0)
+        old = self.watcher.pid
+        self.assertEqual(self.served(), sorted(os.path.realpath(f) for f in (self.repo, self.worktree)))
+
+        self.restart()
+
+        self.assertNotEqual(self.watcher.pid, old)
+        self.assertFalse(alive(old))
+        wait_for("both folders served again", lambda: all(
+            any(about(line, f, b) for line in self.terminal().splitlines() if "The review of" in line)
+            for f, b in ((self.repo, "feature"), (self.worktree, "other"))) and self.terminal().count("watcher started") == 2)
+        self.assertEqual(self.served(), sorted(os.path.realpath(f) for f in (self.repo, self.worktree)))
+
+    def test_a_folders_base_is_remembered_too(self):
+        git(self.repo, self.env, "branch", "develop", "main")
+        self.start_watcher()
+        self.assertEqual(self.difftate("--base", "develop").returncode, 0)
+
+        self.restart()
+
+        self.assertEqual(self.api("GET", "/api/review")["base"], "develop")
+
+    def test_a_waiting_thread_dispatches_after_a_restart(self):
+        self.start_watcher()
+        self.assertEqual(self.difftate(folder=self.worktree).returncode, 0)
+        first = self.in_worktree("Why concatenate?")
+        wait_for("the first run", lambda: len(self.prompts()) == 1)
+        second = self.in_worktree("And the space?", line=1)
+        self.assertEqual(self.thread_state(second), "queued")
+
+        self.restart()  # the run in flight ends failed; nothing names the worktree again
+
+        wait_for("the waiting thread's run", lambda: len(self.prompts()) == 2)
+        self.assertEqual(self.thread_state(first), "failed")
+
+    def in_worktree(self, body, line=2):
+        with open(os.path.join(self.worktree, "app.py")) as f:
+            code = "\n".join(f.read().split("\n")[line - 1:line])
+        return self.api("POST", "/api/threads", {
+            "anchor": {"file": "app.py", "side": "new", "startLine": line, "endLine": line, "code": code},
+            "body": body}, folder=self.worktree)["id"]
+
+    def thread_state(self, tid):
+        return next(t["state"] for t in self.api("GET", "/api/threads", folder=self.worktree) if t["id"] == tid)
+
+    def test_a_folder_removed_while_the_watcher_is_stopped_drops_out_of_the_list(self):
+        self.start_watcher()
+        self.assertEqual(self.difftate(folder=self.worktree).returncode, 0)
+        self.assertEqual(self.difftate("stop").returncode, 0)
+        git(self.repo, self.env, "worktree", "remove", "--force", self.worktree)
+
+        self.restart()
+
+        wait_for("the folder to drop out", lambda: self.served() == [os.path.realpath(self.repo)])
+
+    def test_a_folder_that_is_no_longer_a_checked_out_folder_is_dropped_on_restart(self):
+        self.start_watcher()
+        self.assertEqual(self.difftate("stop").returncode, 0)
+        shutil.rmtree(os.path.join(self.repo, ".git"))
+
+        self.write_agent_list()
+        self.difftate("restart")  # a watcher with nothing to serve is still a watcher
+
+        wait_for("the list to be empty", lambda: self.served() == [])
+
+    def test_a_served_folder_removed_while_the_watcher_runs_drops_out(self):
+        self.start_watcher()
+        self.assertEqual(self.difftate(folder=self.worktree).returncode, 0)
+
+        git(self.repo, self.env, "worktree", "remove", "--force", self.worktree)
+
+        wait_for("the folder to drop out", lambda: self.served() == [os.path.realpath(self.repo)])
+        self.assertTrue(alive(self.watcher.pid))
+        self.assertIn("is gone", self.terminal())
+        self.assertEqual(self.api("GET", "/api/review")["branch"], "feature", "the other folder is served as before")
 
 
 class TheLog(Harness, unittest.TestCase):

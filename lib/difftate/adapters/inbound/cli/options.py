@@ -7,13 +7,14 @@ USAGE = """difftate — Open the review of this folder, starting the watcher (on
 Usage:
   difftate [<view>] [--base <branch>] [--open browser|nvim|both]
   difftate stop
+  difftate restart
   difftate agent [<name>]
   difftate log
   difftate status [--json] [--branch <branch>] [--base <branch>] [--cwd <path>]
 
 The watcher serves the review of every checked-out folder that a request names, in the
 background, and dispatches waiting threads to the coding agent in that folder. `difftate` starts
-it when none runs, adds this folder, opens its review, and ends. `difftate stop` stops it.
+it when none runs, adds this folder, opens its review, and ends. `difftate stop` stops it; `difftate restart` stops it and starts it again, serving the folders it served.
 `difftate agent <name>` sets which listed agent replies in this repository; with no name it says which does.
 `difftate log` shows its log (each line: the time, then the folder and branch it is about) and
 follows new lines until Ctrl+C.

@@ -12,6 +12,7 @@ It runs on what main.py wired (wiring.Wiring): it knows no store, git, coding
 agent or HTTP of its own. It runs in the background: what it says goes to its
 log, each line saying which folder and review it is about.
 """
+import json
 import os
 import signal
 import threading
@@ -25,6 +26,10 @@ from .options import Exit
 def view_name(view):
     """How the log names a view."""
     return View(view or "").name
+
+
+# Where the served folders are remembered, in the difftate folder of the machine
+FOLDERS_FILE = "folders.json"
 
 
 class FolderEntry:
@@ -48,6 +53,7 @@ class FolderEntry:
         self.wanted_base = None  # a base asked for while a run held the review: shown once it ends
         self.unreadable = None  # (branch, base) whose review couldn't be read (warned once)
         self.thread = None
+        self.gone = lambda entry: False  # called by the loop with this entry: whether its folder is gone (and dropped)
 
     def label(self):
         """What a line of the log about this entry starts with."""
@@ -142,6 +148,8 @@ class FolderEntry:
                 with self.lock:
                     if stopping.is_set():
                         break  # stop() has run this entry's run down: a new run would be nobody's
+                    if self.gone(self):
+                        break  # its folder is gone: the watcher has dropped it
                     self.loop.poll(self.follow_branch)
                 shown_error = None
             except Exception as e:  # one folder's trouble is not the others'
@@ -167,6 +175,65 @@ class Watcher:
         self.api = None
         self.log = None
         self._adding = threading.Lock()
+        self._saving = threading.Lock()
+
+    def remembered_file(self):
+        return os.path.join(self.wiring.difftate_home, FOLDERS_FILE)
+
+    def remember(self):
+        """Write the served folders (and each one's base) in the difftate
+        folder, so that a restart serves them again."""
+        with self._saving:
+            entries = [{"root": root, "base": entry.base} for root, entry in sorted(self.folders.items())]
+            path = self.remembered_file()
+            os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+            with open(path + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(entries, f, indent=1)
+            os.replace(path + ".tmp", path)
+
+    def serve_remembered(self):
+        """Serve again the folders the list holds, each with its runs
+        recovered (a folder's entry starts by recovering them). One that is
+        gone, or no longer a checked-out folder, or can't be opened is dropped
+        from the list."""
+        try:
+            with open(self.remembered_file(), encoding="utf-8") as f:
+                listed = json.load(f)
+            roots = [(e["root"], e.get("base", "")) for e in listed]
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            print(f"Warning: could not read the list of served folders ({e}): serving none from it")
+            return
+        for root, base in roots:
+            try:
+                found = self.wiring.difftate_folder(root) if os.path.isdir(root) else None
+                if found is None or found.root != root:
+                    print(f"{root} is gone: no longer served")
+                    continue
+                with self._adding:
+                    if root not in self.folders:
+                        self.add(found, base)
+            except (NotFound, CouldNotRead, OSError) as e:
+                print(f"Warning: could not serve {root} again ({e}): dropped it")
+        self.remember()
+
+    def check_gone(self, entry):
+        """Whether <entry>'s folder is gone (removed, or no longer a checked-out
+        folder); if so, drop it from the table and the list, and end its runs."""
+        if os.path.isdir(entry.root):
+            found = self.wiring.difftate_folder(entry.root)
+            if found is not None and found.root == entry.root:
+                return False
+        with self._adding:
+            if self.folders.get(entry.root) is entry:
+                del self.folders[entry.root]
+                for path in [p for p, top in self._tops.items() if top == entry.root]:
+                    del self._tops[path]
+                print(f"{entry.root} is gone: no longer served")
+                entry.stop(False)
+                self.remember()
+        return True
 
     def folder(self, path, base=""):
         """What the watcher serves for the checked-out folder <path> is in, with
@@ -176,6 +243,7 @@ class Watcher:
         in no checked-out folder, or a base that isn't one."""
         entry = self.folders.get(self._tops.get(path))
         if entry is not None and not os.path.isdir(entry.root):
+            self.check_gone(entry)
             entry = None  # the folder is gone: ask git again (it refuses, or finds where it moved)
         if entry is None:  # git says which folder it is, once for each way a request spells it
             found = self.wiring.difftate_folder(path)
@@ -188,6 +256,7 @@ class Watcher:
             self._tops[path] = found.root
         if base:
             entry.use_base(base)
+            self.remember()
         if self.log:
             self.log.about(entry.label)  # a request's thread: what it prints is about this folder
         return entry
@@ -199,7 +268,9 @@ class Watcher:
         if self.log:
             self.log.about(entry.label)
         entry.start("")
+        entry.gone = self.check_gone
         self.folders[found.root] = entry
+        self.remember()
         entry.thread = threading.Thread(target=entry.run, args=(self.opts["interval"], self.stopping, self.log),
                                         daemon=True)
         entry.thread.start()
@@ -209,6 +280,9 @@ class Watcher:
         """Serve the review API until something stops the watcher (stop())."""
         w = self.wiring
         self.api = w.review_api(self.folder, w.difftate_home, self.stopping.set)
+        # The folders it served before come first, with their bases: a request that
+        # came in before them would add its folder with the default base
+        self.serve_remembered()
         self.api.start()
         print(f"difftate watcher started (pid {os.getpid()}, port {self.api.server.server_address[1]})")
         print(f"  Who replies: the repository's agent, else the machine's default, from the agent list; polling every {self.opts['interval']:g}s")
