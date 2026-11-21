@@ -45,11 +45,12 @@ difftate unstaged           # only unstaged changes
 difftate staged             # only staged changes
 difftate --open nvim        # review in Neovim (see "Review in Neovim"); --open takes browser, nvim or both
 difftate stop               # stop the watcher
+difftate log                # the watcher's log, then new lines until Ctrl+C
 ```
 
 **One watcher for the machine** ([ADR 0008](docs/adr/0008-one-watcher-for-the-machine.md)). `difftate` starts it in the background when none runs, adds this folder, shows the view when you give one, opens the review in your viewer, and ends: the shell is free again, and closing the terminal doesn't stop the watcher. It serves the review of every checked-out folder that a request names, on one port with one token, and dispatches each folder's runs in that folder. `difftate` in a second folder (a worktree) uses the running watcher; so does `<leader>rr` in Neovim in a folder the watcher hasn't seen yet, and `dt-export` and `dt-reply`: the first request that names a checked-out folder adds it. The watcher never opens a viewer, and viewers never start it: with none running, `<leader>rr` says "No difftate is running: run `difftate` in a terminal". `difftate stop` stops it through the review API; a run in flight ends failed "(the watcher stopped)".
 
-**Where it keeps things:** the difftate folder in your home, `~/.difftate` (set `DIFFTATE_HOME` for another), readable only by you: `api.json` (port and pid) and `token` (the one review API token), `watcher.lock` (a second `difftate` while one starts waits for it), `log` (the watcher's messages, each line saying which folder and review it is about; `tail -f ~/.difftate/log`) and `history/`. No folder's git dir gets running files. The coding agent's runs may not write this folder or read the token.
+**Where it keeps things:** the difftate folder in your home, `~/.difftate` (set `DIFFTATE_HOME` for another), readable only by you: `api.json` (port and pid) and `token` (the one review API token), `watcher.lock` (a second `difftate` while one starts waits for it), `log` (the watcher's messages: each line has the time, then the folder and branch it is about, or `(watcher)` for the watcher itself; `difftate log` shows it and follows new lines) and `history/`. No folder's git dir gets running files. The coding agent's runs may not write this folder or read the token.
 
 **Who replies** is the repository's agent, else the machine's default, from [the agent list](#the-agent-list). `difftate agent <name>` sets the repository's; `difftate agent` says which one it uses and where that comes from. Each run reads the choice when it starts, so changing it needs no restart and never disturbs a run in flight.
 

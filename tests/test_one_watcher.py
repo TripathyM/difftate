@@ -28,6 +28,21 @@ sys.path.insert(0, os.path.join(ROOT, "lib"))
 
 from difftate.adapters.inbound.cli.watcher import Watcher  # noqa: E402
 
+STAMP = r"\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\]"
+
+
+def about(line, folder, branch):
+    """Whether a log line is about <folder>'s review of <branch>: its time, then that label."""
+    return re.match(f"{STAMP} {re.escape(os.path.realpath(folder))} \\({re.escape(branch)}\\): ", line) is not None
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
+
 
 class StartingAndStopping(Harness, unittest.TestCase):
     def test_difftate_is_a_program_in_the_repositorys_bin(self):
@@ -302,9 +317,9 @@ class TwoWorktrees(Harness, unittest.TestCase):
 
         lines = [line for line in self.terminal().splitlines() if "New/changed threads detected" in line]
 
-        self.assertTrue(any(line.startswith(f"{os.path.realpath(self.repo)} (feature): ") for line in lines), lines)
+        self.assertTrue(any(about(line, self.repo, "feature") for line in lines), lines)
         wait_for("the worktree's run", lambda: any(
-            line.startswith(f"{os.path.realpath(self.worktree)} (other): ") and "New/changed" in line
+            about(line, self.worktree, "other") and "New/changed" in line
             for line in self.terminal().splitlines()))
 
     def test_a_stored_review_changed_outside_difftate_warns_only_its_own_runs_threads(self):
@@ -335,6 +350,46 @@ class TwoWorktrees(Harness, unittest.TestCase):
         other = next(c["body"] for c in self.in_worktree("GET", "/api/threads")[0]["comments"] if c["kind"] == "progress")
         self.assertNotIn("changed outside difftate", other, "the other worktree's run was not told")
         self.assertEqual(theirs, self.in_worktree("GET", "/api/threads")[0]["id"])
+
+
+class TheLog(Harness, unittest.TestCase):
+    def test_difftate_log_with_no_log_yet_says_so_and_ends(self):
+        run = self.difftate("log")
+
+        self.assertEqual((run.returncode, run.stdout.strip()),
+                         (0, "No log yet: difftate has not started the watcher"))
+
+    def test_every_line_of_the_log_has_a_time_and_the_folder_and_branch_it_is_about(self):
+        self.start_watcher()
+        worktree = self.add_worktree("other")
+        self.assertEqual(self.difftate(folder=worktree).returncode, 0)
+        self.open_thread("Why an f-string here?")
+        wait_for("the worktree's banner in the log", lambda: any(
+            about(line, worktree, "other") for line in self.terminal().splitlines()))
+
+        lines = [line for line in self.terminal().splitlines() if line]
+
+        self.assertIn("difftate watcher started", self.terminal())
+        self.assertNotIn("difftate watcher started", self.difftate_output, "the watcher writes to its log, not here")
+        for line in lines:
+            self.assertRegex(line, rf"^{STAMP} (\(watcher\)|/\S.* \([^()]+\)): ", line)
+
+    def test_difftate_log_prints_the_log_and_follows_new_lines_until_ctrl_c(self):
+        self.start_watcher()
+        shown = os.path.join(self.tmp, "log-shown.txt")
+        with open(shown, "w") as out:
+            follower = subprocess.Popen([sys.executable, DIFFTATE, "log"], cwd=self.repo, env=self.env,
+                                        stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT)
+        self.addCleanup(lambda: follower.poll() is None and follower.kill())
+        wait_for("the log so far", lambda: "difftate watcher started" in read(shown))
+
+        worktree = self.add_worktree("other")
+        self.assertEqual(self.difftate(folder=worktree).returncode, 0)
+        wait_for("the new folder's line", lambda: any(about(line, worktree, "other") for line in read(shown).splitlines()))
+
+        follower.send_signal(signal.SIGINT)
+        self.assertEqual(follower.wait(timeout=15), 0, "Ctrl+C ends it cleanly")
+        self.assertTrue(alive(self.watcher.pid), "ending the log doesn't stop the watcher")
 
 
 def git(repo, env, *args):

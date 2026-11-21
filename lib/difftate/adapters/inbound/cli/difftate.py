@@ -4,6 +4,7 @@ watcher (ADR 0008): viewers and scripts only find the one that runs.
 
   difftate [<view>] [--base <branch>] [--open browser|nvim|both]
   difftate stop
+  difftate log
 
 It adds the folder (the watcher serves a folder from the first request that
 names it), shows the view when one is given, and opens the viewer itself: the
@@ -11,6 +12,7 @@ watcher never opens one. `difftate stop` stops the watcher through the review
 API; a run in flight ends failed "(the watcher stopped)".
 """
 import os
+import sys
 import time
 import urllib.parse
 
@@ -20,6 +22,8 @@ from .options import USAGE, Exit, parse
 
 # How long `difftate stop` waits for the watcher to end its runs and exit
 STOPPING_S = 30
+# How often `difftate log` looks for new lines
+LOG_POLL_S = 0.2
 
 
 def with_folder(path, folder, base=""):
@@ -57,6 +61,10 @@ def run_difftate(argv, wiring):
             if len(argv) > 1:
                 raise Exit(1, f"Error: stop takes no argument\n{USAGE}")
             return _stop(wiring)
+        if argv[:1] == ["log"]:
+            if len(argv) > 1:
+                raise Exit(1, f"Error: log takes no argument\n{USAGE}")
+            return _log(wiring)
         return _open(argv, wiring)
     except Exit as e:
         if e.message:
@@ -94,6 +102,25 @@ def _open(argv, wiring):
         print(f"  → {url}")
     viewers.open_review(wiring.viewers, opts["open"], url, root)
     return 0
+
+
+def _log(wiring):
+    """The watcher's log so far, then each new line, until Ctrl+C (the exit code 0)."""
+    path = os.path.join(wiring.difftate_home, "log")
+    if not os.path.exists(path):
+        print("No log yet: difftate has not started the watcher")
+        return 0
+    try:
+        with open(path, encoding="utf-8") as log:
+            while True:
+                text = log.read()
+                if text:
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
+                else:
+                    time.sleep(LOG_POLL_S)
+    except KeyboardInterrupt:
+        return 0
 
 
 def _stop(wiring):

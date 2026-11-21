@@ -15,16 +15,11 @@ log, each line saying which folder and review it is about.
 import os
 import signal
 import threading
-import time
 import traceback
 
 from ....core.changes.model import View
 from ....core.review.model import CouldNotRead, NotFound
 from .options import Exit
-
-
-def now():
-    return time.strftime("%H:%M:%S")
 
 
 def view_name(view):
@@ -103,7 +98,7 @@ class FolderEntry:
             if new:
                 self.reviews.pop(key, None)  # opened again, and recovered, on the next try
             if key != self.unreadable:
-                print(f"[{now()}] Warning: could not read the review of {branch} against {base} ({e}): "
+                print(f"Warning: could not read the review of {branch} against {base} ({e}): "
                       f"still showing the review of {self.branch} against {self.base}")
             self.unreadable = key
             return
@@ -111,9 +106,9 @@ class FolderEntry:
         shown = self.shown
         try:
             shown.check(shown.current())
-            print(f"[{now()}] {self.banner(branch, shown.current())}")
+            print(f"{self.banner(branch, shown.current())}")
         except NotFound:
-            print(f"[{now()}] {self.banner(branch, shown.current())}: not on this branch")
+            print(f"{self.banner(branch, shown.current())}: not on this branch")
             shown.switch("")
         self.review = review
         self.loop.switch_review(review)
@@ -135,7 +130,7 @@ class FolderEntry:
 
     def view_shown(self, view):
         """A viewer, or another `difftate` call, switched the view."""
-        print(f"[{now()}] Showing {view_name(view)}")
+        print(f"Showing {view_name(view)}")
 
     def run(self, interval, stopping, log):
         """The loop, every interval until the watcher stops."""
@@ -151,7 +146,7 @@ class FolderEntry:
                 shown_error = None
             except Exception as e:  # one folder's trouble is not the others'
                 if repr(e) != shown_error:
-                    print(f"[{now()}] Error in the loop: {traceback.format_exc()}")
+                    print(f"Error in the loop: {traceback.format_exc()}")
                 shown_error = repr(e)
             stopping.wait(interval)
 
@@ -215,7 +210,7 @@ class Watcher:
         w = self.wiring
         self.api = w.review_api(self.folder, w.difftate_home, self.stopping.set)
         self.api.start()
-        print(f"[{now()}] difftate watcher started (pid {os.getpid()}, port {self.api.server.server_address[1]})")
+        print(f"difftate watcher started (pid {os.getpid()}, port {self.api.server.server_address[1]})")
         print(f"  Who replies: the repository's agent, else the machine's default, from the agent list; polling every {self.opts['interval']:g}s")
         print("  Each run starts a fresh agent session, in the folder of the review it is for")
         while not self.stopping.wait(0.5):
@@ -225,7 +220,7 @@ class Watcher:
         """The stored review of <entry> was changed outside difftate: say so in
         its log lines, and tell its run in progress. No other entry is told."""
         names = ", ".join(t[:8] for t in thread_ids) or "no thread named"
-        print(f"[{now()}] Warning: the stored review was changed outside difftate ({names}): restored it")
+        print(f"Warning: the stored review was changed outside difftate ({names}): restored it")
         if entry.loop:
             entry.loop.warn_tampered(thread_ids)
 
@@ -235,7 +230,7 @@ class Watcher:
             signal.signal(sig, signal.SIG_IGN)
         self.stopping.set()
         if say:
-            print(f"[{now()}] Stopping watcher...")
+            print(f"Stopping watcher...")
         for entry in list(self.folders.values()):
             entry.stop(say)
         for entry in list(self.folders.values()):
