@@ -169,6 +169,10 @@ _Avoid_: test case
 Named text after the stops (such as "State flow") that a stop can point to by name.
 _Avoid_: appendix
 
+**Skipped file**:
+A changed file the review path names as not worth reading, with a reason (such as "lockfile only" or "generated"). It is on the path, listed after the stops.
+_Avoid_: ignored, excluded (and not the same as skipping a whole review, which Done allows)
+
 **Not on the path**:
 The changed files the review path does not name, listed after the last stop.
 _Avoid_: uncovered, missing
