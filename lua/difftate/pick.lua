@@ -35,6 +35,8 @@ function M.choose(entries, title, on_choice, opts)
         return { { item.text } }
       end,
       preview = previewed and "preview" or false,
+      -- long answers wrap at word breaks, in this picker's own preview window only
+      win = previewed and { preview = { wo = { wrap = true, linebreak = true } } } or nil,
       layout = { preset = previewed and "default" or "select" },
       on_show = current and function(shown)
         -- the rows come in a moment after the picker shows: wait for them, a few times at most
