@@ -40,6 +40,37 @@ def _herdr_cli():
     return os.environ.get("DT_HERDR") or shutil.which("herdr-app") or ""
 
 
+SHELLS = {"sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "nu"}
+
+
+def _hc_cli():
+    """Herdr's terminal command line: $DT_HC, else hc on PATH."""
+    return os.environ.get("DT_HC") or shutil.which("hc") or ""
+
+
+def _foreground(hc, terminal):
+    """The program in the foreground of <terminal> (`hc get`): its name, or None when it can't be told.
+    `herdr-app ls` reports app: null for a plain terminal, so it can't say."""
+    r = _run([hc, "get", terminal, "--json"])
+    if not r or r.returncode != 0:
+        return None
+    try:
+        argv = json.loads(r.stdout)["foreground"]["argv"]
+        return os.path.basename(argv[0]).lstrip("-")
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None
+
+
+def _only_idle_shells(tab):
+    """True when every terminal of <tab> shows a shell prompt: whatever ran there has quit. False
+    when something runs (Neovim, or anything else) or when that can't be told."""
+    hc = _hc_cli()
+    terminals = [t.get("terminal") for t in tab.get("terminals", [])]
+    if not hc or not os.access(hc, os.X_OK) or not terminals or not all(terminals):
+        return False
+    return all(_foreground(hc, t) in SHELLS for t in terminals)
+
+
 def _herdr_tab(root, new_tab, say):
     """Switch to the Review tab of the repository at <root> in Herdr, or open
     one with the arguments of <new_tab> (a function of the tab's name). <say>
@@ -57,9 +88,18 @@ def _herdr_tab(root, new_tab, say):
         spaces = json.loads(tabs.stdout).get("spaces", [])
     except (ValueError, AttributeError):
         spaces = []
-    existing = next((t["id"] for s in spaces for t in s.get("tabs", []) if t.get("name") == name), None)
-    if existing:
-        r = _run([cli, "do", "tab.select", json.dumps({"id": existing})])
+    found = next(((sp.get("id"), t) for sp in spaces for t in sp.get("tabs", []) if t.get("name") == name), None)
+    if found:
+        space, tab = found
+        if _only_idle_shells(tab):
+            # Its program has quit: open the review again in a new tab, then close the old one
+            # (the old one stays when the new one will not open)
+            r = _run([cli, "do", "tab.new", json.dumps({**new_tab(name), "space": space})])
+            if r and r.returncode == 0:
+                _run([cli, "do", "tab.close", json.dumps({"id": tab["id"], "confirmed": True})])
+                print(f'  Herdr: opened the "{name}" tab again')
+                return True
+        r = _run([cli, "do", "tab.select", json.dumps({"id": tab["id"]})])
         if r and r.returncode == 0:
             print(f'  Herdr: switched to the "{name}" tab')
             return True
