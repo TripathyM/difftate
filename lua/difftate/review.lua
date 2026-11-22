@@ -1008,9 +1008,10 @@ function M.pick_thread()
 end
 
 -- The review path the coding agent wrote in the review's folder: on_written(written), nil when there
--- is none, or when the watcher can't say (one older than the review path): the picker is then as before
+-- is none, or when the watcher can't say (one older than the review path): the picker is then as before.
+-- In the view the review shows, the path is cut down to that view's files, as its files are
 local function written_path(review, on_written)
-  api.request(review.watcher, "GET", "/api/review-path", function(answer)
+  api.request(review.watcher, "GET", view.query("/api/review-path", shown_view(review)), function(answer)
     on_written(answer and answer.path or nil)
   end)
 end

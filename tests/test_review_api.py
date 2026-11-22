@@ -790,6 +790,41 @@ class TheReviewPathRoute(ServedOnFakes, unittest.TestCase):
         self.assertEqual(stop["side_files"], [{"file": "lib.css", "viewed": False, "ranges": [[2, 4]], "text": "Style."}])
         self.assertEqual(path["sections"], [{"name": "State flow", "text": "It starts idle.\n\n### Then\nIt loads."}])
 
+    def a_view_code(self):
+        return FakeCode({"app.py": "x = 2\n", "lib.py": "y = 1\n", "lib.css": "a {}\n", "uv.lock": "l\n", "notes.md": "n\n"},
+                        base={}, review_path=self.PATH, views={"HEAD": {"app.py": "x = 2\n", "notes.md": "n\n"}})
+
+    def test_in_a_view_the_path_is_cut_down_to_its_files_numbers_kept(self):
+        self.serve(code=self.a_view_code())
+
+        status, answer = self.ask("GET", "/api/review-path?view=HEAD")
+
+        self.assertEqual(status, 200)
+        self.assertEqual([(s["number"], s["file"]) for s in answer["path"]["stops"]], [("1.1", "app.py")])
+        self.assertEqual(answer["path"]["skipped"], [])
+        self.assertEqual(answer["path"]["not_on_the_path"], ["notes.md"])
+
+    def test_with_no_view_it_follows_the_view_shown(self):
+        self.serve(code=self.a_view_code(), view="HEAD")
+
+        answer = self.ask("GET", "/api/review-path")[1]
+
+        self.assertEqual([s["file"] for s in answer["path"]["stops"]], ["app.py"])
+        self.assertEqual(answer["path"]["not_on_the_path"], ["notes.md"])
+
+    def test_a_view_given_empty_is_all_changes_whatever_view_is_shown(self):
+        self.serve(code=self.a_view_code(), view="HEAD")
+
+        answer = self.ask("GET", "/api/review-path?view=")[1]
+
+        self.assertEqual([s["file"] for s in answer["path"]["stops"]], ["lib.py"])
+        self.assertEqual(answer["path"]["not_on_the_path"], ["notes.md"])
+
+    def test_a_view_that_is_no_view_is_a_bad_request(self):
+        self.serve(code=self.a_view_code())
+
+        self.assertEqual(self.ask("GET", "/api/review-path?view=nowhere")[0], 400)
+
     def test_a_rewritten_file_shows_on_the_next_request(self):
         code = FakeCode({"app.py": "x = 1\n", "lib.py": "y = 1\n", "uv.lock": "z\n"}, base={},
                         review_path=self.PATH)

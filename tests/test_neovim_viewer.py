@@ -3603,6 +3603,62 @@ class ChoosingTheView(NeovimHarness, unittest.TestCase):
     def view(self):
         return self.api("GET", "/api/view")["view"]
 
+    def test_leader_rf_in_a_view_shows_the_review_path_cut_down_to_its_files_numbers_kept(self):
+        self.a_branch_of_three_commits()
+        self.commit("Keep the rest")  # a commit view shows the files on disk too: nothing uncommitted left
+        self.write("extra.py", "x = 1\n")
+        self.write("extra.css", "a {}\n")
+        self.commit("Add extras")
+        exclude = os.path.join(self.repo, ".git", "info", "exclude")
+        with open(exclude, "a") as f:
+            f.write("review-path.md\n")
+        self.write("review-path.md", "## 1 `notes.py` ★\n\n### What changed?\nLines.\n\n"
+                                     "## 2 `extra.py`\n\n### What is new?\nA file.\n\n### Side file: `extra.css`\nStyle.\n")
+        self.start_watcher()
+        nvim = self.nvim(None, "notes.py", before=FAKE_SELECT)
+        self.attached(nvim)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], ["  1 notes.py ★ · What changed?", "  2 extra.py · What is new?",
+                                                "  └─ extra.css"])
+        nvim.lua("T.menu = nil")
+
+        self.choose(nvim, 4)  # the last commit: Add extras
+        wait_for("the view", lambda: "showing the last commit" in nvim.status())
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], ["  2 extra.py · What is new?", "  └─ extra.css"])
+
+    def test_following_the_review_path_in_a_view_changes_no_option_or_key_of_the_reviewers_window_or_buffer(self):
+        """Adds only: asking for the path in a view maps no key and sets no option on the reviewer's buffer or window."""
+        self.a_branch_of_three_commits()
+        self.commit("Keep the rest")
+        self.write("extra.py", "x = 1\n")
+        self.commit("Add extras")
+        with open(os.path.join(self.repo, ".git", "info", "exclude"), "a") as f:
+            f.write("review-path.md\n")
+        self.write("review-path.md", "## 1 `notes.py`\n\n### What changed?\nLines.\n\n## 2 `extra.py`\n\n### What is new?\nA file.\n")
+        self.start_watcher()
+        nvim = self.nvim(None, "notes.py", before=FAKE_SELECT)
+        self.attached(nvim)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+
+        self.choose(nvim, 4)
+        wait_for("the view", lambda: "showing the last commit" in nvim.status())
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.pick(1)  # extra.py, the only stop left
+        wait_for("extra.py", lambda: nvim.at()[0] == "extra.py")
+        nvim.command("buffer notes.py")
+
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+
     def test_leader_rV_lists_the_views_and_the_last_commits_with_their_subjects(self):
         nvim = self.open_notes()
 
