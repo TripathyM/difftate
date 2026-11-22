@@ -746,7 +746,8 @@ class TheReviewPathRoute(ServedOnFakes, unittest.TestCase):
     """GET /api/review-path: the review path the coding agent wrote in the
     folder (review-path.md), read each time a viewer asks."""
 
-    PATH = "## 1 `lib.py`\n\n### What is new?\nA helper.\n\n### Why here?\nBoth callers live here.\n\n" \
+    PATH = "## 1 `lib.py` ★\n\n### What is new?\nA helper.\n\n### Why here?\nBoth callers live here.\n\n" \
+           "### Side file: `lib.css`\nStyle.\n\n" \
            "## 1.1 `app.py`\n\n### Who calls it?\nmain.\n\n## Skipped\n- `uv.lock` — lockfile only\n"
 
     def test_with_no_review_path_the_path_is_null(self):
@@ -754,18 +755,22 @@ class TheReviewPathRoute(ServedOnFakes, unittest.TestCase):
 
         self.assertEqual(self.ask("GET", "/api/review-path"), (200, {"path": None}))
 
-    def test_it_answers_the_stops_in_order_with_their_questions_and_viewed_marks(self):
-        self.serve(code=FakeCode({"app.py": "x = 2\n", "lib.py": "y = 1\n", "uv.lock": "z\n"},
+    def test_it_answers_the_tree_of_stops_with_questions_side_files_key_viewed_marks_and_what_is_not_on_the_path(self):
+        self.serve(code=FakeCode({"app.py": "x = 2\n", "lib.py": "y = 1\n", "lib.css": "a {}\n", "uv.lock": "l\n",
+                                  "notes.md": "n\n"},
                                  base={"app.py": "x = 1\n"}, review_path=self.PATH))
         self.ask("PUT", "/api/viewed", {"file": "app.py"})
+        self.ask("PUT", "/api/viewed", {"file": "lib.css"})
 
         self.assertEqual(self.ask("GET", "/api/review-path"), (200, {"path": {"stops": [
-            {"number": "1", "file": "lib.py", "viewed": False, "questions": [
+            {"number": "1", "file": "lib.py", "key": True, "viewed": False, "questions": [
                 {"question": "What is new?", "answer": "A helper."},
-                {"question": "Why here?", "answer": "Both callers live here."}]},
-            {"number": "1.1", "file": "app.py", "viewed": True, "questions": [
-                {"question": "Who calls it?", "answer": "main."}]},
-        ], "skipped": [{"file": "uv.lock", "reason": "lockfile only"}]}}))
+                {"question": "Why here?", "answer": "Both callers live here."}],
+             "side_files": [{"file": "lib.css", "viewed": True}],
+             "children": [
+                 {"number": "1.1", "file": "app.py", "key": False, "viewed": True, "questions": [
+                     {"question": "Who calls it?", "answer": "main."}], "side_files": [], "children": []}]},
+        ], "skipped": [{"file": "uv.lock", "reason": "lockfile only"}], "not_on_the_path": ["notes.md"]}}))
 
     def test_a_rewritten_file_shows_on_the_next_request(self):
         code = FakeCode({"app.py": "x = 1\n", "lib.py": "y = 1\n", "uv.lock": "z\n"}, base={},

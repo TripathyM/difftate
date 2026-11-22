@@ -10,18 +10,20 @@ are the grammar; a heading inside a fenced code block is text.
 
 Pure: it reads text and knows no files and no git. It reads the stops in
 document order with their questions, and the skipped files; ranges, ★, specs,
-side files, nesting and path sections are read by later tickets (#182, #183).
+side files, key stops and nesting too; line ranges, specs and path sections are
+read by a later ticket (#183).
 """
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from dataclasses import dataclass, replace
-from typing import Collection, List, Optional, Tuple
+from typing import Collection, Dict, Iterator, List, Optional, Tuple
 
 # ## 1 `src/app.py:10-48,90-120` ★
-STOP = re.compile(r"^## +(\d+(?:\.\d+)*) +`([^`]+)`(?: +★)? *$")
+STOP = re.compile(r"^## +(\d+(?:\.\d+)*) +`([^`]+)`( +★)? *$")
 LINE_RANGES = re.compile(r":\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$")
-SIDE_FILE = re.compile(r"^### +Side file:")
+SIDE_FILE = re.compile(r"^### +Side file:(?: *`([^`]+)`)?")
 SKIPPED = re.compile(r"^## +Skipped *$")
 SECTION = re.compile(r"^## +Section: *\S")
 # - `package-lock.json` — lockfile only
@@ -41,13 +43,42 @@ class Question:
 
 
 @dataclass(frozen=True)
+class SideFile:
+    """A file read with its stop: no number, no questions."""
+    file: str
+    viewed: bool = False
+
+
+@dataclass(frozen=True)
 class Stop:
-    """A numbered file on the review path ("1", "2.1"), with its questions and
-    the reviewer's viewed mark for the file."""
+    """A numbered file on the review path ("1", "2.1"), with its questions, its
+    side files and the stops under it, and the reviewer's viewed mark for the
+    file. <key>: the agent marked it ★."""
     number: str
     file: str
     questions: Tuple[Question, ...]
+    key: bool = False
+    side_files: Tuple[SideFile, ...] = ()
+    children: Tuple["Stop", ...] = ()
     viewed: bool = False
+
+    def walk(self) -> Iterator["Stop"]:
+        """This stop, then the stops under it, in reading order."""
+        yield self
+        for child in self.children:
+            yield from child.walk()
+
+    def with_viewed(self, viewed: Collection[str]) -> "Stop":
+        return replace(self, viewed=self.file in viewed,
+                       side_files=tuple(replace(f, viewed=f.file in viewed) for f in self.side_files),
+                       children=tuple(c.with_viewed(viewed) for c in self.children))
+
+    def files(self) -> Iterator[str]:
+        """The files this stop and the stops under it name, side files included."""
+        for stop in self.walk():
+            yield stop.file
+            for side in stop.side_files:
+                yield side.file
 
 
 @dataclass(frozen=True)
@@ -59,12 +90,43 @@ class Skipped:
 
 @dataclass(frozen=True)
 class ReviewPath:
+    """<stops>: the top-level stops in reading order, the others under them.
+    <not_on_the_path>: the changed files the path names nowhere (a side file or
+    a skipped file is on the path), in the changeset's order."""
     stops: Tuple[Stop, ...]
     skipped: Tuple[Skipped, ...] = ()
+    not_on_the_path: Tuple[str, ...] = ()
+
+    def all_stops(self) -> Iterator[Stop]:
+        """Every stop, children after their parent: the reading order."""
+        for stop in self.stops:
+            yield from stop.walk()
 
     def with_viewed(self, viewed: Collection[str]) -> "ReviewPath":
-        """The same path, each stop marked viewed when its file is one of <viewed>."""
-        return replace(self, stops=tuple(replace(s, viewed=s.file in viewed) for s in self.stops))
+        """The same path, each stop and side file marked viewed when its file is one of <viewed>."""
+        return replace(self, stops=tuple(s.with_viewed(viewed) for s in self.stops))
+
+    def with_changed_files(self, changed: Collection[str]) -> "ReviewPath":
+        """The same path, with the files of <changed> (the changeset's, in its
+        order) it names nowhere as not on the path."""
+        named = {f for s in self.stops for f in s.files()} | {s.file for s in self.skipped}
+        return replace(self, not_on_the_path=tuple(f for f in changed if f not in named))
+
+
+def _nest(flat: List[Stop]) -> Tuple[Stop, ...]:
+    """The stops of <flat> (in document order) under their parents: 2.1 under
+    2. A stop whose parent isn't there stands on its own."""
+    known = {s.number for s in flat}
+    under: Dict[str, List[Stop]] = defaultdict(list)
+    roots: List[Stop] = []
+    for stop in flat:
+        parent = stop.number.rpartition(".")[0]
+        (under[parent] if parent in known else roots).append(stop)
+
+    def build(stop: Stop) -> Stop:
+        return replace(stop, children=tuple(build(c) for c in under[stop.number]))
+
+    return tuple(build(s) for s in roots)
 
 
 def _file_of(target: str) -> str:
@@ -96,9 +158,9 @@ def _headings(text: str) -> List[Tuple[Optional[str], str]]:
 
 
 def check_files(path: ReviewPath, changed: Collection[str]) -> None:
-    """Raises BadReviewPath when a file the path names (a stop, or a skipped
-    file) is not one of <changed>, the changeset's files."""
-    for file in [s.file for s in path.stops] + [s.file for s in path.skipped]:
+    """Raises BadReviewPath when a file the path names (a stop, a side file or a
+    skipped file) is not one of <changed>, the changeset's files."""
+    for file in [f for s in path.stops for f in s.files()] + [s.file for s in path.skipped]:
         if file not in changed:
             raise BadReviewPath(f"`{file}` is named, but is not in the changeset")
 
@@ -143,19 +205,24 @@ def parse(text: str) -> ReviewPath:
             in_skipped = bool(SKIPPED.match(heading))
             found = STOP.match(heading)
             if found:
-                stop = Stop(found[1], _file_of(found[2]), ())
+                stop = Stop(found[1], _file_of(found[2]), (), key=bool(found[3]))
             elif heading.startswith("## ") and not in_skipped and not SECTION.match(heading):
                 raise BadReviewPath(f'line {at}: "{heading.strip()}" is not a stop, a "## Section:" or "## Skipped"')
         elif heading.startswith("### ") and stop is not None:
             end_question()
-            if not SIDE_FILE.match(heading):
+            side = SIDE_FILE.match(heading)
+            if side:
+                if side[1]:
+                    stop = replace(stop, side_files=stop.side_files + (SideFile(_file_of(side[1])),))
+            else:
                 question = heading[4:].strip()
         elif question is not None:
             answer.append(line)  # a deeper heading is part of the answer
     end_stop()
     seen = set()
     for stop in stops:
-        if stop.file in seen:
-            raise BadReviewPath(f"`{stop.file}` is named twice")
-        seen.add(stop.file)
-    return ReviewPath(tuple(stops), tuple(skipped))
+        for file in [stop.file] + [f.file for f in stop.side_files]:
+            if file in seen:
+                raise BadReviewPath(f"`{file}` is named twice")
+            seen.add(file)
+    return ReviewPath(_nest(stops), tuple(skipped))
