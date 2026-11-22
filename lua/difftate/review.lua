@@ -1009,7 +1009,8 @@ local function written_path(review, on_written)
 end
 
 --- The changed files picker: the changeset's files, viewed ones marked; the picked one opens. With a
---- review path, its stops come first in reading order, then the files it doesn't name.
+--- review path, its stops come first in reading order as a tree, then the files it skips, then the
+--- files it doesn't name.
 function M.pick_file()
   local review = open_review("list its files")
   if not review then
@@ -1037,7 +1038,14 @@ function M.pick_file()
           return
         end
         -- No review path: no stops, every file in the changeset's order, as before there was one
-        local entries = review_path.entries(written or {}, files, viewed)
+        local entries = {}
+        if written then
+          entries = review_path.entries(written, files, viewed)
+        else
+          for _, file in ipairs(files) do
+            table.insert(entries, { text = nav.file_row(file, viewed[file.path]), value = file })
+          end
+        end
         pick.choose(entries, "Changed files", function(file)
           if current ~= review then
             return

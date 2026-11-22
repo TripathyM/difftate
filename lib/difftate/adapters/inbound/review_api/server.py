@@ -49,10 +49,12 @@ watcher serves. Naming another base switches the folder's review to it.
   GET   /api/review-path                the review path the coding agent wrote in the folder
                                         (review-path.md, read at each request): {"path": null}
                                         without one, and when the file is broken (that is a warning
-                                        in /api/review), else {"path": {"stops": [{"number" ("1",
-                                        "2.1"), "file", "viewed", "questions": [{"question",
-                                        "answer"}]}] in reading order, "skipped": [{"file",
-                                        "reason"}]}}
+                                        in /api/review), else {"path": {"stops": [{"number" ("1"),
+                                        "file", "key" (★), "viewed", "questions": [{"question",
+                                        "answer"}], "side_files": [{"file", "viewed"}],
+                                        "children": [stops, numbered "1.1"]}] in reading order,
+                                        "skipped": [{"file", "reason"}], "not_on_the_path": [file]:
+                                        the changed files it names nowhere}}
   GET   /api/done                       whether the review is Done: {"done", "time", "commit" (the
                                         mark that made it Done: null when it isn't), "lastMark":
                                         {"kind": "done"|"undone"|"cleared", "time", "commit"} or

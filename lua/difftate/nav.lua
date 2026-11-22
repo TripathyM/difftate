@@ -197,11 +197,16 @@ function M.thread_row(thread)
   return threads.sign(thread) .. " " .. table.concat(parts, " · ")
 end
 
---- The row of <file> (M.files) in the changed files picker, <viewed> when the reviewer
---- marked it viewed: "✓ app.py  +3 −1 · viewed".
+--- What a row of the changed files picker says of <file> (M.files): "app.py  +3 −1 · viewed", the
+--- viewed mark not included.
+function M.file_label(file, viewed)
+  return ("%s  +%d −%d%s"):format(file.path, file.additions, file.deletions, viewed and " · viewed" or "")
+end
+
+--- The row of <file> in the changed files picker, <viewed> when the reviewer marked it viewed:
+--- "✓ app.py  +3 −1 · viewed".
 function M.file_row(file, viewed)
-  return ("%s%s  +%d −%d%s"):format(viewed and "✓ " or "  ", file.path, file.additions, file.deletions,
-    viewed and " · viewed" or "")
+  return (viewed and "✓ " or "  ") .. M.file_label(file, viewed)
 end
 
 return M

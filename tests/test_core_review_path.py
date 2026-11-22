@@ -7,6 +7,7 @@ core its text, or none; the core reads the stops out of it, in order, each
 with its questions and the reviewer's viewed mark for its file.
 """
 import os
+import re
 import sys
 import textwrap
 import unittest
@@ -17,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core_fakes import FakeCode, FakeHistory  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
-from difftate.core.review.review_path import BadReviewPath, Question, Skipped, Stop  # noqa: E402
+from difftate.core.review.review_path import BadReviewPath, Question, SideFile, Skipped, Stop  # noqa: E402
 from difftate.core.review.use_cases.mark_viewed import mark_viewed  # noqa: E402
 from difftate.core.review.use_cases.read_review_path import read_review_path  # noqa: E402
 from difftate.core.review.use_cases.review_path_problem import review_path_problem  # noqa: E402
@@ -73,7 +74,8 @@ class ReadingTheReviewPath(unittest.TestCase):
         self.history = FakeHistory()
 
     def read(self, text, files=None):
-        self.code = FakeCode(files or CHANGED, base={}, review_path=text)
+        named = re.findall(r"`([^`:]+)(?::[\d,-]+)?`", text or "")  # unless told, every file the text names is changed
+        self.code = FakeCode(files or {**CHANGED, **{n: "x\n" for n in named}}, base={}, review_path=text)
         return read_review_path(self.store, self.code, self.history)
 
     def test_no_text_gives_no_path(self):
@@ -82,12 +84,62 @@ class ReadingTheReviewPath(unittest.TestCase):
     def test_the_stops_come_in_order_each_with_its_file_and_questions(self):
         path = self.read(A_PATH)
 
-        self.assertEqual([(s.number, s.file) for s in path.stops], [
+        self.assertEqual([(s.number, s.file) for s in path.all_stops()], [
             ("1", "src/cards/CardList.tsx"), ("1.1", "src/cards/Card.tsx"), ("2", "src/data/useTrails.ts")])
         self.assertEqual(path.stops[0].questions, (
             Question("What does the list do?", "It shows the trails as cards,\nthree to a row."),
             Question("Is the fetch cancelled?", "Yes, on unmount.")))
-        self.assertEqual(path.stops[2].questions, (Question("How is the fetch built?", "One request, retried twice."),))
+        self.assertEqual(path.stops[1].questions, (Question("How is the fetch built?", "One request, retried twice."),))
+
+    def test_a_stop_under_a_stop_is_its_child_and_comes_after_the_stops_before_it(self):
+        path = self.read("## 1 `a.py`\n\n### A?\nx\n\n## 1.1 `b.py`\n\n### B?\nx\n\n## 1.1.1 `c.py`\n\n### C?\nx\n\n"
+                         "## 1.2 `d.py`\n\n### D?\nx\n\n## 2 `e.py`\n\n### E?\nx\n")
+
+        self.assertEqual([s.file for s in path.stops], ["a.py", "e.py"])
+        self.assertEqual([s.file for s in path.stops[0].children], ["b.py", "d.py"])
+        self.assertEqual([s.file for s in path.stops[0].children[0].children], ["c.py"])
+        self.assertEqual([s.number for s in path.all_stops()], ["1", "1.1", "1.1.1", "1.2", "2"])
+
+    def test_a_stop_whose_parent_is_missing_stands_on_its_own(self):
+        path = self.read("## 1 `a.py`\n\n### A?\nx\n\n## 3.1 `b.py`\n\n### B?\nx\n")
+
+        self.assertEqual([s.file for s in path.stops], ["a.py", "b.py"])
+
+    def test_a_star_marks_a_key_stop(self):
+        path = self.read("## 1 `a.py` ★\n\n### A?\nx\n\n## 2 `b.py:3-4` ★\n\n### B?\nx\n\n## 3 `c.py`\n\n### C?\nx\n")
+
+        self.assertEqual([s.key for s in path.stops], [True, True, False])
+
+    def test_a_stop_lists_its_side_files_in_order_with_no_number_and_no_questions(self):
+        path = self.read(A_PATH)
+
+        self.assertEqual(path.stops[0].side_files, (SideFile("src/cards/cards.css"),))
+        self.assertEqual(path.stops[1].side_files, ())
+        self.assertEqual([q.question for q in path.stops[0].questions], ["What does the list do?", "Is the fetch cancelled?"])
+
+    def test_a_side_file_under_a_nested_stop_belongs_to_that_stop(self):
+        path = self.read("## 1 `a.py`\n\n### A?\nx\n\n## 1.1 `b.py`\n\n### B?\nx\n\n### Side file: `b.css:1-4`\nStyle.\n")
+
+        self.assertEqual(path.stops[0].side_files, ())
+        self.assertEqual(path.stops[0].children[0].side_files, (SideFile("b.css"),))
+
+    def test_the_changed_files_the_path_does_not_name_are_not_on_the_path(self):
+        files = {"src/cards/CardList.tsx": "1\n", "src/cards/Card.tsx": "1\n", "src/cards/cards.css": "1\n",
+                 "src/data/useTrails.ts": "1\n", "package-lock.json": "1\n", "src/data/trailTypes.d.ts": "1\n", "README.md": "1\n", "src/extra.ts": "1\n"}
+
+        path = self.read(A_PATH, files)
+
+        self.assertEqual(path.not_on_the_path, ("README.md", "src/extra.ts"))
+
+    def test_with_every_file_named_nothing_is_off_the_path(self):
+        self.assertEqual(self.read("## 1 `a.py`\n\n### A?\nx\n", {"a.py": "1\n"}).not_on_the_path, ())
+
+    def test_a_skipped_file_and_a_side_file_are_on_the_path(self):
+        files = {"a.py": "1\n", "a.css": "1\n", "uv.lock": "1\n"}
+
+        path = self.read("## 1 `a.py`\n\n### A?\nx\n\n### Side file: `a.css`\n\n## Skipped\n- `uv.lock` — lockfile only\n", files)
+
+        self.assertEqual(path.not_on_the_path, ())
 
     def test_a_side_file_a_path_section_and_skipped_files_are_not_stops_or_questions(self):
         path = self.read(A_PATH)
@@ -100,13 +152,15 @@ class ReadingTheReviewPath(unittest.TestCase):
         self.assertEqual(self.read(A_PATH).skipped, (Skipped("package-lock.json", "lockfile only"),
                                                      Skipped("src/data/trailTypes.d.ts", "generated")))
 
-    def test_each_stop_carries_the_reviewers_viewed_mark_for_its_file(self):
+    def test_each_stop_and_side_file_carries_the_reviewers_viewed_mark_for_its_own_file(self):
         self.read(A_PATH)
         mark_viewed(self.store, self.code, self.history, "src/cards/Card.tsx", True)
+        mark_viewed(self.store, self.code, self.history, "src/cards/cards.css", True)
 
         path = read_review_path(self.store, self.code, self.history)
 
-        self.assertEqual([s.viewed for s in path.stops], [False, True, False])
+        self.assertEqual([s.viewed for s in path.all_stops()], [False, True, False])
+        self.assertEqual(path.stops[0].side_files, (SideFile("src/cards/cards.css", viewed=True),))
 
     def test_a_heading_inside_a_code_block_in_an_answer_is_text(self):
         path = self.read(textwrap.dedent("""\
@@ -202,6 +256,16 @@ class ABrokenReviewPathIsAProblemAndNoPath(unittest.TestCase):
         self.assertIn("src/cards/Card.tsx", self.problem(text))
         self.assertIn("twice", self.problem(text))
 
+    def test_a_side_file_not_in_the_changeset_is_a_problem(self):
+        text = "## 1 `app.py`\n\n### Why?\nBecause.\n\n### Side file: `gone.css`\n"
+
+        self.assertIn("gone.css", self.problem(text, {"app.py": "x\n"}))
+
+    def test_a_file_that_is_a_stop_and_a_side_file_is_named_twice(self):
+        text = "## 1 `app.py`\n\n### Why?\nBecause.\n\n### Side file: `app.py`\n"
+
+        self.assertIn("twice", self.problem(text, {"app.py": "x\n"}))
+
     def test_a_heading_inside_a_code_block_is_not_checked(self):
         text = "## 1 `app.py`\n\n### Why?\n```\n## not a heading\n```\n"
 
@@ -214,7 +278,7 @@ class ABrokenReviewPathIsAProblemAndNoPath(unittest.TestCase):
         code.review_path = A_PATH
 
         self.assertIsNone(review_path_problem(code))
-        self.assertEqual(len(read_review_path(self.store, code, self.history).stops), 3)
+        self.assertEqual(len(list(read_review_path(self.store, code, self.history).all_stops())), 3)
 
     def test_while_another_branch_is_checked_out_the_file_is_its_and_has_no_problem_here(self):
         code = FakeCode(CHANGED, base={}, review_path="## 1 `src/gone.ts`\n", on_branch=False)

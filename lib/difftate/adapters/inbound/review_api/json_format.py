@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 from ....core.changes.model import Changeset
 from ....core.review.model import (AUTHOR_OF, MODES, NOTE_KINDS, Anchor, Comment, DoneMark, DoneStatus, ListedThread,
                                    ModeStatus)
-from ....core.review.review_path import ReviewPath
+from ....core.review.review_path import ReviewPath, Stop
 
 KINDS = tuple(AUTHOR_OF)  # comment, reply, queued, progress
 THREAD_STATUSES = ("open", "resolved", "dismissed")
@@ -153,17 +153,25 @@ def changeset_json(changeset: Changeset) -> Dict[str, Any]:
             "versions": {f: {"old": v.old, "new": v.new} for f, v in changeset.versions.items()}}
 
 
+def _stop_json(stop: Stop) -> Dict[str, Any]:
+    return {"number": stop.number, "file": stop.file, "key": stop.key, "viewed": stop.viewed,
+            "questions": [{"question": q.question, "answer": q.answer} for q in stop.questions],
+            "side_files": [{"file": f.file, "viewed": f.viewed} for f in stop.side_files],
+            "children": [_stop_json(c) for c in stop.children]}
+
+
 def review_path_json(path: Optional[ReviewPath]) -> Dict[str, Any]:
-    """{"path": null} with no review path; else its stops in reading order
-    ({"number", "file", "viewed", "questions": [{"question", "answer"}]}) and
-    the files skipped on purpose ({"file", "reason"})."""
+    """{"path": null} with no review path; else its top-level stops in reading
+    order, each ({"number", "file", "key", "viewed", "questions": [{"question",
+    "answer"}], "side_files": [{"file", "viewed"}], "children": [stops]}), the
+    files skipped on purpose ({"file", "reason"}), and "not_on_the_path": the
+    changed files it names nowhere."""
     if path is None:
         return {"path": None}
     return {"path": {
-        "stops": [{"number": s.number, "file": s.file, "viewed": s.viewed,
-                   "questions": [{"question": q.question, "answer": q.answer} for q in s.questions]}
-                  for s in path.stops],
+        "stops": [_stop_json(s) for s in path.stops],
         "skipped": [{"file": s.file, "reason": s.reason} for s in path.skipped],
+        "not_on_the_path": list(path.not_on_the_path),
     }}
 
 

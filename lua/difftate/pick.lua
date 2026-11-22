@@ -11,7 +11,8 @@ local function snacks_picker()
 end
 
 --- Let the reviewer choose among <entries> ({ { text, value } }): on_choice(value) once
---- one is picked, never when the picker is dismissed. <title> names the picker.
+--- one is picked, never when the picker is dismissed. An entry with no value is a heading: picking
+--- it does nothing. <title> names the picker.
 function M.choose(entries, title, on_choice)
   local picker = snacks_picker()
   if picker then
@@ -28,6 +29,9 @@ function M.choose(entries, title, on_choice)
       preview = false,
       layout = { preset = "select" },
       confirm = function(self, item)
+        if item and item.value == nil then
+          return
+        end
         self:close()
         if item then
           vim.schedule(function()
@@ -44,7 +48,7 @@ function M.choose(entries, title, on_choice)
       return entry.text
     end,
   }, function(entry)
-    if entry then
+    if entry and entry.value ~= nil then
       on_choice(entry.value)
     end
   end)

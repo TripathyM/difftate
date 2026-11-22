@@ -1766,11 +1766,66 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
 
         wait_for("the picker", lambda: nvim.menu())
         self.assertEqual(nvim.menu()["title"], "Changed files")
-        self.assertEqual(nvim.menu()["lines"], ["✓ 1 util.py · What does shout do?", "  app.py  +1 −1"])
+        self.assertEqual(nvim.menu()["lines"], ["✓ 1 util.py ★ · What does shout do?", "Not on the path",
+                                                "  └─ app.py  +1 −1"])
         nvim.pick(1)
         self.settle(nvim, ["util.py", 1])
 
-    def test_a_rewritten_review_path_shows_on_the_next_leader_rf_and_skipped_files_are_left_out(self):
+    def test_leader_rf_draws_the_path_as_a_tree_with_side_files_child_stops_skipped_and_not_on_the_path(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        for name in ("util.css", "tips.py", "more.py", "uv.lock"):
+            self.write(name, "x\n")
+        self.a_review_path("## 1 `util.py` ★\n\n### What does shout do?\nUpper-cases.\n\n"
+                           "### Side file: `util.css`\nStyle.\n\n"
+                           "## 1.1 `tips.py`\n\n### Where do tips come from?\nA list.\n\n"
+                           "## 1.2 `more.py` ★\n\n### Why more?\nBecause.\n\n"
+                           "## Skipped\n- `uv.lock` — lockfile only\n")
+        self.api("PUT", "/api/viewed", {"file": "util.py"})
+        self.api("PUT", "/api/viewed", {"file": "util.css"})
+        self.api("PUT", "/api/viewed", {"file": "more.py"})
+
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], [
+            "✓ 1 util.py ★ · What does shout do?",
+            "✓ ├─ util.css",
+            "  ├─ 1.1 tips.py · Where do tips come from?",
+            "✓ └─ 1.2 more.py ★ · Why more?",
+            "Skipped",
+            "  └─ uv.lock — lockfile only",
+            "Not on the path",
+            "  └─ app.py  +1 −1"])
+
+    def test_a_stop_under_a_stop_under_a_stop_continues_its_parents_lines(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        for name in ("a.py", "b.py", "c.py", "d.py"):
+            self.write(name, "x\n")
+        self.a_review_path("## 1 `util.py`\n\n### Q?\nA.\n\n## 1.1 `a.py`\n\n### Q?\nA.\n\n"
+                           "## 1.1.1 `b.py`\n\n### Q?\nA.\n\n## 1.2 `c.py`\n\n### Q?\nA.\n\n"
+                           "## 2 `d.py`\n\n### Q?\nA.\n\n## Skipped\n- `app.py` — reviewed\n")
+
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], [
+            "  1 util.py · Q?", "  ├─ 1.1 a.py · Q?", "  │  └─ 1.1.1 b.py · Q?", "  └─ 1.2 c.py · Q?",
+            "  2 d.py · Q?", "Skipped", "  └─ app.py — reviewed"])
+
+    def test_picking_a_heading_does_nothing(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        self.a_review_path("## 1 `util.py`\n\n### Q?\nA.\n")
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        where = nvim.at()
+
+        nvim.pick(2)
+        time.sleep(0.5)
+
+        self.assertEqual(nvim.at(), where)
+        self.assertIsNone(nvim.lua("return T.err"))
+
+    def test_a_rewritten_review_path_shows_on_the_next_leader_rf_and_skipped_files_are_listed_with_their_reasons(self):
         nvim = self.a_review_of_two_files(before=FAKE_SELECT)
         self.a_review_path("## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n")
         nvim.keys("<leader>rf")
@@ -1787,8 +1842,8 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         self.write("review-path.md", "## 1 `util.py`\n\n### Who calls it?\napp.py.\n\n"
                                      "## Skipped\n- `app.py` — one line, reviewed before\n")
         nvim.keys("<leader>rf")
-        wait_for("the skipped file left out", lambda: (nvim.menu() or {}).get("lines") == [
-            "  1 util.py · Who calls it?"])
+        wait_for("the skipped file listed", lambda: (nvim.menu() or {}).get("lines") == [
+            "  1 util.py · Who calls it?", "Skipped", "  └─ app.py — one line, reviewed before"])
 
     def test_a_broken_review_path_is_warned_about_once_and_leader_rf_lists_the_changesets_order_until_fixed(self):
         nvim = self.a_review_of_two_files(before=FAKE_SELECT)
@@ -1811,24 +1866,36 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         self.write("review-path.md", "## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n")
         nvim.keys("<leader>rf")
         wait_for("the path again", lambda: (nvim.menu() or {}).get("lines") == [
-            "  1 util.py · What does shout do?", "  app.py  +1 −1"])
+            "  1 util.py · What does shout do?", "Not on the path", "  └─ app.py  +1 −1"])
         self.assertEqual(self.api("GET", "/api/review")["warnings"], [], "a fixed file clears the warning")
         self.assertEqual(nvim.lua("return T.snapshot()"), before, "the warning changed no option or key")
 
     def test_following_the_review_path_changes_no_option_or_key_of_the_reviewers_window_or_buffer(self):
+        """Adds only: the tree, with its side files, child stops, headings and the groups, draws in the picker
+        and sets no option, key, gitsigns setting or foreign extmark on the reviewer's own buffers and windows."""
         nvim = self.a_review_of_two_files(before=FAKE_SELECT)
-        self.a_review_path("## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n")
+        self.write("util.css", "x\n")
+        self.write("tips.py", "x\n")
+        self.a_review_path("## 1 `util.py` ★\n\n### What does shout do?\nUpper-cases.\n\n### Side file: `util.css`\n\n"
+                           "## 1.1 `tips.py`\n\n### Tips?\nA list.\n\n## Skipped\n- `app.py` — one line\n")
         nvim.command("1")
         window = nvim.lua("return vim.api.nvim_get_current_win()")
         before = nvim.lua(f"return T.snapshot({window})")
+        settings = nvim.lua("return T.settings()")
+        foreign = nvim.lua("return T.foreign_extmarks(0)")
 
         nvim.keys("<leader>rf")
         wait_for("the picker", lambda: nvim.menu())
-        nvim.pick(1)
+        nvim.pick(1)  # a stop
         self.settle(nvim, ["util.py", 1])
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.pick(4)  # a heading: nothing happens
         nvim.command("buffer app.py")
 
         self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+        self.assertEqual(nvim.lua("return T.settings()"), settings)
+        self.assertEqual(nvim.lua("return T.foreign_extmarks(0)"), foreign)
 
     def test_a_deleted_file_is_listed_and_says_it_has_nothing_to_open(self):
         os.remove(os.path.join(self.repo, "app.py"))
