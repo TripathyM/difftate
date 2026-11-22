@@ -8,7 +8,6 @@ Review a diff in the browser (or in your own [Neovim](#review-in-neovim)), comme
 
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`) or [OpenCode](https://opencode.ai) (`opencode`)
 - `python3` (standard library only), `git`
-- Optional: the [Herdr](https://herdr.dev) app, as the host of the Neovim viewer's **Review · ‹folder›** tab (see [Review in Neovim](#review-in-neovim))
 
 ## Install
 
@@ -160,7 +159,7 @@ return {
 }
 ```
 
-**Open it with difftate:** `difftate --open nvim` (or `DT_OPEN=nvim`) opens the Neovim viewer. `--open` names the viewer, not the host. In a terminal (stdin and stdout both ttys: iTerm, tmux, a Herdr tab, anything) it runs `nvim +DifftateOpen` right there, in the repository's folder: difftate ends and Neovim takes its place, and Herdr is never called; with no `nvim` on `PATH` it prints `difftate: nvim not found on PATH` to stderr and exits 1. With `--open both` the browser opens first, then Neovim. With no terminal, it keeps its older host: where [Herdr](https://herdr.dev) is reachable (`herdr-app` on `PATH`, or `DT_HERDR`, and running), it opens a **Review · ‹folder›** tab running `nvim +DifftateOpen` in the folder, or switches to that tab if it's open (if Neovim has quit in that tab, it opens the review again in a new tab and closes the old one; this needs `hc` on `PATH`, or `DT_HC`); anywhere else it opens nothing and prints the command to run (`cd <folder> && nvim +DifftateOpen`). It never falls back to the browser. Neovim runs with your normal config.
+**Open it with difftate:** `difftate --open nvim` (or `DT_OPEN=nvim`) opens the Neovim viewer. `--open` names the viewer, not the host: difftate opens no tab, pane or window of its own. In a terminal (stdin and stdout both ttys: iTerm, tmux, a Herdr tab, anything) it runs `nvim +DifftateOpen` right there, in the repository's folder: difftate ends and Neovim takes its place; with no `nvim` on `PATH` it prints `difftate: nvim not found on PATH` to stderr and exits 1. With `--open both` the browser opens first, then Neovim. With no terminal (a watcher started in the background, a script) it opens nothing and prints the command to run (`cd <folder> && nvim +DifftateOpen`); a tool that hosts terminals can run that command in its own tab. It never falls back to the browser. Neovim runs with your normal config.
 
 **Use:** run `difftate` once (it starts the watcher), then in Neovim in any checked-out folder press `<leader>rr` (or `:DifftateOpen`; `nvim +DifftateOpen` opens it at start-up). It finds the one watcher as `dt-export` does (the difftate folder in your home) and names its folder, which the watcher serves from then on, so a new worktree needs no `difftate` of its own. With none running, it says "No difftate is running: run `difftate` in a terminal" and starts nothing: Neovim never starts the watcher. While the review is open, gitsigns compares every buffer against where the branch left the review's base (`git merge-base <base> HEAD`, computed again at every poll, so it follows a new commit), so `]h`, `[h` and hunk preview move through the review's changes, committed ones too. `<leader>rr` again (or `:DifftateClose`) puts gitsigns back on the index. `:DifftateStatus` says whether a review is open.
 
@@ -248,7 +247,6 @@ The watcher prints `Model: <name> (from the agent list)` (or `Model: CLI default
 | Variable | Default | Effect |
 |---|---|---|
 | `DT_OPEN` | `browser` | The viewer the review opens in: `browser`, `nvim` (the [Neovim viewer](#review-in-neovim)) or `both`. `--open` overrides it for one run |
-| `DT_HERDR` | unset (`herdr-app` on `PATH`) | Path to the Herdr app's binary, for `--open nvim` to open its Herdr tab when `herdr-app` isn't on `PATH` |
 | `DIFFTATE_HOME` | `~/.difftate` | The difftate folder of the machine: the watcher's port, pid and token, lock and log, and the review history. Tests and trials point it elsewhere |
 | `DT_INTERVAL` | `1` | Seconds between polls, read by the `difftate` that starts the watcher. The tests set it small |
 

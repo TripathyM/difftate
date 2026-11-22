@@ -124,7 +124,7 @@ class Harness:
         with open(os.path.join(self.home, ".gitconfig"), "w") as f:
             f.write("[user]\n\tname = Test\n\temail = test@example.com\n")
         self.env = {k: v for k, v in os.environ.items()
-                    if k not in ("CLAUDE_CONFIG_DIR", "DT_OPEN", "DT_HERDR", "XDG_CONFIG_HOME", "DIFFTATE_HOME",
+                    if k not in ("CLAUDE_CONFIG_DIR", "DT_OPEN", "XDG_CONFIG_HOME", "DIFFTATE_HOME",
                                                            "DT_INTERVAL")}
         self.env.update(HOME=self.home, PATH=os.pathsep.join([bin_dir, os.environ["PATH"]]),
                         GIT_CONFIG_NOSYSTEM="1", FAKE_AGENT_DIR=self.agent_dir,
@@ -924,11 +924,11 @@ class WatcherTest(Harness, unittest.TestCase):
         except FileNotFoundError:
             return []
 
-    def test_open_nvim_opens_a_review_tab_running_nvim_in_herdr_and_never_the_browser(self):
+    def test_open_nvim_with_no_terminal_prints_the_command_and_calls_no_herdr_even_when_it_is_there(self):
         calls = os.path.join(self.tmp, "herdr-calls")
         herdr = os.path.join(self.tmp, "bin", "herdr-app")
         with open(herdr, "w") as f:
-            f.write(f'#!/bin/sh\necho "$@" >> {calls}\n[ "$1" = ls ] && echo \'{{"spaces":[]}}\'\nexit 0\n')
+            f.write(f'#!/bin/sh\necho "$@" >> {calls}\nexit 0\n')
         os.chmod(herdr, 0o755)
         with open(os.path.join(self.tmp, "bin", "open"), "w") as f:
             f.write(f'#!/bin/sh\necho "$@" >> {os.path.join(self.tmp, "opened")}\n')
@@ -936,21 +936,9 @@ class WatcherTest(Harness, unittest.TestCase):
         self.env["DT_OPEN"] = "nvim"
         self.start_watcher()
 
-        made = wait_for("the Review tab", lambda: [c for c in self.lines(calls) if "tab.new" in c])
-        [args] = [json.loads(c.split(" ", 2)[2]) for c in made]
-        self.assertEqual(os.path.realpath(args.pop("folder")), os.path.realpath(self.repo))
-        self.assertEqual(args, {"name": "Review · repo", "argv": ["nvim", "+DifftateOpen"]})
-        self.assertEqual(self.opened_urls(), [], "the Neovim viewer has no browser fallback")
-
-    def test_open_nvim_outside_herdr_prints_the_command_and_opens_nothing(self):
-        with open(os.path.join(self.tmp, "bin", "open"), "w") as f:
-            f.write(f'#!/bin/sh\necho "$@" >> {os.path.join(self.tmp, "opened")}\n')
-        self.env["DT_HERDR"] = os.path.join(self.tmp, "no-herdr-here")
-        self.extra_args = ["--open", "nvim"]
-        self.start_watcher()
-
         self.assertRegex(self.difftate_output, r"cd \S+/repo && nvim \+DifftateOpen")
-        self.assertEqual(self.opened_urls(), [])
+        self.assertEqual(self.lines(calls), [], "difftate calls no Herdr")
+        self.assertEqual(self.opened_urls(), [], "the Neovim viewer has no browser fallback")
 
     def test_a_used_launch_code_is_refused(self):
         with open(os.path.join(self.tmp, "bin", "open"), "w") as f:

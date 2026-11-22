@@ -1,8 +1,7 @@
-"""The viewers `--open` names: the browser and the Neovim viewer (whose host
-is Herdr when it is reachable). Herdr is faked: DT_HERDR points at a script that records each call and
-answers `ls` from a file, as Herdr's app would."""
+"""The viewers `--open` names: the browser and the Neovim viewer (nvim here when there is a terminal,
+the command to run when there is none). difftate opens no host: a fake Herdr records any call, and the
+tests check there is none."""
 import io
-import json
 import os
 import shutil
 import stat
@@ -20,21 +19,12 @@ from difftate.adapters.inbound.cli import options, viewers  # noqa: E402
 
 FAKE_HERDR = """#!/bin/sh
 echo "$@" >> "$FAKE_HERDR_CALLS"
-if [ "$1" = ls ]; then
-  [ -f "$FAKE_HERDR_TABS" ] || exit 1
-  cat "$FAKE_HERDR_TABS"
-fi
 exit 0
 """
 
 
-FAKE_HC = """#!/bin/sh
-echo "$@" >> "$FAKE_HERDR_CALLS"
-[ "$1" = get ] && [ "$3" = --json ] && cat "$FAKE_HC_DIR/$2.json"
-"""
-
-
 class HerdrFake:
+    """A herdr-app on PATH and as DT_HERDR (a leftover setting) that records every call: difftate must make none."""
     def __init__(self, test):
         self.dir = tempfile.mkdtemp(prefix="difftate-viewers-")
         test.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
@@ -43,52 +33,20 @@ class HerdrFake:
             f.write(FAKE_HERDR)
         os.chmod(self.binary, os.stat(self.binary).st_mode | stat.S_IXUSR)
         self.calls_file = os.path.join(self.dir, "calls")
-        self.tabs_file = os.path.join(self.dir, "tabs.json")
-        self.hc = os.path.join(self.dir, "hc")
-        with open(self.hc, "w") as f:
-            f.write(FAKE_HC)
-        os.chmod(self.hc, os.stat(self.hc).st_mode | stat.S_IXUSR)
-        self.hc_dir = os.path.join(self.dir, "terminals")
-        os.mkdir(self.hc_dir)
-        env = {"DT_HERDR": self.binary, "DT_HC": self.hc, "FAKE_HC_DIR": self.hc_dir,
-               "FAKE_HERDR_CALLS": self.calls_file, "FAKE_HERDR_TABS": self.tabs_file}
+        env = {"DT_HERDR": self.binary, "FAKE_HERDR_CALLS": self.calls_file,
+               "PATH": self.dir + os.pathsep + os.environ.get("PATH", "")}
         patch = mock.patch.dict(os.environ, env)
         patch.start()
         test.addCleanup(patch.stop)
 
-    def running(self, *tab_names):
-        """Herdr is running, with these tabs."""
-        tabs = [{"id": f"tab-{i}", "name": name} for i, name in enumerate(tab_names)]
-        with open(self.tabs_file, "w") as f:
-            json.dump({"spaces": [{"id": "space-1", "tabs": tabs}]}, f)
-
-    def review_tab(self, name, *foregrounds):
-        """Herdr runs a tab <name> in space-1 with one terminal for each of <foregrounds>: the program in
-        the terminal's foreground (its argv[0]), as `hc get` reports it."""
-        terminals = []
-        for i, program in enumerate(foregrounds):
-            terminals.append({"terminal": f"t{i}", "app": None})
-            with open(os.path.join(self.hc_dir, f"t{i}.json"), "w") as f:
-                json.dump({"address": f"t{i}", "foreground": {"argv": [program, "-li"], "name": os.path.basename(program)}}, f)
-        with open(self.tabs_file, "w") as f:
-            json.dump({"spaces": [{"id": "space-1", "tabs": [
-                {"id": "tab-0", "name": "1", "terminals": []},
-                {"id": "tab-1", "name": name, "terminals": terminals}]}]}, f)
-
-    def calls(self):
-        try:
-            with open(self.calls_file) as f:
-                lines = f.read().splitlines()
-        except FileNotFoundError:
-            return []
-        return [line.split(" ", 2) for line in lines if line.startswith("do ")]
+    def called(self):
+        return os.path.exists(self.calls_file)
 
 
 class ViewersTest(unittest.TestCase):
     def setUp(self):
         self.herdr = HerdrFake(self)
         self.root = "/work/shop-api"
-        self.name = "Review · shop-api"
 
     def open_nvim(self):
         out = io.StringIO()
@@ -107,13 +65,10 @@ class ViewersTest(unittest.TestCase):
         return opened, out.getvalue(), execs
 
     def test_with_a_terminal_nvim_runs_here_in_the_review_root_and_herdr_is_never_called(self):
-        self.herdr.running("1", self.name)
-
         _, _, execs = self.open_nvim_in_terminal()
 
         self.assertEqual(execs, [self.root])
-        self.assertEqual(self.herdr.calls(), [])
-        self.assertFalse(os.path.exists(self.herdr.calls_file), "not even `herdr-app ls`")
+        self.assertFalse(self.herdr.called())
 
     def test_the_exec_runs_nvim_with_difftateopen_in_the_root(self):
         with mock.patch("shutil.which", return_value="/bin/nvim"), mock.patch("os.chdir") as chdir, \
@@ -132,7 +87,7 @@ class ViewersTest(unittest.TestCase):
         self.assertEqual(raised.exception.code, 1)
         self.assertEqual(err.getvalue().strip(), "difftate: nvim not found on PATH")
         execvp.assert_not_called()
-        self.assertEqual(self.herdr.calls(), [])
+        self.assertFalse(self.herdr.called())
 
     def test_an_exec_that_fails_is_the_same_error_and_exit_1(self):
         err = io.StringIO()
@@ -150,114 +105,20 @@ class ViewersTest(unittest.TestCase):
                 i.isatty.return_value, o.isatty.return_value = stdin, stdout
                 self.assertEqual(viewers._has_terminal(), expected)
 
-    def test_in_herdr_with_no_review_tab_nvim_opens_one_running_the_review(self):
-        self.herdr.running("1", "2")
-
-        opened, said = self.open_nvim()
-
-        self.assertTrue(opened)
-        [[do, verb, args]] = self.herdr.calls()
-        self.assertEqual((do, verb), ("do", "tab.new"))
-        self.assertEqual(json.loads(args), {"name": self.name, "folder": self.root,
-                                            "argv": ["nvim", "+DifftateOpen"]})
-        self.assertIn(self.name, said)
-
-    def test_in_herdr_with_a_review_tab_nvim_switches_to_it(self):
-        self.herdr.running("1", self.name)
-
-        opened, _ = self.open_nvim()
-
-        self.assertTrue(opened)
-        [[do, verb, args]] = self.herdr.calls()
-        self.assertEqual((do, verb, json.loads(args)), ("do", "tab.select", {"id": "tab-1"}))
-
-    def test_a_review_tab_where_nvim_runs_is_only_switched_to(self):
-        self.herdr.review_tab(self.name, "/opt/homebrew/bin/nvim")
-
-        self.open_nvim()
-
-        [[do, verb, args]] = self.herdr.calls()
-        self.assertEqual((verb, json.loads(args)), ("tab.select", {"id": "tab-1"}))
-
-    def test_a_review_tab_whose_nvim_has_quit_is_opened_again_then_the_old_one_closed(self):
-        self.herdr.review_tab(self.name, "/bin/zsh")
-
-        opened, said = self.open_nvim()
-
-        self.assertTrue(opened)
-        [new, close] = self.herdr.calls()
-        self.assertEqual(new[1], "tab.new")
-        self.assertEqual(json.loads(new[2]), {"name": self.name, "folder": self.root, "space": "space-1",
-                                              "argv": ["nvim", "+DifftateOpen"]})
-        self.assertEqual((close[1], json.loads(close[2])), ("tab.close", {"id": "tab-1", "confirmed": True}))
-        self.assertIn(self.name, said)
-
-    def test_a_login_shell_with_a_dash_counts_as_a_shell(self):
-        self.herdr.review_tab(self.name, "-zsh")
-
-        self.open_nvim()
-
-        self.assertEqual([c[1] for c in self.herdr.calls()], ["tab.new", "tab.close"])
-
-    def test_the_old_tab_stays_when_the_new_one_will_not_open(self):
-        self.herdr.review_tab(self.name, "/bin/zsh")
-        with open(self.herdr.binary, "w") as f:
-            f.write("#!/bin/sh\n[ \"$1\" = ls ] && cat \"$FAKE_HERDR_TABS\" && exit 0\necho \"$@\" >> \"$FAKE_HERDR_CALLS\"\n"
-                    "[ \"$2\" = tab.select ]\n")
-
-        self.open_nvim()
-
-        self.assertEqual([c[1] for c in self.herdr.calls()], ["tab.new", "tab.select"])
-
-    def test_a_review_tab_running_something_else_than_a_shell_is_not_closed(self):
-        self.herdr.review_tab(self.name, "/bin/zsh", "/usr/bin/python3")
-
-        self.open_nvim()
-
-        [[do, verb, _]] = self.herdr.calls()
-        self.assertEqual(verb, "tab.select")
-
-    def test_when_hc_cannot_say_what_runs_the_tab_is_only_switched_to(self):
-        self.herdr.review_tab(self.name, "/bin/zsh")
-        os.remove(os.path.join(self.herdr.hc_dir, "t0.json"))
-
-        self.open_nvim()
-
-        self.assertEqual([c[1] for c in self.herdr.calls()], ["tab.select"])
-
-    def test_with_no_hc_the_tab_is_only_switched_to(self):
-        self.herdr.review_tab(self.name, "/bin/zsh")
-
-        with mock.patch.dict(os.environ, {"DT_HC": os.path.join(self.herdr.dir, "none")}), \
-                mock.patch("shutil.which", return_value=None):
-            self.open_nvim()
-
-        self.assertEqual([c[1] for c in self.herdr.calls()], ["tab.select"])
-
-    def test_in_herdr_a_tab_that_will_not_open_prints_the_command_and_does_not_fall_back(self):
-        self.herdr.running("1")
-        with open(self.herdr.binary, "w") as f:
-            f.write("#!/bin/sh\n[ \"$1\" = ls ] && cat \"$FAKE_HERDR_TABS\" && exit 0\nexit 1\n")
-
+    def test_with_no_terminal_the_command_is_printed_and_the_browser_is_not_the_fallback(self):
         opened, said = self.open_nvim()
 
         self.assertTrue(opened, "the browser is not the fallback of the Neovim viewer")
         self.assertIn(f"cd {self.root} && nvim +DifftateOpen", said)
 
-    def test_outside_herdr_nothing_opens_and_the_command_is_printed(self):
-        # Herdr is not running: `herdr-app ls` fails
-        opened, said = self.open_nvim()
+    def test_with_no_terminal_herdr_is_never_called_even_when_it_is_on_path_and_in_dt_herdr(self):
+        self.open_nvim()
 
-        self.assertTrue(opened, "the browser is not the fallback of the Neovim viewer")
-        self.assertEqual(self.herdr.calls(), [])
-        self.assertIn(f"cd {self.root} && nvim +DifftateOpen", said)
+        self.assertFalse(self.herdr.called())
 
-    def test_with_no_herdr_at_all_the_command_is_printed(self):
-        with mock.patch.dict(os.environ, {"DT_HERDR": os.path.join(self.herdr.dir, "none")}):
-            opened, said = self.open_nvim()
-
-        self.assertTrue(opened)
-        self.assertIn(f"cd {self.root} && nvim +DifftateOpen", said)
+    def test_difftate_has_no_herdr_host_left(self):
+        for name in ("_herdr_cli", "_hc_cli", "_herdr_tab", "_nvim_in_herdr", "NVIM_HOSTS", "_only_idle_shells"):
+            self.assertFalse(hasattr(viewers, name), name)
 
     def test_the_folder_with_a_space_is_quoted_in_the_printed_command(self):
         self.root = "/work/my shop"

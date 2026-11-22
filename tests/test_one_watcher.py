@@ -238,7 +238,6 @@ class NamingTheFolder(Harness, unittest.TestCase):
         with open(os.path.join(self.tmp, "bin", "open"), "w") as f:
             f.write(f'#!/bin/sh\necho "$@" >> {os.path.join(self.tmp, "opened")}\n')
         self.extra_args = ["--open", "nvim"]
-        self.env["DT_HERDR"] = os.path.join(self.tmp, "no-herdr-here")
         self.start_watcher()
 
         self.assertEqual(self.api("PUT", "/api/view", {"view": "", "open": "browser"}), {"view": ""})

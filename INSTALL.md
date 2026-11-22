@@ -29,7 +29,7 @@ Run each check. Report all results together, then stop if anything **required** 
 
 The agent CLI check passes when at least one of the two prints a path to a real program, not an alias or function.
 
-Tell the user which agent will reply: `claude` unless they list others in the agent list (section 5).
+Tell the user which agent will reply: `claude` unless they list others in the agent list (section 4).
 
 ## 2. Clone the repo
 
@@ -54,25 +54,13 @@ Use the folder from question 1 (default `~/difftate`). Call it `DT_HOME` below, 
      export PATH="DT_HOME/bin:$PATH"
      ```
 
-3. Only if question 2 was yes, add the Herdr line (see [Herdr](#4-herdr-only-if-question-2-was-yes), step 2) unless `grep -n '^[^#]*DT_OPEN=' ~/.zshrc` already finds one.
-4. If the block is empty, skip to step 5. Otherwise back up: `cp ~/.zshrc ~/.zshrc.bak-difftate-$(date +%Y%m%d%H%M%S)` and tell the user the backup path.
-5. Show the user the full block, with `DT_HOME` filled in, and wait for a yes.
-6. Append the block to the end of `~/.zshrc`.
+3. If the block is empty, skip to step 4. Otherwise back up: `cp ~/.zshrc ~/.zshrc.bak-difftate-$(date +%Y%m%d%H%M%S)` and tell the user the backup path.
+4. Show the user the full block, with `DT_HOME` filled in, and wait for a yes.
+5. Append the block to the end of `~/.zshrc`.
 
-Which coding agent and account reply is not a shell function or a `difftate` option: it is the agent list (section 5). Don't add shell functions for it.
+Which coding agent and account reply is not a shell function or a `difftate` option: it is the agent list (section 4). Don't add shell functions for it.
 
-## 4. Herdr (only if question 2 was yes)
-
-Herdr is only where the Neovim viewer opens (`difftate --open nvim`): a **Review · ‹folder›** tab running `nvim`. There is no Herdr viewer to install. Do steps 1 and 2 before showing the `~/.zshrc` block in section 3: the block needs their result.
-
-1. **Find Herdr's command line.** Try `zsh -ic 'command -v herdr-app'` (Herdr adds it to `~/.local/bin` when it starts), then `/Applications/Herdr.app/Contents/MacOS/Herdr`. A candidate is right only if `"<candidate>" --help | head -1` starts with `herdr-app` (another app can be named Herdr). If neither is right, ask the user for the path of the Herdr app's binary. Call it `HERDR_BIN`, and note whether it came from the `herdr-app` check.
-2. **Line for the `~/.zshrc` block** (section 3). Add it only if `HERDR_BIN` did **not** come from the `herdr-app` check:
-
-   ```zsh
-   export DT_HERDR="HERDR_BIN"          # only when herdr-app isn't on PATH
-   ```
-
-## 5. The agent list (optional)
+## 4. The agent list (optional)
 
 Without a list, `claude` replies. To choose agents, write `~/.difftate/agents.toml` (`$DIFFTATE_HOME/agents.toml`): ask which coding agents and accounts they use, then write one `[agents.<name>]` table for each (`tool` = `claude` or `opencode`, `cmd` = the command or shell alias, `env` = what it needs, such as `{ CLAUDE_CONFIG_DIR = "~/.claude-personal" }`, optional `model`) and a `default`. A personal and a work account:
 
@@ -91,7 +79,7 @@ cmd = "ccw"
 
 Then, in each repository, `difftate agent <name>` says which of them replies there (for its worktrees too); the default replies in a repository with none. The file is read for each run: no restart.
 
-## 6. The review path skill (optional)
+## 5. The review path skill (optional)
 
 The skill `write-review-path` tells a coding agent how to write `review-path.md`, the reading order that difftate's viewers follow. It needs no difftate to run. To let every agent session on this machine use it, link it into the agent's skills folder. For each agent the user has (Claude Code: `~/.claude/skills`; OpenCode: `~/.config/opencode/skills`):
 
@@ -100,11 +88,10 @@ The skill `write-review-path` tells a coding agent how to write `review-path.md`
 
 Inside a difftate checkout, `bin/setup` links the skill already.
 
-## 7. Verify
+## 6. Verify
 
 1. `zsh -ic 'command -v difftate dt-export dt-reply'`: each prints a path under `DT_HOME/bin`.
 2. `zsh -ic 'difftate --help | head -1'` prints a line starting with `difftate`.
-3. If `DT_HERDR` was added: `zsh -ic 'echo $DT_HERDR'` prints `HERDR_BIN`.
 
 Report what passed. Then show the user the quick guide below, as written.
 
@@ -133,13 +120,12 @@ First, open a new terminal (or run `source ~/.zshrc`). Then `cd` into a git repo
 
 ## Questions
 
-Ask these, together, before section 2. If `~/.zshrc` already has the `PATH` line for difftate (an earlier install), ask only question 1, unless the user asked to add Herdr.
+Ask these, together, before section 2. If `~/.zshrc` already has the `PATH` line for difftate (an earlier install), ask only question 1.
 
 1. **Where should difftate be cloned?** Default: `~/difftate`.
-2. **Do you use the [Herdr](https://herdr.dev) app, and want `difftate --open nvim` to open its Neovim review in a Herdr tab?** Ask only if `~/.config/herdr-app` exists. Default: no. Yes sets `DT_HERDR` when Herdr's command line isn't on `PATH`.
 
 ## Uninstall
 
-1. Run `difftate stop`. Remove the difftate lines (the `PATH` line, or an old `source` line and shortcuts, and `DT_OPEN` / `DT_HERDR`) from `~/.zshrc`.
+1. Run `difftate stop`. Remove the difftate lines (the `PATH` line, or an old `source` line and shortcuts, and `DT_OPEN`) from `~/.zshrc`.
 2. If an earlier install linked the removed Herdr viewer: `rm ~/.config/herdr-app/mods/difftate` (the link only), and the `cmd-shift-r` line from `~/.config/herdr-app/keys.json` if you added it.
 3. `rm -rf ~/difftate` (or your `DT_HOME`). `~/.difftate` holds the review history: keep it, or remove it too.
