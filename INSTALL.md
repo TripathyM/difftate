@@ -91,7 +91,16 @@ cmd = "ccw"
 
 Then, in each repository, `difftate agent <name>` says which of them replies there (for its worktrees too); the default replies in a repository with none. The file is read for each run: no restart.
 
-## 6. Verify
+## 6. The review path skill (optional)
+
+The skill `write-review-path` tells a coding agent how to write `review-path.md`, the reading order that difftate's viewers follow. It needs no difftate to run. To let every agent session on this machine use it, link it into the agent's skills folder. For each agent the user has (Claude Code: `~/.claude/skills`; OpenCode: `~/.config/opencode/skills`):
+
+1. If `<skills folder>/write-review-path` exists, say so and skip.
+2. Otherwise: `mkdir -p <skills folder> && ln -s DT_HOME/skills/write-review-path <skills folder>/write-review-path`
+
+Inside a difftate checkout, `bin/setup` links the skill already.
+
+## 7. Verify
 
 1. `zsh -ic 'command -v difftate dt-export dt-reply'`: each prints a path under `DT_HOME/bin`.
 2. `zsh -ic 'difftate --help | head -1'` prints a line starting with `difftate`.

@@ -42,6 +42,19 @@ link_claude_skills() {
   done
 }
 
+# difftate's own skills live in skills/ (tracked). Link each into .agents/skills
+# so the Claude link step below picks it up. A real folder there is left alone.
+link_own_skills() {
+  [ -d skills ] || return 0
+  mkdir -p .agents/skills
+  for dir in skills/*/; do
+    name=$(basename "$dir")
+    if [ ! -e ".agents/skills/$name" ] && [ ! -L ".agents/skills/$name" ]; then
+      ln -s "../../skills/$name" ".agents/skills/$name"
+    fi
+  done
+}
+
 HOOK_MARK="installed by bin/setup --install-hook"
 
 install_hook() {
@@ -77,6 +90,7 @@ if [ "${1:-}" = "--install-hook" ]; then
 fi
 
 restore_skills
+link_own_skills
 link_claude_skills
 
 echo "setup: done"
