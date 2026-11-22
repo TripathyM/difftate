@@ -161,6 +161,10 @@ _Avoid_: child, sub-stop
 One question on a stop, with its answer. A stop's text is its questions; the word *note* stays difftate's own message in a thread.
 _Avoid_: note, summary, description
 
+**Spec**:
+A test the coding agent names under a stop (`Spec: file "test name"`) because it shows the stop's behaviour. The preview lists it; difftate does not run or open it.
+_Avoid_: test case
+
 **Path section**:
 Named text after the stops (such as "State flow") that a stop can point to by name.
 _Avoid_: appendix
