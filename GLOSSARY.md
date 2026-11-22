@@ -139,6 +139,36 @@ _Avoid_: session (alone), conversation
 A copy of a review for an agent session that the reviewer starts: its commit messages, every thread in full with its thread status and thread state, which threads need an answer (open ones no reply answers yet), and how to reply. It says nothing about what to do: the reviewer says that in the session. Exporting changes no thread.
 _Avoid_: handoff, dump, snapshot
 
+### Review path
+
+**Review path**:
+The coding agent's reading order for a review's changed files: a tree of stops, each with questions and answers, in `review-path.md` at the worktree root. The coding agent writes it; a viewer follows it.
+_Avoid_: tour, walkthrough, guide
+
+**Stop**:
+A numbered file on the review path, with its questions and optional line ranges. The numbers are the reading order.
+_Avoid_: step (that is one action in a run), node
+
+**Key stop**:
+A stop marked ★: one that matters most, where the reviewer should slow down.
+_Avoid_: important, starred
+
+**Side file**:
+A file read together with its stop. It has no number of its own.
+_Avoid_: child, sub-stop
+
+**Question**:
+One question on a stop, with its answer. A stop's text is its questions; the word *note* stays difftate's own message in a thread.
+_Avoid_: note, summary, description
+
+**Path section**:
+Named text after the stops (such as "State flow") that a stop can point to by name.
+_Avoid_: appendix
+
+**Not on the path**:
+The changed files the review path does not name, listed after the last stop.
+_Avoid_: uncovered, missing
+
 ### Viewing
 
 **Viewer**:
