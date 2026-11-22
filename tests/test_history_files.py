@@ -94,6 +94,20 @@ class TheReviewHistoryFiles(unittest.TestCase):
             dict({"type": "undone", "commit": "a" * 40, "time": time}, **ABOUT),
             dict({"type": "done-cleared", "commit": "b" * 40, "time": time}, **ABOUT)])
 
+    def test_the_review_path_kept_with_a_done_survives_a_replay_and_the_worktree(self):
+        folder = os.path.join(self.tmp, "history")
+        time = "2026-11-07T10:00:00.000Z"
+        text = "---\nbranch: feature\n---\n## 1. app.py \u2605\n### Why?\nAn answer \u2728\n"
+
+        HistoryFiles(ABOUT, folder).record([DoneMarked("a" * 40, time, text), DoneMarked("b" * 40, time)])
+
+        first, second = [json.loads(line) for line in lines_in(folder)]
+        self.assertEqual(first["reviewPath"], text)
+        self.assertNotIn("reviewPath", second)
+        # The history lives outside the worktree and replays to the same events
+        self.assertEqual([read_events(line.decode())[0] for line in lines_in(folder)],
+                         [DoneMarked("a" * 40, time, text), DoneMarked("b" * 40, time)])
+
     def test_a_history_it_cannot_write_is_a_warning_not_an_error(self):
         in_the_way = os.path.join(self.tmp, "a-file")
         open(in_the_way, "w").close()

@@ -291,9 +291,12 @@ class FileViewed:
 
 @dataclass(frozen=True)
 class DoneMarked:
-    """A reviewer marked the review Done at <commit> (the "done" line)."""
+    """A reviewer marked the review Done at <commit> (the "done" line).
+    <review_path> is the text of review-path.md as it was then, or None when
+    there was no file: what the reviewer reviewed against."""
     commit: str
     time: str
+    review_path: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -649,12 +652,14 @@ class Review:
         self.apply(event)
         return [event]
 
-    def mark_done(self, author: str, head: Optional[str], on_branch: bool = True) -> List[Event]:
+    def mark_done(self, author: str, head: Optional[str], on_branch: bool = True,
+                  review_path: Optional[str] = None) -> List[Event]:
         """<author> marks the review Done at <head>, the commit the branch is
         at. Rule 5: only a reviewer does. A review already Done at <head> is
         left as it is; one Done at an older commit is cleared first. Raises
         Conflict while another branch is checked out (_need_branch), and
-        CouldNotRead with no <head>: there is no commit to be Done at."""
+        CouldNotRead with no <head>: there is no commit to be Done at. A new
+        mark keeps <review_path>, the text of the review path as it is now."""
         if author != REVIEWER:
             raise NotAllowed("only a reviewer marks a review Done")
         _need_branch(on_branch)
@@ -662,7 +667,7 @@ class Review:
             raise CouldNotRead("could not read the commit the review's branch is at")
         events = self.clear_done(head)
         if self._done is None:
-            event = DoneMarked(head, _now())
+            event = DoneMarked(head, _now(), review_path)
             self.apply(event)
             events.append(event)
         return events

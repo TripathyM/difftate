@@ -8,6 +8,7 @@ existing reviews hold):
   done → DoneMarked          undone → DoneUndone        done-cleared → DoneCleared
   mode → ModeChanged         submitted → ReviewSubmitted
   agent → AgentOverridden
+A "done" line has "reviewPath", the review path's text, only when there was a file.
 A "note" line is a note's final body: notes are stored only once final. A
 note given to the store before it is final (the core gives none: lasting)
 keeps "final": false in its line, so it reads back as it was given; no such
@@ -67,7 +68,7 @@ def event_from_line(line: Dict[str, Any]) -> Event:
     if kind == "viewed":
         return FileViewed(line["file"], line["diffHash"], line["time"])
     if kind == "done":
-        return DoneMarked(line["commit"], line["time"])
+        return DoneMarked(line["commit"], line["time"], line.get("reviewPath"))
     if kind == "undone":
         return DoneUndone(line["commit"], line["time"])
     if kind == "done-cleared":
@@ -137,7 +138,10 @@ def line_from_event(event: Event) -> Dict[str, Any]:
     if isinstance(event, FileViewed):
         return {"type": "viewed", "file": event.file, "diffHash": event.diff_hash, "time": event.time}
     if isinstance(event, DoneMarked):
-        return {"type": "done", "commit": event.commit, "time": event.time}
+        line = {"type": "done", "commit": event.commit, "time": event.time}
+        if event.review_path is not None:
+            line["reviewPath"] = event.review_path
+        return line
     if isinstance(event, DoneUndone):
         return {"type": "undone", "commit": event.commit, "time": event.time}
     if isinstance(event, DoneCleared):

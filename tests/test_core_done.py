@@ -116,6 +116,66 @@ class MarkingDone(DoneTest):
         self.assertTrue(status.done)
 
 
+class TheReviewPathAtDone(DoneTest):
+    PATH = "---\nbranch: feature\n---\n## 1. app.py\n### Why?\nBecause.\n"
+
+    def marks(self):
+        return [e for e in self.history.recorded if type(e) is DoneMarked]
+
+    def test_the_text_of_the_review_path_as_it_is_then_is_kept_with_the_mark(self):
+        self.code.review_path = self.PATH
+
+        self.mark()
+
+        [mark] = self.marks()
+        self.assertEqual(mark.review_path, self.PATH)
+        self.assertEqual(self.store.load(), [mark])
+        self.assertEqual(Review.from_events(self.store.load()).done().commit, "commit-1")
+
+    def test_with_no_review_path_file_nothing_extra_is_kept(self):
+        self.mark()
+
+        [mark] = self.marks()
+        self.assertIsNone(mark.review_path)
+
+    def test_two_dones_keep_two_copies_each_as_it_was_then(self):
+        self.code.review_path = self.PATH
+        self.mark()
+        self.undo()
+        self.code.review_path = self.PATH + "A new question.\n"
+
+        self.mark()
+
+        self.assertEqual([m.review_path for m in self.marks()], [self.PATH, self.PATH + "A new question.\n"])
+
+    def test_a_done_that_changes_nothing_keeps_no_new_copy(self):
+        self.code.review_path = self.PATH
+        self.mark()
+        self.code.review_path = "rewritten"
+
+        self.mark()
+
+        self.assertEqual([m.review_path for m in self.marks()], [self.PATH])
+
+    def test_a_review_path_that_cannot_be_read_does_not_stop_done(self):
+        def unreadable():
+            raise CouldNotRead("no")
+        self.code.review_path_text = unreadable
+
+        status = self.mark()
+
+        self.assertTrue(status.done)
+        self.assertIsNone(self.marks()[0].review_path)
+
+    def test_undoing_and_clearing_keep_no_copy(self):
+        self.code.review_path = self.PATH
+        self.mark()
+        self.undo()
+
+        self.assertEqual([type(e).__name__ for e in self.history.recorded if getattr(e, "review_path", None)],
+                         ["DoneMarked"])
+
+
 class UndoingDone(DoneTest):
     def test_the_reviewer_undoes_it_and_the_undo_is_kept_with_the_commit_it_was_done_at(self):
         self.mark()
