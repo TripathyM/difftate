@@ -46,6 +46,7 @@ local defaults = {
     views = "<leader>rV", -- choose the view: all changes, the last commits, uncommitted, unstaged
     viewed = "<leader>rv", -- mark the current file viewed, or not
     browser = "<leader>rB", -- open this folder's review in the browser (a single-use link)
+    side_by_side = "<leader>rd", -- the file in this window side by side with its base (gitsigns' diffthis), or back
   },
 }
 
@@ -74,6 +75,7 @@ local actions = {
   views = { function() review.pick_view() end, "Choose the view of the review" },
   viewed = { function() review.toggle_viewed() end, "Mark this file viewed, or not" },
   browser = { function() review.browser(vim.fn.getcwd()) end, "Open the review in the browser" },
+  side_by_side = { function() review.toggle_side_by_side() end, "Compare this file with its base side by side, or back" },
 }
 
 M.config = vim.deepcopy(defaults)
