@@ -98,6 +98,16 @@ class Stop:
                        side_files=tuple(replace(f, viewed=f.file in viewed) for f in self.side_files),
                        children=tuple(c.with_viewed(viewed) for c in self.children))
 
+    def cut_to(self, kept: Collection[str]) -> Tuple["Stop", ...]:
+        """What is left of this stop when only the files of <kept> are shown:
+        the stop itself, with its side files and the stops under it cut the
+        same way, numbers as they were. A stop whose file is not kept goes, and
+        the stops under it that are kept stand in its place."""
+        below = tuple(c for child in self.children for c in child.cut_to(kept))
+        if self.file not in kept:
+            return below
+        return (replace(self, children=below, side_files=tuple(f for f in self.side_files if f.file in kept)),)
+
     def files(self) -> Iterator[str]:
         """The files this stop and the stops under it name, side files included."""
         for stop in self.walk():
@@ -131,6 +141,14 @@ class ReviewPath:
     def with_viewed(self, viewed: Collection[str]) -> "ReviewPath":
         """The same path, each stop and side file marked viewed when its file is one of <viewed>."""
         return replace(self, stops=tuple(s.with_viewed(viewed) for s in self.stops))
+
+    def cut_to(self, kept: Collection[str]) -> "ReviewPath":
+        """The same path, as it is in a view whose files are <kept>: only the
+        stops, side files and skipped files in it, in path order, numbers kept.
+        A side file whose stop is not in the view is not shown here; it is one
+        of the files the path does not show (with_changed_files)."""
+        return replace(self, stops=tuple(c for s in self.stops for c in s.cut_to(kept)),
+                       skipped=tuple(s for s in self.skipped if s.file in kept))
 
     def with_changed_files(self, changed: Collection[str]) -> "ReviewPath":
         """The same path, with the files of <changed> (the changeset's, in its

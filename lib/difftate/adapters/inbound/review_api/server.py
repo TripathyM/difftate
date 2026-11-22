@@ -46,7 +46,7 @@ watcher serves. Naming another base switches the folder's review to it.
   PUT   /api/viewed                     mark a file viewed, or not: {"file", "viewed"?: true|false
                                         (default true)}: {"files"}. 404 for a file
                                         that isn't in the changeset
-  GET   /api/review-path                the review path the coding agent wrote in the folder
+  GET   /api/review-path[?view=<view>]  the review path the coding agent wrote in the folder
                                         (review-path.md, read at each request): {"path": null}
                                         without one, and when the file is broken (that is a warning
                                         in /api/review), else {"path": {"stops": [{"number" ("1"),
@@ -58,7 +58,10 @@ watcher serves. Naming another base switches the folder's review to it.
                                         "children": [stops, numbered "1.1"]}] in reading order,
                                         "skipped": [{"file", "reason"}], "not_on_the_path": [file]:
                                         the changed files it names nowhere, "sections": [{"name",
-                                        "text"}]: the path sections}}
+                                        "text"}]: the path sections}}. In a view (default: the one
+                                        viewers show) the path is cut down to the view's files,
+                                        numbers kept, and "skipped" and "not_on_the_path" are the
+                                        view's files only (?view= is all changes)
   GET   /api/done                       whether the review is Done: {"done", "time", "commit" (the
                                         mark that made it Done: null when it isn't), "lastMark":
                                         {"kind": "done"|"undone"|"cleared", "time", "commit"} or
@@ -446,10 +449,15 @@ def _handler(folders, token, login, default_reviewer, page_url, on_stop):
                  "time": datetime.now(timezone.utc).isoformat(timespec="seconds")}]
 
     def get_review_path(s, q, p):
+        # Given, even empty (all changes), the view is the viewer's: the Neovim viewer shows all changes
+        # while the browser shows the staged view
+        view = a_view(s, q["view"][0]) if "view" in q else s.shown.current()
         try:
-            return review_path_json(s.review.read_review_path())
+            return review_path_json(s.review.read_review_path(view))
         except BadReviewPath:
-            return {"path": None}  # the problem is a warning in /api/review; the viewers use the changeset's order
+            return {"path": None}
+        except NotFound as e:  # the view shown is no view now
+            raise BadRequest(str(e)) from e  # the problem is a warning in /api/review; the viewers use the changeset's order
 
     def switch_view(s, q, p):
         return s.shown.switch(a_view(s, fields(p).get("view", "")))

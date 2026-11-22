@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core_fakes import FakeCode, FakeHistory  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
+from difftate.core.review.model import NotFound  # noqa: E402
 from difftate.core.review.review_path import BadReviewPath, Question, Section, SideFile, Skipped, Spec, Stop  # noqa: E402
 from difftate.core.review.use_cases.mark_viewed import mark_viewed  # noqa: E402
 from difftate.core.review.use_cases.read_review_path import read_review_path  # noqa: E402
@@ -330,6 +331,92 @@ class ABrokenReviewPathIsAProblemAndNoPath(unittest.TestCase):
         self.problem("## 1 `src/gone.ts`\n")
 
         self.assertEqual(self.store.load(), [])
+
+
+class TheReviewPathInAView(unittest.TestCase):
+    """In a view other than all changes the path is cut down to the view's
+    files: stops and side files in the view, numbers kept; not on the path and
+    skipped are the view's files only."""
+
+    TEXT = ("## 1 `a.py`\n\n### A?\nx\n\n### Side file: `a.css`\n\n"
+            "## 1.1 `b.py`\n\n### B?\nx\n\n## 2 `c.py`\n\n### C?\nx\n\n"
+            "## 3 `d.py`\n\n### D?\nx\n\n## 4 `e.py`\n\n### E?\nx\n\n### Side file: `e.css`\n\n"
+            "## Skipped\n- `uv.lock` — lockfile only\n- `gen.py` — generated\n")
+    ALL = {f: "new\n" for f in ("a.py", "a.css", "b.py", "c.py", "d.py", "e.py", "e.css", "uv.lock", "gen.py", "x.md", "y.md")}
+
+    def setUp(self):
+        self.store = MemoryStore()
+        self.history = FakeHistory()
+
+    def read(self, in_view, view="commit-1", text=None):
+        """The path in <view>, which holds the files <in_view> of the changeset."""
+        code = FakeCode(self.ALL, base={}, review_path=text or self.TEXT, views={view: {f: "new\n" for f in in_view}})
+        return read_review_path(self.store, code, self.history, view)
+
+    def test_a_commit_view_keeps_the_stop_and_its_side_file_with_its_number_and_hides_the_rest(self):
+        path = self.read(["e.py", "e.css"])
+
+        self.assertEqual([(s.number, s.file) for s in path.all_stops()], [("4", "e.py")])
+        self.assertEqual(path.stops[0].side_files, (SideFile("e.css"),))
+
+    def test_the_numbers_are_the_whole_paths_so_a_gap_stays_a_gap(self):
+        path = self.read(["a.py", "d.py"])
+
+        self.assertEqual([s.number for s in path.all_stops()], ["1", "3"])
+
+    def test_not_on_the_path_is_the_views_files_the_path_names_nowhere(self):
+        path = self.read(["e.py", "x.md"])
+
+        self.assertEqual(path.not_on_the_path, ("x.md",))
+
+    def test_skipped_files_are_the_views_only(self):
+        path = self.read(["e.py", "gen.py"])
+
+        self.assertEqual(path.skipped, (Skipped("gen.py", "generated"),))
+
+    def test_a_stop_outside_the_view_hides_but_the_stop_under_it_in_the_view_stays_with_its_number(self):
+        path = self.read(["b.py", "c.py"])
+
+        self.assertEqual([(s.number, s.file) for s in path.stops], [("1.1", "b.py"), ("2", "c.py")])
+
+    def test_a_side_file_in_the_view_whose_stop_is_not_is_not_lost_it_is_listed_as_not_on_the_path(self):
+        path = self.read(["a.css", "e.py"])
+
+        self.assertEqual([s.file for s in path.stops], ["e.py"])
+        self.assertEqual(path.not_on_the_path, ("a.css",))
+
+    def test_a_view_with_no_file_the_path_names_has_no_stops(self):
+        path = self.read(["x.md"])
+
+        self.assertEqual(path.stops, ())
+        self.assertEqual(path.skipped, ())
+        self.assertEqual(path.not_on_the_path, ("x.md",))
+
+    def test_viewed_marks_are_kept_in_the_view(self):
+        code = FakeCode(self.ALL, base={}, review_path=self.TEXT, views={"commit-1": {"e.py": "new\n", "e.css": "new\n"}})
+        mark_viewed(self.store, code, self.history, "e.css", True)
+
+        path = read_review_path(self.store, code, self.history, "commit-1")
+
+        self.assertEqual(path.stops[0].side_files, (SideFile("e.css", viewed=True),))
+
+    def test_all_changes_and_no_view_are_the_whole_path(self):
+        code = FakeCode(self.ALL, base={}, review_path=self.TEXT)
+
+        whole = read_review_path(self.store, code, self.history)
+
+        self.assertEqual(read_review_path(self.store, code, self.history, ""), whole)
+        self.assertEqual([s.number for s in whole.all_stops()], ["1", "1.1", "2", "3", "4"])
+
+    def test_a_broken_file_is_broken_in_a_view_too(self):
+        with self.assertRaises(BadReviewPath):
+            self.read(["a.py"], text="## 1 `gone.py`\n\n### Why?\nBecause.\n")
+
+    def test_a_name_that_is_no_view_is_not_found(self):
+        code = FakeCode(self.ALL, base={}, review_path=self.TEXT)
+
+        with self.assertRaises(NotFound):
+            read_review_path(self.store, code, self.history, "nowhere")
 
 
 if __name__ == "__main__":

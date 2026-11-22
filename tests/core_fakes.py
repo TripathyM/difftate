@@ -116,13 +116,15 @@ class FakeCode:
         if view not in ("", "staged", "unstaged", "HEAD", self.commit):
             raise NotFound(f"no view '{view}'")
         diff = "".join(f"diff --git a/{f} b/{f}\n" + "".join(difflib.unified_diff(
-            (self.base.get(f) or "").splitlines(True), (self.files.get(f) or "").splitlines(True),
-            f"a/{f}", f"b/{f}")) for f in self._changed())
-        versions = {f: Versions(self._id(f, self.base.get(f)), self._id(f, self.files.get(f))) for f in self._changed()}
+            (self.base.get(f) or "").splitlines(True), (self._text(f, "new", view) or "").splitlines(True),
+            f"a/{f}", f"b/{f}")) for f in self._changed(view))
+        versions = {f: Versions(self._id(f, self.base.get(f)), self._id(f, self._text(f, "new", view)))
+                    for f in self._changed(view)}
         return Changeset(view, "main", "base-commit", diff, versions)
 
-    def _changed(self):
-        return sorted(f for f in set(self.base) | set(self.files) if self.base.get(f) != self.files.get(f))
+    def _changed(self, view=""):
+        new = self.views.get(view, self.files)
+        return sorted(f for f in set(self.base) | set(new) if self.base.get(f) != new.get(f))
 
     def diff_hashes(self):
         self.reads += 1
