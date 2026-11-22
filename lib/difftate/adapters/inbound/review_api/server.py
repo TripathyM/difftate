@@ -163,7 +163,7 @@ browser's history). `difftate` opens it with a single-use launch code:
 GET /?launch=<code>&folder=<path> trades the code for an HttpOnly, SameSite=Strict cookie and
 redirects to /?folder=<path> (the folder the link named: the page names it in every
 API request), after which the code is refused. The page (/) and its scripts
-(/app.js, /diff.js, /warnings.js) need that cookie; API requests take it instead of the token only
+(/app.js, /diff.js, /warnings.js, /review_path.js) need that cookie; API requests take it instead of the token only
 with the header "X-Difftate: page" (which another site's page can't send without
 asking) and, when the browser says, the API's own Origin. Anything else gets 401.
 """
@@ -197,6 +197,7 @@ PAGE_FILES = {
     "/app.js": (os.path.join(_HERE, "web", "app.js"), "text/javascript; charset=utf-8"),
     "/diff.js": (os.path.join(_HERE, "web", "diff.js"), "text/javascript; charset=utf-8"),
     "/warnings.js": (os.path.join(_HERE, "web", "warnings.js"), "text/javascript; charset=utf-8"),
+    "/review_path.js": (os.path.join(_HERE, "web", "review_path.js"), "text/javascript; charset=utf-8"),
 }
 # The core's errors, as HTTP statuses. A bad view is the request's fault (400),
 # though the code reader says it isn't found: see a_view below.
