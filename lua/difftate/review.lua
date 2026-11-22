@@ -773,6 +773,67 @@ end
 
 -- Viewed files --------------------------------------------------------------------
 
+--- Side by side, on or off, for the file in the current window: gitsigns' diffthis against the base of the
+--- view shown (the base gitsigns.lua pointed it at, given explicitly: never typed), the old version on the left
+--- and the reviewer's file on the right, where the cursor stays. Off, from either side: the old version's window
+--- closes, the reviewer's file leaves the diff (:diffoff gives back the options diff mode set), the cursor goes back
+--- to it. gitsigns builds the split: this adds no option of its own.
+-- What diff mode (Neovim's own, through gitsigns' diffthis) changes and :diffoff never gives back, as it was
+-- before: 'scrollopt' (diff mode adds "hor") and the reviewer's window's 'foldenable' (diff mode leaves it off).
+-- Put back when the split closes, so side by side leaves nothing behind.
+local before_diff -- { scrollopt, win, foldenable }
+
+function M.toggle_side_by_side()
+  local review = open_review("compare side by side")
+  if not review then
+    return
+  end
+  if not review.signs then
+    say("gitsigns is not here: side by side needs it")
+    return
+  end
+  local here = vim.api.nvim_get_current_win()
+  local old, mine
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.wo[win].diff then
+      if vim.startswith(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)), "gitsigns://") then
+        old = win
+      elseif win == here or not mine then
+        mine = win
+      end
+    end
+  end
+  if vim.wo[here].diff then
+    if not (old and mine) then
+      say("This window is in a diff difftate didn't open: close it to use side by side")
+      return
+    end
+    vim.api.nvim_win_call(mine, function()
+      vim.cmd("diffoff")
+    end)
+    vim.api.nvim_win_close(old, true)
+    vim.api.nvim_set_current_win(mine)
+    if before_diff then
+      if vim.o.scrollopt == before_diff.scrollopt .. ",hor" then -- nobody changed it since
+        vim.o.scrollopt = before_diff.scrollopt
+      end
+      if before_diff.win == mine then
+        vim.wo[mine].foldenable = before_diff.foldenable
+      end
+      before_diff = nil
+    end
+    return
+  end
+  if not vim.b[vim.api.nvim_get_current_buf()].gitsigns_status_dict then
+    say("Open a file of the repository to compare it side by side")
+    return
+  end
+  local _, commit = gitsigns.pointed()
+  -- The index, as gitsigns names it, when the view shown compares with the index (the unstaged one)
+  before_diff = { scrollopt = vim.o.scrollopt, win = here, foldenable = vim.wo[here].foldenable }
+  require("gitsigns").diffthis(commit or ":0")
+end
+
 --- Mark the file of the current buffer viewed, or not (PUT /api/viewed), as the browser's checkbox does:
 --- the review API keeps the mark until the file's diff changes. From what it says now, so a mark made in
 --- another viewer isn't marked again blindly. A file that isn't in the changeset says so and changes nothing.

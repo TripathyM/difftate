@@ -630,7 +630,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
             "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG",
             "threads": "<leader>gP", "files": "<leader>gF", "next": "<leader>gN", "previous": "<leader>gB",
             "mode": "<leader>gM", "agent": "<leader>gH", "submit": "<leader>gU", "done": "<leader>gD", "export": "<leader>gX", "viewed": "<leader>gV", "views": "<leader>gW",
-            "browser": "<leader>gY"}})
+            "browser": "<leader>gY", "side_by_side": "<leader>gZ"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -642,7 +642,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
         self.assertEqual(after["options"], before["options"])
         self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG",
                                                                  "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rA", "n  rS", "n  rD", "n  rE", "n  rv", "n  rV",
-                                                                 "n  rB"})
+                                                                 "n  rB", "n  rd"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -2347,7 +2347,7 @@ class ReviewModeAndSubmit(NeovimHarness, unittest.TestCase):
         self.assertIsNone(nvim.gitsigns_base(), "the review isn't opened here: <leader>rB asks for nothing else")
 
     def test_the_browser_key_comes_from_opts_keys_false_maps_none_and_a_taken_one_stays_theirs(self):
-        nvim = self.nvim(opts={"keys": {"browser": "<leader>gY"}})
+        nvim = self.nvim(opts={"keys": {"browser": "<leader>gY", "side_by_side": "<leader>gZ"}})
         self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rB', 'n')"), "")
         self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>gY', 'n')"), "")
         unmapped = self.nvim(opts={"keys": {"browser": False}})
@@ -2757,9 +2757,9 @@ class ReviewDone(NeovimHarness, unittest.TestCase):
     # The key -----------------------------------------------------------------------
 
     def test_the_key_comes_from_opts_keys_and_false_maps_none(self):
-        nvim = self.nvim(opts={"keys": {"done": "<leader>rd"}})
+        nvim = self.nvim(opts={"keys": {"done": "<leader>gD"}})
         self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rD', 'n')"), "")
-        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>rd', 'n')"), "")
+        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>gD', 'n')"), "")
         unmapped = self.nvim(opts={"keys": {"done": False}})
         self.assertEqual(unmapped.lua("return vim.fn.maparg('<leader>rD', 'n')"), "")
 
@@ -3899,3 +3899,150 @@ class ChoosingTheView(NeovimHarness, unittest.TestCase):
 
         wait_for("gitsigns on the index", lambda: nvim.gitsigns_base() is None)
         self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+
+
+@needs(MISSING_GITSIGNS)
+class SideBySide(NeovimHarness, unittest.TestCase):
+    """<leader>rd: gitsigns' diffthis against the base of the view shown, on or off, for the file in the current window."""
+
+    KEY = "<leader>rd"
+
+    def open_notes(self, **kwargs):
+        """notes.py's review (ChoosingTheView's three commits and staged and unstaged edits) open, on all changes."""
+        ChoosingTheView.a_branch_of_three_commits(self)
+        self.start_watcher()
+        nvim = self.nvim(None, "notes.py", before=kwargs.pop("before", FAKE_SELECT), **kwargs)
+        self.attached(nvim)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+        wait_for("the five hunks", lambda: nvim.hunks() == [[0, 1]] + [[1, 1]] * 4)
+        return nvim
+
+    def windows(self, nvim):
+        """The windows of the tab, left to right: [{"name", "diff", "lines", "current"}]."""
+        return nvim.lua("""
+            local out = {}
+            local here = vim.api.nvim_get_current_win()
+            local wins = vim.api.nvim_tabpage_list_wins(0)
+            table.sort(wins, function(a, b) return vim.api.nvim_win_get_position(a)[2] < vim.api.nvim_win_get_position(b)[2] end)
+            for _, win in ipairs(wins) do
+              local buf = vim.api.nvim_win_get_buf(win)
+              table.insert(out, { name = vim.api.nvim_buf_get_name(buf), diff = vim.wo[win].diff,
+                                  lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false), current = win == here })
+            end
+            return out""")
+
+    def split_on(self, nvim):
+        nvim.keys(self.KEY)
+        return wait_for("the split", lambda: (lambda w: w if len(w) == 2 else None)(self.windows(nvim)))
+
+    def one_window(self, nvim):
+        return wait_for("one window", lambda: (lambda w: w if len(w) == 1 else None)(self.windows(nvim)))
+
+    def git_show(self, spec):
+        return subprocess.run(["git", "-C", self.repo, "show", spec], check=True, capture_output=True, text=True,
+                              env=self.env).stdout.splitlines()
+
+    def test_it_opens_the_base_of_all_changes_on_the_left_and_keeps_the_cursor_in_the_reviewers_file(self):
+        nvim = self.open_notes()
+        merge_base = self.head(ref="main")
+
+        left, right = self.split_on(nvim)
+
+        self.assertIn(f"{merge_base}:notes.py", left["name"])
+        self.assertEqual(left["lines"], self.git_show(f"{merge_base}:notes.py"))
+        self.assertTrue(right["name"].endswith("notes.py") and "gitsigns://" not in right["name"])
+        self.assertEqual((left["diff"], right["diff"], left["current"], right["current"]), (True, True, False, True))
+
+    def test_the_base_is_that_of_the_view_shown(self):
+        nvim = self.open_notes()
+        ChoosingTheView.choose(self, nvim, 4)  # the last commit
+        wait_for("the view", lambda: nvim.gitsigns_base() == self.head(ref="HEAD~1"))
+
+        left, _ = self.split_on(nvim)
+
+        self.assertIn(f"{self.head(ref='HEAD~1')}:notes.py", left["name"])
+        self.assertEqual(left["lines"], self.git_show("HEAD~1:notes.py"))
+
+    def test_in_the_unstaged_view_the_base_is_the_index(self):
+        nvim = self.open_notes()
+        ChoosingTheView.choose(self, nvim, 3)
+        wait_for("the index", lambda: nvim.gitsigns_base() is None and self.api("GET", "/api/view")["view"] == "unstaged")
+
+        left, _ = self.split_on(nvim)
+
+        self.assertIn(":0:notes.py", left["name"])
+        self.assertEqual(left["lines"], self.git_show(":notes.py"))
+
+    def test_the_same_key_closes_the_split_from_the_right_and_from_the_left(self):
+        nvim = self.open_notes()
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+        for side in ("right", "left"):
+            self.split_on(nvim)
+            if side == "left":
+                nvim.command("wincmd h")
+                self.assertIn("gitsigns://", nvim.lua("return vim.api.nvim_buf_get_name(0)"))
+
+            nvim.keys(self.KEY)
+
+            (only,) = self.one_window(nvim)
+            self.assertTrue(only["name"].endswith("notes.py") and only["current"] and not only["diff"], side)
+            self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before, side)
+        self.assertEqual(nvim.lua("return vim.api.nvim_get_current_win()"), window)
+
+    def test_a_thread_key_works_in_the_reviewers_file_while_the_split_is_on(self):
+        nvim = self.open_notes()
+        self.batched()
+        self.open_thread("Why delete line 4?", file="notes.py", line=7)
+        self.drawn(nvim)
+        self.split_on(nvim)
+        nvim.command("7")
+
+        nvim.keys("<leader>rt")
+
+        wait_for("the float", lambda: nvim.float_lines())
+        self.assertIn("Why delete line 4?", "\n".join(nvim.float_lines()))
+        nvim.keys("q")
+        self.assertTrue(nvim.threads())
+
+    def test_with_no_review_open_it_says_so_and_opens_no_split(self):
+        ChoosingTheView.a_branch_of_three_commits(self)
+        self.start_watcher()
+        nvim = self.nvim(None, "notes.py")
+        self.attached(nvim)
+
+        nvim.keys(self.KEY)
+
+        self.assertIn("No review is open: open it to compare side by side", nvim.messages())
+        self.assertEqual(len(self.windows(nvim)), 1)
+
+    def test_a_buffer_gitsigns_has_not_attached_to_is_refused_and_opens_no_split(self):
+        nvim = self.open_notes()
+        nvim.command("enew")
+
+        nvim.keys(self.KEY)
+
+        self.assertIn("Open a file of the repository to compare it side by side", nvim.messages())
+        self.assertEqual(len(self.windows(nvim)), 1)
+
+    def test_without_gitsigns_it_says_so(self):
+        ChoosingTheView.a_branch_of_three_commits(self)
+        self.start_watcher()
+        nvim = self.nvim(None, "notes.py", gitsigns=False)
+        nvim.command("DifftateOpen")
+        wait_for("the review to open", lambda: nvim.status() != "")
+
+        nvim.keys(self.KEY)
+
+        self.assertIn("gitsigns is not here: side by side needs it", nvim.messages())
+        self.assertEqual(len(self.windows(nvim)), 1)
+
+    def test_the_key_is_free_in_lazyvim_core_and_can_be_changed_or_turned_off(self):
+        nvim = self.nvim(opts={"keys": {"side_by_side": "<leader>gZ"}})
+        self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rd', 'n')"), "")
+        self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>gZ', 'n')"), "")
+        off = self.nvim(opts={"keys": {"side_by_side": False}})
+        self.assertEqual(off.lua("return vim.fn.maparg('<leader>rd', 'n')"), "")
+        taken = self.nvim(before="vim.keymap.set('n', '<leader>rd', '<cmd>echo \"also\"<cr>', { desc = 'Also' })")
+        self.assertIn("<leader>rd is already mapped (Also): set opts.keys.side_by_side to another key", taken.messages())

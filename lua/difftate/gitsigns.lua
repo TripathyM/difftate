@@ -7,6 +7,7 @@
 local M = {}
 
 local before -- { base = gitsigns' base before the review } while the review changed it
+local pointed -- { commit } while the review points gitsigns at <commit> (nil: the index)
 
 local function gitsigns()
   local ok, gs = pcall(require, "gitsigns")
@@ -30,7 +31,17 @@ function M.point_at(commit)
     before = { base = base_now() }
   end
   gs.change_base(commit, true)
+  pointed = { commit = commit }
   return true
+end
+
+--- Where the review points gitsigns now: true and the commit (nil for the index), or false when it
+--- points nowhere (no review, or no gitsigns). The base of the view shown, for the side by side view.
+function M.pointed()
+  if not pointed then
+    return false
+  end
+  return true, pointed.commit
 end
 
 --- Put gitsigns' base back as it was before point_at, when it changed it: that
@@ -40,7 +51,7 @@ function M.restore()
     return nil
   end
   local base = before.base
-  before = nil
+  before, pointed = nil, nil
   local gs = gitsigns()
   if gs then
     gs.change_base(base, true) -- no base: gitsigns' reset_base, the index
