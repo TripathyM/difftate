@@ -28,6 +28,12 @@ exit 0
 """
 
 
+FAKE_HC = """#!/bin/sh
+echo "$@" >> "$FAKE_HERDR_CALLS"
+[ "$1" = get ] && [ "$3" = --json ] && cat "$FAKE_HC_DIR/$2.json"
+"""
+
+
 class HerdrFake:
     def __init__(self, test):
         self.dir = tempfile.mkdtemp(prefix="difftate-viewers-")
@@ -38,7 +44,14 @@ class HerdrFake:
         os.chmod(self.binary, os.stat(self.binary).st_mode | stat.S_IXUSR)
         self.calls_file = os.path.join(self.dir, "calls")
         self.tabs_file = os.path.join(self.dir, "tabs.json")
-        env = {"DT_HERDR": self.binary, "FAKE_HERDR_CALLS": self.calls_file, "FAKE_HERDR_TABS": self.tabs_file}
+        self.hc = os.path.join(self.dir, "hc")
+        with open(self.hc, "w") as f:
+            f.write(FAKE_HC)
+        os.chmod(self.hc, os.stat(self.hc).st_mode | stat.S_IXUSR)
+        self.hc_dir = os.path.join(self.dir, "terminals")
+        os.mkdir(self.hc_dir)
+        env = {"DT_HERDR": self.binary, "DT_HC": self.hc, "FAKE_HC_DIR": self.hc_dir,
+               "FAKE_HERDR_CALLS": self.calls_file, "FAKE_HERDR_TABS": self.tabs_file}
         patch = mock.patch.dict(os.environ, env)
         patch.start()
         test.addCleanup(patch.stop)
@@ -49,13 +62,26 @@ class HerdrFake:
         with open(self.tabs_file, "w") as f:
             json.dump({"spaces": [{"id": "space-1", "tabs": tabs}]}, f)
 
+    def review_tab(self, name, *foregrounds):
+        """Herdr runs a tab <name> in space-1 with one terminal for each of <foregrounds>: the program in
+        the terminal's foreground (its argv[0]), as `hc get` reports it."""
+        terminals = []
+        for i, program in enumerate(foregrounds):
+            terminals.append({"terminal": f"t{i}", "app": None})
+            with open(os.path.join(self.hc_dir, f"t{i}.json"), "w") as f:
+                json.dump({"address": f"t{i}", "foreground": {"argv": [program, "-li"], "name": os.path.basename(program)}}, f)
+        with open(self.tabs_file, "w") as f:
+            json.dump({"spaces": [{"id": "space-1", "tabs": [
+                {"id": "tab-0", "name": "1", "terminals": []},
+                {"id": "tab-1", "name": name, "terminals": terminals}]}]}, f)
+
     def calls(self):
         try:
             with open(self.calls_file) as f:
                 lines = f.read().splitlines()
         except FileNotFoundError:
             return []
-        return [line.split(" ", 2) for line in lines if not line.startswith("ls")]
+        return [line.split(" ", 2) for line in lines if line.startswith("do ")]
 
 
 class ViewersTest(unittest.TestCase):
@@ -90,6 +116,69 @@ class ViewersTest(unittest.TestCase):
         self.assertTrue(opened)
         [[do, verb, args]] = self.herdr.calls()
         self.assertEqual((do, verb, json.loads(args)), ("do", "tab.select", {"id": "tab-1"}))
+
+    def test_a_review_tab_where_nvim_runs_is_only_switched_to(self):
+        self.herdr.review_tab(self.name, "/opt/homebrew/bin/nvim")
+
+        self.open_nvim()
+
+        [[do, verb, args]] = self.herdr.calls()
+        self.assertEqual((verb, json.loads(args)), ("tab.select", {"id": "tab-1"}))
+
+    def test_a_review_tab_whose_nvim_has_quit_is_opened_again_then_the_old_one_closed(self):
+        self.herdr.review_tab(self.name, "/bin/zsh")
+
+        opened, said = self.open_nvim()
+
+        self.assertTrue(opened)
+        [new, close] = self.herdr.calls()
+        self.assertEqual(new[1], "tab.new")
+        self.assertEqual(json.loads(new[2]), {"name": self.name, "folder": self.root, "space": "space-1",
+                                              "argv": ["nvim", "+DifftateOpen"]})
+        self.assertEqual((close[1], json.loads(close[2])), ("tab.close", {"id": "tab-1", "confirmed": True}))
+        self.assertIn(self.name, said)
+
+    def test_a_login_shell_with_a_dash_counts_as_a_shell(self):
+        self.herdr.review_tab(self.name, "-zsh")
+
+        self.open_nvim()
+
+        self.assertEqual([c[1] for c in self.herdr.calls()], ["tab.new", "tab.close"])
+
+    def test_the_old_tab_stays_when_the_new_one_will_not_open(self):
+        self.herdr.review_tab(self.name, "/bin/zsh")
+        with open(self.herdr.binary, "w") as f:
+            f.write("#!/bin/sh\n[ \"$1\" = ls ] && cat \"$FAKE_HERDR_TABS\" && exit 0\necho \"$@\" >> \"$FAKE_HERDR_CALLS\"\n"
+                    "[ \"$2\" = tab.select ]\n")
+
+        self.open_nvim()
+
+        self.assertEqual([c[1] for c in self.herdr.calls()], ["tab.new", "tab.select"])
+
+    def test_a_review_tab_running_something_else_than_a_shell_is_not_closed(self):
+        self.herdr.review_tab(self.name, "/bin/zsh", "/usr/bin/python3")
+
+        self.open_nvim()
+
+        [[do, verb, _]] = self.herdr.calls()
+        self.assertEqual(verb, "tab.select")
+
+    def test_when_hc_cannot_say_what_runs_the_tab_is_only_switched_to(self):
+        self.herdr.review_tab(self.name, "/bin/zsh")
+        os.remove(os.path.join(self.herdr.hc_dir, "t0.json"))
+
+        self.open_nvim()
+
+        self.assertEqual([c[1] for c in self.herdr.calls()], ["tab.select"])
+
+    def test_with_no_hc_the_tab_is_only_switched_to(self):
+        self.herdr.review_tab(self.name, "/bin/zsh")
+
+        with mock.patch.dict(os.environ, {"DT_HC": os.path.join(self.herdr.dir, "none")}), \
+                mock.patch("shutil.which", return_value=None):
+            self.open_nvim()
+
+        self.assertEqual([c[1] for c in self.herdr.calls()], ["tab.select"])
 
     def test_in_herdr_a_tab_that_will_not_open_prints_the_command_and_does_not_fall_back(self):
         self.herdr.running("1")
