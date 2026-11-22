@@ -14,7 +14,7 @@ local done = require("difftate.done")
 local export = require("difftate.export")
 local nav = require("difftate.nav")
 local pick = require("difftate.pick")
-local review_path = require("difftate.path")
+local review_path = require("difftate.review_path")
 local threads = require("difftate.threads")
 local view = require("difftate.view")
 
@@ -1000,11 +1000,11 @@ function M.pick_thread()
   end)
 end
 
--- The review path the coding agent wrote in the review's folder: on_path(path), nil when there is
--- none, or when the watcher can't say (one older than the review path): the picker is then as before
-local function the_review_path(review, on_path)
+-- The review path the coding agent wrote in the review's folder: on_written(written), nil when there
+-- is none, or when the watcher can't say (one older than the review path): the picker is then as before
+local function written_path(review, on_written)
   api.request(review.watcher, "GET", "/api/review-path", function(answer)
-    on_path(answer and answer.path or nil)
+    on_written(answer and answer.path or nil)
   end)
 end
 
@@ -1027,7 +1027,7 @@ function M.pick_file()
     for _, path in ipairs(answer.files or {}) do
       viewed[path] = true
     end
-    the_review_path(review, function(path)
+    written_path(review, function(written)
       if current ~= review then
         return
       end
@@ -1036,9 +1036,8 @@ function M.pick_file()
           say("No changed files in this review")
           return
         end
-        local entries = path and review_path.entries(path, files, viewed) or vim.tbl_map(function(file)
-          return { text = nav.file_row(file, viewed[file.path]), value = file }
-        end, files)
+        -- No review path: no stops, every file in the changeset's order, as before there was one
+        local entries = review_path.entries(written or {}, files, viewed)
         pick.choose(entries, "Changed files", function(file)
           if current ~= review then
             return

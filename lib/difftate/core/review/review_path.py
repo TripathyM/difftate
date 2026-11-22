@@ -20,12 +20,12 @@ from typing import Collection, List, Optional, Tuple
 
 # ## 1 `src/app.py:10-48,90-120` ★
 STOP = re.compile(r"^## +(\d+(?:\.\d+)*) +`([^`]+)`(?: +★)? *$")
-LINE_RANGES = re.compile(r":\d+-\d+(?:,\d+-\d+)*$")
+LINE_RANGES = re.compile(r":\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$")
 SIDE_FILE = re.compile(r"^### +Side file:")
 SKIPPED = re.compile(r"^## +Skipped *$")
 # - `package-lock.json` — lockfile only
 SKIPPED_FILE = re.compile(r"^[-*] +`([^`]+)`(?: *[—–-]+ *(.*))?$")
-FENCE = re.compile(r"^ {0,3}(```|~~~)")
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 
 @dataclass(frozen=True)
@@ -74,11 +74,17 @@ def _headings(text: str) -> List[Tuple[Optional[str], str]]:
         end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
         if end is not None:
             lines = lines[end + 1:]
-    out, fenced = [], False
+    out: List[Tuple[Optional[str], str]] = []
+    fence = ""  # the fence of the code block the line is in ("" outside one)
     for line in lines:
-        if FENCE.match(line):
-            fenced = not fenced
-        heading = line if not fenced and re.match(r"^#{1,6} ", line) else None
+        found = FENCE.match(line)
+        if found and not fence:
+            fence = found[1]
+        elif found and found[1][0] == fence[0] and len(found[1]) >= len(fence) and not line.strip()[len(found[1]):]:
+            fence = ""  # as CommonMark: closed by the same character, at least as many, nothing after
+            out.append((None, line))
+            continue
+        heading = line if not fence and re.match(r"^#{1,6} ", line) else None
         out.append((heading, line))
     return out
 

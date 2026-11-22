@@ -14,21 +14,21 @@ local function stop_row(stop)
 end
 
 --- The entries of the changed files picker ({ { text, value } }, value a file of
---- nav.files) for the review path <path> (the "path" of GET /api/review-path) over the
+--- nav.files) for the review path <written> (the "path" of GET /api/review-path) over the
 --- changeset's <files>, <viewed> { [path] = true }: a row per stop in reading order,
 --- then the changed files the path doesn't name, in the changeset's order. A file the
 --- path skips on purpose is left out.
-function M.entries(path, files, viewed)
+function M.entries(written, files, viewed)
   local by_path, named = {}, {}
   for _, file in ipairs(files) do
     by_path[file.path] = file
   end
   local entries = {}
-  for _, stop in ipairs(path.stops or {}) do
+  for _, stop in ipairs(written.stops or {}) do
     named[stop.file] = true
     table.insert(entries, { text = stop_row(stop), value = by_path[stop.file] or { path = stop.file } })
   end
-  for _, skipped in ipairs(path.skipped or {}) do
+  for _, skipped in ipairs(written.skipped or {}) do
     named[skipped.file] = true
   end
   for _, file in ipairs(files) do

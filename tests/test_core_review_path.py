@@ -117,6 +117,15 @@ class ReadingTheReviewPath(unittest.TestCase):
         self.assertEqual(path.stops, (Stop("1", "app.py", (Question("What does it print?",
                                                                      "```\n## 2 `not-a-stop.py`\n```"),)),))
 
+    def test_a_code_block_ends_only_at_a_fence_like_the_one_that_opened_it(self):
+        path = self.read("## 1 `app.py`\n\n### What does it print?\n~~~~\n```\n## 2 `inside.py`\n~~~~\n\n"
+                         "## 2 `lib.py`\n\n### And this?\nA helper.\n")
+
+        self.assertEqual([s.file for s in path.stops], ["app.py", "lib.py"])
+
+    def test_one_line_ranges_are_line_ranges_too(self):
+        self.assertEqual(self.read("## 1 `app.py:42,50-60`\n\n### Why?\nBecause.\n").stops[0].file, "app.py")
+
     def test_a_file_whose_name_has_a_colon_keeps_it_when_no_line_ranges_follow(self):
         path = self.read("## 1 `docs/time:zones.md`\n\n### Why?\nBecause.\n")
 
