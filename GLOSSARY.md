@@ -181,4 +181,4 @@ _Avoid_: UI, frontend, client
 
 **Neovim viewer**:
 The viewer inside the reviewer's own Neovim: the review's threads shown on the real files, which the reviewer reads, edits and moves through with their own editor.
-_Avoid_: Review tab (the Herdr tab of that name runs the Neovim viewer), nvim plugin
+_Avoid_: Review tab (a tab is the board's idea, not difftate's: difftate opens no host), nvim plugin
