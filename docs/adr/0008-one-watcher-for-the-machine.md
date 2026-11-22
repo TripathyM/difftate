@@ -24,5 +24,5 @@ Decided while grilling #146 (2026-11-21).
 - The watcher's messages go to a log file (`difftate log`). A warning about a review also shows in that review's viewers.
 - Runs may not read the one token, as they may not read the folder tokens now.
 - The Herdr viewer is deleted, not changed to find the one watcher (amends ADR 0007). `--open` takes `browser`, `nvim` or `both`.
-- The review board's `o` runs `difftate --base <base> --open nvim` in the review's folder. It no longer starts a watcher in a tab of its own or checks the watcher's base.
+- The review board's `o` runs `difftate --base <base> --open nvim` in the review's folder. It no longer starts a watcher in a tab of its own or checks the watcher's base. (Amended 2026-11-22 by ADR 0009: the board opens the Review tab itself, in a Reviews space, and the tab runs that command.)
 - This replaces ADR 0005's consequence of one watcher for each checked-out folder.
