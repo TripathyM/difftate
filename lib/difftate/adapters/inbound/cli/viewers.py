@@ -10,6 +10,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 
 BROWSER = "browser"
 BOTH = "both"
@@ -128,21 +129,46 @@ def _nvim_in_herdr(root):
 NVIM_HOSTS = (_nvim_in_herdr,)
 
 
+def _has_terminal():
+    """True when difftate runs in a terminal: stdin and stdout both ttys. (A seam: tests fake it.)"""
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _print_nvim_command(root):
+    print(f"  Neovim: no host to open it in; run: cd {shlex.quote(root)} && {shlex.join(NVIM_COMMAND)}")
+
+
+def _exec_nvim(root):
+    """Replace this process with nvim +DifftateOpen, run in <root>. Returns only when that fails
+    (then the command is printed). (A seam: tests fake it.)"""
+    try:
+        os.chdir(root)
+        sys.stdout.flush()
+        os.execvp(NVIM_COMMAND[0], NVIM_COMMAND)
+    except OSError:
+        _print_nvim_command(root)
+
+
 def open_in_nvim(url, root):
-    """The Neovim viewer: nvim with the review open, in the first host that
-    takes it; with none, the command to run is printed. Always True: a host that
-    is missing is no reason to open the browser."""
-    if not any(host(root) for host in NVIM_HOSTS):
-        print(f"  Neovim: no host to open it in; run: cd {shlex.quote(root)} && {shlex.join(NVIM_COMMAND)}")
+    """The Neovim viewer. With a terminal: nvim here, in <root>, replacing this process (Herdr is
+    never called). With none: nvim in the first host that takes it; with none, the command to run
+    is printed. Always True: a host that is missing is no reason to open the browser."""
+    if _has_terminal():
+        _exec_nvim(root)
+    elif not any(host(root) for host in NVIM_HOSTS):
+        _print_nvim_command(root)
     return True
 
 
 def open_review(viewers, where, url, root):
     """Open the review in the viewer named <where> (one of <viewers>, or both:
-    each of them, the browser last). A viewer that can't be reached falls back
+    each of them, the browser first: Neovim may replace this process). A viewer that can't be reached falls back
     to the browser."""
     if where == BOTH:
-        for name in sorted(viewers, key=lambda name: name == BROWSER):
+        for name in sorted(viewers, key=lambda name: name != BROWSER):
             viewers[name](url, root)
     elif not viewers[where](url, root) and where != BROWSER and BROWSER in viewers:
         print("  Falling back to the browser")
