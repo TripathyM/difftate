@@ -116,19 +116,33 @@ class ViewersTest(unittest.TestCase):
         self.assertFalse(os.path.exists(self.herdr.calls_file), "not even `herdr-app ls`")
 
     def test_the_exec_runs_nvim_with_difftateopen_in_the_root(self):
-        with mock.patch("os.chdir") as chdir, mock.patch("os.execvp") as execvp:
+        with mock.patch("shutil.which", return_value="/bin/nvim"), mock.patch("os.chdir") as chdir, \
+                mock.patch("os.execvp") as execvp:
             viewers._exec_nvim(self.root)
 
         chdir.assert_called_once_with(self.root)
         execvp.assert_called_once_with("nvim", ["nvim", "+DifftateOpen"])
 
-    def test_when_nvim_cannot_be_run_the_command_is_printed_and_nothing_else_opens(self):
-        with mock.patch("os.chdir"), mock.patch("os.execvp", side_effect=FileNotFoundError):
-            opened, said, _ = self.open_nvim_in_terminal(viewers._exec_nvim)
+    def test_with_no_nvim_on_path_it_is_a_clear_error_and_exit_1(self):
+        err = io.StringIO()
+        with mock.patch("shutil.which", return_value=None), mock.patch("os.execvp") as execvp, \
+                mock.patch("sys.stderr", err), self.assertRaises(SystemExit) as raised:
+            self.open_nvim_in_terminal(viewers._exec_nvim)
 
-        self.assertTrue(opened)
-        self.assertIn(f"cd {self.root} && nvim +DifftateOpen", said)
+        self.assertEqual(raised.exception.code, 1)
+        self.assertEqual(err.getvalue().strip(), "difftate: nvim not found on PATH")
+        execvp.assert_not_called()
         self.assertEqual(self.herdr.calls(), [])
+
+    def test_an_exec_that_fails_is_the_same_error_and_exit_1(self):
+        err = io.StringIO()
+        with mock.patch("shutil.which", return_value="/bin/nvim"), mock.patch("os.chdir"), \
+                mock.patch("os.execvp", side_effect=OSError), mock.patch("sys.stderr", err), \
+                self.assertRaises(SystemExit) as raised:
+            viewers._exec_nvim(self.root)
+
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn("difftate: nvim", err.getvalue())
 
     def test_the_terminal_check_needs_stdin_and_stdout_both_ttys(self):
         for stdin, stdout, expected in ((True, True, True), (True, False, False), (False, True, False)):

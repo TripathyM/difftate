@@ -142,14 +142,21 @@ def _print_nvim_command(root):
 
 
 def _exec_nvim(root):
-    """Replace this process with nvim +DifftateOpen, run in <root>. Returns only when that fails
-    (then the command is printed). (A seam: tests fake it.)"""
+    """Replace this process with nvim +DifftateOpen, run in <root>. With no nvim on PATH (or an
+    exec that fails): an error on stderr and exit 1. (A seam: tests fake it.)"""
+    if not shutil.which(NVIM_COMMAND[0]):
+        _no_nvim()
     try:
         os.chdir(root)
         sys.stdout.flush()
         os.execvp(NVIM_COMMAND[0], NVIM_COMMAND)
     except OSError:
-        _print_nvim_command(root)
+        _no_nvim()
+
+
+def _no_nvim():
+    print("difftate: nvim not found on PATH", file=sys.stderr)
+    sys.exit(1)
 
 
 def open_in_nvim(url, root):
