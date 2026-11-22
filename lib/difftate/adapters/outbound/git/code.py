@@ -41,6 +41,7 @@ from .diff_hashes import blob_ids, diff_hashes, paths
 
 BLOB_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")  # a full object id (SHA-1 or SHA-256)
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
+REVIEW_PATH = "review-path.md"  # the review path, at the top of the checked-out folder
 SNAPSHOT_REFS = "refs/difftate/"  # + a review's id: the ref that keeps its snapshots
 # How long the diff of all changes read for a changeset serves its diff hashes
 # too: a viewer's poll asks for both within it (the Neovim viewer's poll, lua/difftate/init.lua)
@@ -253,6 +254,16 @@ class GitCodeReader:
         if code != 0:
             raise CouldNotRead("could not read the review's commits")
         return [m.strip() for m in out.split("\0") if m.strip()]
+
+    # ── The review path ──────────────────────────────────────────────────────
+    def review_path_text(self) -> Optional[str]:
+        try:
+            with open(os.path.join(self.top, REVIEW_PATH), encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except (FileNotFoundError, IsADirectoryError, NotADirectoryError):
+            return None
+        except OSError as e:
+            raise CouldNotRead(f"could not read {REVIEW_PATH}: {e.strerror or e}")
 
     def changeset(self, view: str) -> Changeset:
         started = time.time_ns()

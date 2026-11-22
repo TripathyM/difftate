@@ -91,3 +91,11 @@ class ForReadingTheCode(Protocol):
         there are none: no commit yet, or a review on the base branch itself.
         Raises the core's CouldNotRead when they can't be read."""
         ...
+
+    # ── The review path ──────────────────────────────────────────────────────
+    def review_path_text(self) -> Optional[str]:
+        """The text of review-path.md at the top of the checked-out folder, as
+        it is now (the coding agent writes it there, outside the changeset);
+        None when there is no such file. Read each time it is asked. Raises the
+        core's CouldNotRead when it is there but can't be read."""
+        ...

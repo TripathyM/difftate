@@ -51,6 +51,10 @@ class CodeReaderContract:
         """Check out "other", with the same files."""
         raise NotImplementedError
 
+    def write_review_path(self, text):
+        """Write review-path.md in the checked-out folder, as the coding agent does."""
+        raise NotImplementedError
+
     def collect_garbage(self):
         """What git gc --prune=now does: lose every file nothing keeps."""
         raise NotImplementedError
@@ -226,6 +230,18 @@ class CodeReaderContract:
             "Spell out three",
         ])
 
+    # ── The review path ──────────────────────────────────────────────────────
+    def test_with_no_review_path_md_there_is_no_review_path_text(self):
+        self.assertIsNone(self.code.review_path_text())
+
+    def test_the_review_path_text_is_the_file_as_it_is_each_time_it_is_asked(self):
+        self.write_review_path("## 1 `app.py`\n")
+        self.assertEqual(self.code.review_path_text(), "## 1 `app.py`\n")
+
+        self.write_review_path("## 1 `long.py`\n")
+
+        self.assertEqual(self.code.review_path_text(), "## 1 `long.py`\n")
+
 
 class TheFakeCodeReader(CodeReaderContract, unittest.TestCase):
     def setUp(self):
@@ -244,6 +260,9 @@ class TheFakeCodeReader(CodeReaderContract, unittest.TestCase):
 
     def check_out_another_branch(self):
         self.code.checked_out = False
+
+    def write_review_path(self, text):
+        self.code.review_path = text
 
     def collect_garbage(self):
         self.code.collect_garbage()
@@ -296,6 +315,9 @@ class InAGitRepository:
     def check_out_another_branch(self):
         self.git("checkout", "-q", "-b", "other")
 
+    def write_review_path(self, text):
+        self.write("review-path.md", text)
+
     def collect_garbage(self):
         self.git("gc", "-q", "--prune=now")
 
@@ -305,6 +327,15 @@ class InAGitRepository:
 
 
 class TheGitAdapter(InAGitRepository, CodeReaderContract, unittest.TestCase):
+    def test_the_review_path_is_read_at_the_top_of_the_checked_out_folder(self):
+        os.makedirs(os.path.join(self.repo, "sub"))
+        self.write("sub/review-path.md", "## 1 `long.py`\n")
+        self.write_review_path("## 1 `app.py`\n")
+
+        code = GitCodeReader(os.path.join(self.repo, "sub"), "main", "feature", REVIEW)
+
+        self.assertEqual(code.review_path_text(), "## 1 `app.py`\n")
+
     def test_the_head_commit_is_the_branchs_commit_even_when_another_branch_has_moved_on(self):
         self.commit("on feature")
         feature = self.output("rev-parse", "feature")

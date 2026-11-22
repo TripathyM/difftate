@@ -1747,6 +1747,64 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         nvim.pick(2)
         self.settle(nvim, ["util.py", 1])
 
+    def a_review_path(self, text):
+        """review-path.md in the folder, kept out of the changeset as the "write a review path" skill does."""
+        exclude = os.path.join(self.repo, ".git", "info", "exclude")
+        os.makedirs(os.path.dirname(exclude), exist_ok=True)
+        with open(exclude, "a") as f:
+            f.write("review-path.md\n")
+        self.write("review-path.md", text)
+
+    def test_leader_rf_follows_the_review_path_with_each_stops_first_question_then_the_other_files(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        self.a_review_path("---\nbranch: feature\ncreatedAt: 2026-11-22T06:10:00Z\n---\n\n"
+                           "## 1 `util.py:1-2` ★\n\n### What does shout do?\nUpper-cases.\n\n"
+                           "### Why a helper?\nTwo callers.\n")
+        self.api("PUT", "/api/viewed", {"file": "util.py"})
+
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["title"], "Changed files")
+        self.assertEqual(nvim.menu()["lines"], ["✓ 1 util.py · What does shout do?", "  app.py  +1 −1"])
+        nvim.pick(1)
+        self.settle(nvim, ["util.py", 1])
+
+    def test_a_rewritten_review_path_shows_on_the_next_leader_rf_and_skipped_files_are_left_out(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        self.a_review_path("## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n")
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.lua("T.menu = nil")
+
+        self.write("review-path.md", "## 1 `app.py`\n\n### Why the f-string?\nIt reads better.\n\n"
+                                     "## 2 `util.py`\n\n### Who calls it?\napp.py.\n")
+        nvim.keys("<leader>rf")
+
+        wait_for("the new path", lambda: (nvim.menu() or {}).get("lines") == [
+            "  1 app.py · Why the f-string?", "  2 util.py · Who calls it?"])
+        nvim.lua("T.menu = nil")
+        self.write("review-path.md", "## 1 `util.py`\n\n### Who calls it?\napp.py.\n\n"
+                                     "## Skipped\n- `app.py` — one line, reviewed before\n")
+        nvim.keys("<leader>rf")
+        wait_for("the skipped file left out", lambda: (nvim.menu() or {}).get("lines") == [
+            "  1 util.py · Who calls it?"])
+
+    def test_following_the_review_path_changes_no_option_or_key_of_the_reviewers_window_or_buffer(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        self.a_review_path("## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n")
+        nvim.command("1")
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.pick(1)
+        self.settle(nvim, ["util.py", 1])
+        nvim.command("buffer app.py")
+
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+
     def test_a_deleted_file_is_listed_and_says_it_has_nothing_to_open(self):
         os.remove(os.path.join(self.repo, "app.py"))
         self.write("util.py", "x = 1\n")
