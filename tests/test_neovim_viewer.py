@@ -1866,7 +1866,7 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         self.write("review-path.md", "## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n")
         nvim.keys("<leader>rf")
         wait_for("the path again", lambda: (nvim.menu() or {}).get("lines") == [
-            "  1 util.py · What does shout do?", "  app.py  +1 −1"])
+            "  1 util.py · What does shout do?", "Not on the path", "  └─ app.py  +1 −1"])
         self.assertEqual(self.api("GET", "/api/review")["warnings"], [], "a fixed file clears the warning")
         self.assertEqual(nvim.lua("return T.snapshot()"), before, "the warning changed no option or key")
 
