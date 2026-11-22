@@ -3,7 +3,7 @@ at the commit the branch is at (GLOSSARY.md, Done)."""
 from __future__ import annotations
 
 from ...changes.ports import ForReadingTheCode
-from ..model import DoneStatus, Review, lasting
+from ..model import CouldNotRead, DoneStatus, Review, lasting
 from ..ports import ForKeepingTheReview, ForRecordingReviewHistory
 
 
@@ -15,10 +15,23 @@ def set_done(store: ForKeepingTheReview, code: ForReadingTheCode, history: ForRe
     asked. Raises NotAllowed for anyone but a reviewer, Conflict when marking
     while another branch is checked out, and CouldNotRead when there is no
     commit to be Done at (marking) or the mark can't be kept; nothing is kept
-    then."""
+    then. A Done keeps the text of review-path.md as it is then (none, with no
+    file)."""
     review = Review.from_events(store.load())
     head = code.head_commit()
-    events = review.mark_done(author, head, code.on_branch()) if done else review.undo_done(author, head)
+    if done:
+        events = review.mark_done(author, head, code.on_branch(), _review_path_now(code))
+    else:
+        events = review.undo_done(author, head)
     store.append(lasting(events))
     history.record(lasting(events))
     return review.done_status(head)
+
+
+def _review_path_now(code: ForReadingTheCode):
+    """The review path's text, or None: a path that can't be read never stops
+    a review from being Done."""
+    try:
+        return code.review_path_text()
+    except CouldNotRead:
+        return None

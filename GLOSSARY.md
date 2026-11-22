@@ -41,7 +41,7 @@ The reviewer sends a batched review's held threads to the coding agent, as one r
 _Avoid_: publish, send, finish
 
 **Done**:
-A reviewer has finished a review at one commit, whether they went through the code or skipped it. A new commit on the branch, or the reviewer undoing it, makes the review not done again. Only a reviewer marks it.
+A reviewer has finished a review at one commit, whether they went through the code or skipped it. A new commit on the branch, or the reviewer undoing it, makes the review not done again. Only a reviewer marks it. Each Done keeps the text of the review path as it was then (none, with no file) in the review and its review history.
 _Avoid_: approved (it gates nothing), finished, closed, reviewed
 
 **Thread**:

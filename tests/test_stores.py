@@ -38,7 +38,7 @@ WORK = [RunStarted("run-1", (T1, T2), ("c1", "c2"), {T1: (), T2: ("r0",)}, TIME)
         NoteWritten(T1, NOTE, final=True), CommentAdded(T1, REPLY), RunEnded("run-1", "done", TIME),
         ThreadStatusChanged(T2, "resolved", TIME), ThreadMoved(T1, 5, 6, "b" * 40, TIME),
         ThreadOutdated(T1, TIME), FileViewed("app.py", "c" * 40, TIME), FileViewed("app.py", None, TIME),
-        DoneMarked("d" * 40, TIME), DoneUndone("d" * 40, TIME), DoneMarked("d" * 40, TIME),
+        DoneMarked("d" * 40, TIME), DoneUndone("d" * 40, TIME), DoneMarked("d" * 40, TIME, "## 1. app.py\n### Why?\nBecause \u2728\n"),
         DoneCleared("e" * 40, TIME), ModeChanged("batched", TIME), ReviewSubmitted((T1, T2), TIME), ModeChanged("live", TIME),
         AgentOverridden("work", TIME), AgentOverridden("", TIME)]
 # A reviewer name on comments and status changes, beside ones with none
