@@ -755,8 +755,8 @@ class TheReviewPathRoute(ServedOnFakes, unittest.TestCase):
         self.assertEqual(self.ask("GET", "/api/review-path"), (200, {"path": None}))
 
     def test_it_answers_the_stops_in_order_with_their_questions_and_viewed_marks(self):
-        self.serve(code=FakeCode({"app.py": "x = 2\n", "lib.py": "y = 1\n"}, base={"app.py": "x = 1\n"},
-                                 review_path=self.PATH))
+        self.serve(code=FakeCode({"app.py": "x = 2\n", "lib.py": "y = 1\n", "uv.lock": "z\n"},
+                                 base={"app.py": "x = 1\n"}, review_path=self.PATH))
         self.ask("PUT", "/api/viewed", {"file": "app.py"})
 
         self.assertEqual(self.ask("GET", "/api/review-path"), (200, {"path": {"stops": [
@@ -768,13 +768,44 @@ class TheReviewPathRoute(ServedOnFakes, unittest.TestCase):
         ], "skipped": [{"file": "uv.lock", "reason": "lockfile only"}]}}))
 
     def test_a_rewritten_file_shows_on_the_next_request(self):
-        code = FakeCode({"app.py": "x = 1\n"}, review_path=self.PATH)
+        code = FakeCode({"app.py": "x = 1\n", "lib.py": "y = 1\n", "uv.lock": "z\n"}, base={},
+                        review_path=self.PATH)
         self.serve(code=code)
         self.ask("GET", "/api/review-path")
 
         code.review_path = "## 1 `app.py`\n\n### Only this?\nYes.\n"
 
         self.assertEqual([s["file"] for s in self.ask("GET", "/api/review-path")[1]["path"]["stops"]], ["app.py"])
+
+    BROKEN = "## 1 `app.py`\n\n### Why?\nBecause.\n\n## 2 `gone.py`\n\n### Why?\nBecause.\n"
+
+    def test_a_broken_file_is_no_path_and_a_warning_about_the_review_until_it_is_fixed(self):
+        code = FakeCode({"app.py": "x = 1\n"}, base={}, review_path=self.BROKEN)
+        self.serve(code=code)
+
+        self.assertEqual(self.ask("GET", "/api/review-path"), (200, {"path": None}))
+        warnings = self.ask("GET", "/api/review")[1]["warnings"]
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("gone.py", warnings[0]["text"])
+        self.assertIn("review-path.md", warnings[0]["text"])
+        self.assertEqual(self.ask("GET", "/api/review")[1]["warnings"][0]["id"], warnings[0]["id"],
+                         "the same id while it stays broken the same way: a viewer shows it once")
+        code.review_path = "## 1 `app.py`\n\n### Why?\nBecause.\n"
+        self.assertEqual(self.ask("GET", "/api/review")[1]["warnings"], [])
+        self.assertEqual(len(self.ask("GET", "/api/review-path")[1]["path"]["stops"]), 1)
+
+    def test_another_problem_is_another_warning_and_it_comes_after_the_others(self):
+        code = FakeCode({"app.py": "x = 1\n"}, base={}, review_path=self.BROKEN)
+        self.serve(code=code)
+        self.warnings.append({"id": "w1", "time": "2026-01-02T03:04:05+00:00", "text": "the store was restored"})
+        first = self.ask("GET", "/api/review")[1]["warnings"]
+        code.review_path = "## Oops\n"
+
+        second = self.ask("GET", "/api/review")[1]["warnings"]
+
+        self.assertEqual([w["id"] for w in first][0], "w1")
+        self.assertEqual(len(second), 2)
+        self.assertNotEqual(first[1]["id"], second[1]["id"])
 
     def test_it_needs_the_token(self):
         self.serve()

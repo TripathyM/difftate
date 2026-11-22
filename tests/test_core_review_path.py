@@ -17,9 +17,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core_fakes import FakeCode, FakeHistory  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
-from difftate.core.review.review_path import Question, Skipped, Stop  # noqa: E402
+from difftate.core.review.review_path import BadReviewPath, Question, Skipped, Stop  # noqa: E402
 from difftate.core.review.use_cases.mark_viewed import mark_viewed  # noqa: E402
 from difftate.core.review.use_cases.read_review_path import read_review_path  # noqa: E402
+from difftate.core.review.use_cases.review_path_problem import review_path_problem  # noqa: E402
 
 A_PATH = textwrap.dedent("""\
     ---
@@ -62,14 +63,17 @@ A_PATH = textwrap.dedent("""\
     """)
 
 
+CHANGED = {f: "x\n" for f in ("src/cards/CardList.tsx", "src/cards/Card.tsx", "src/cards/cards.css",
+                              "src/data/useTrails.ts", "package-lock.json", "src/data/trailTypes.d.ts", "app.py", "lib.py", "docs/time:zones.md")}
+
+
 class ReadingTheReviewPath(unittest.TestCase):
     def setUp(self):
         self.store = MemoryStore()
         self.history = FakeHistory()
 
     def read(self, text, files=None):
-        self.code = FakeCode(files or {"src/cards/CardList.tsx": "x\n", "src/cards/Card.tsx": "y\n"},
-                             base={}, review_path=text)
+        self.code = FakeCode(files or CHANGED, base={}, review_path=text)
         return read_review_path(self.store, self.code, self.history)
 
     def test_no_text_gives_no_path(self):
@@ -139,6 +143,88 @@ class ReadingTheReviewPath(unittest.TestCase):
 
         self.assertEqual(self.store.load(), [])
         self.assertEqual(self.history.recorded, [])
+
+
+class ABrokenReviewPathIsAProblemAndNoPath(unittest.TestCase):
+    """review-path.md that can't be read as a review path: the use case raises
+    BadReviewPath naming the problem; review_path_problem says it as a line
+    for a warning, or None when the file reads (or there is none)."""
+
+    def setUp(self):
+        self.store = MemoryStore()
+        self.history = FakeHistory()
+
+    def code(self, text, files=None):
+        return FakeCode(files or CHANGED, base={}, review_path=text)
+
+    def problem(self, text, files=None):
+        return review_path_problem(self.code(text, files))
+
+    def test_a_good_file_and_no_file_have_no_problem(self):
+        self.assertIsNone(self.problem(A_PATH))
+        self.assertIsNone(self.problem(None))
+
+    def test_a_stop_naming_a_file_not_in_the_changeset_is_a_problem_naming_it(self):
+        text = "## 1 `src/cards/Card.tsx`\n\n### Why?\nBecause.\n\n## 2 `src/gone.ts`\n\n### Why?\nBecause.\n"
+
+        self.assertIn("src/gone.ts", self.problem(text))
+        self.assertIn("not in the changeset", self.problem(text))
+        with self.assertRaises(BadReviewPath):
+            read_review_path(self.store, self.code(text), self.history)
+
+    def test_a_skipped_file_not_in_the_changeset_is_a_problem_too(self):
+        text = "## 1 `src/cards/Card.tsx`\n\n### Why?\nBecause.\n\n## Skipped\n- `yarn.lock` — lockfile only\n"
+
+        self.assertIn("yarn.lock", self.problem(text))
+
+    def test_a_heading_out_of_shape_is_a_problem_naming_its_line(self):
+        for heading in ("## 1 src/cards/Card.tsx", "## One `src/cards/Card.tsx`", "## 1 `src/cards/Card.tsx` ★★",
+                        "## Sections: State flow", "## Skippd"):
+            with self.subTest(heading=heading):
+                text = f"Preamble.\n\n{heading}\n\n### Why?\nBecause.\n"
+
+                self.assertIn(heading, self.problem(text))
+                self.assertIn("line 3", self.problem(text))
+
+    def test_the_forms_the_skill_states_are_not_out_of_shape(self):
+        for heading in ("## 1 `src/cards/CardList.tsx:10-20,30` ★", "## Section: State flow", "## Skipped"):
+            with self.subTest(heading=heading):
+                text = f"{heading}\n\n### Why?\nBecause.\n" if heading.startswith("## 1") else (
+                    f"## 1 `src/cards/CardList.tsx`\n\n### Why?\nBecause.\n\n{heading}\nText.\n")
+
+                self.assertIsNone(self.problem(text))
+        nested = "## 1 `src/cards/CardList.tsx`\n\n### Why?\nB.\n\n## 1.1 `src/cards/Card.tsx`\n\n### Why?\nB.\n"
+        self.assertIsNone(self.problem(nested))
+
+    def test_a_file_named_twice_is_a_problem_naming_it(self):
+        text = "## 1 `src/cards/Card.tsx`\n\n### Why?\nBecause.\n\n## 2 `src/cards/Card.tsx`\n\n### Why?\nBecause.\n"
+
+        self.assertIn("src/cards/Card.tsx", self.problem(text))
+        self.assertIn("twice", self.problem(text))
+
+    def test_a_heading_inside_a_code_block_is_not_checked(self):
+        text = "## 1 `app.py`\n\n### Why?\n```\n## not a heading\n```\n"
+
+        self.assertIsNone(self.problem(text, {"app.py": "x\n"}))
+
+    def test_a_fixed_file_has_no_problem_on_the_next_read(self):
+        code = self.code("## 1 `src/gone.ts`\n\n### Why?\nBecause.\n")
+        self.assertIsNotNone(review_path_problem(code))
+
+        code.review_path = A_PATH
+
+        self.assertIsNone(review_path_problem(code))
+        self.assertEqual(len(read_review_path(self.store, code, self.history).stops), 3)
+
+    def test_while_another_branch_is_checked_out_the_file_is_its_and_has_no_problem_here(self):
+        code = FakeCode(CHANGED, base={}, review_path="## 1 `src/gone.ts`\n", on_branch=False)
+
+        self.assertIsNone(review_path_problem(code))
+
+    def test_checking_a_path_writes_nothing(self):
+        self.problem("## 1 `src/gone.ts`\n")
+
+        self.assertEqual(self.store.load(), [])
 
 
 if __name__ == "__main__":

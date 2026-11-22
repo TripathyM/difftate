@@ -6,7 +6,7 @@ from typing import Optional
 
 from ...changes.ports import ForReadingTheCode
 from ..ports import ForKeepingTheReview, ForRecordingReviewHistory
-from ..review_path import ReviewPath, parse
+from ..review_path import ReviewPath, check_files, parse
 from .list_viewed import list_viewed
 
 
@@ -15,8 +15,12 @@ def read_review_path(store: ForKeepingTheReview, code: ForReadingTheCode,
     """The review path, each stop with the reviewer's viewed mark for its file
     (as list_viewed has them); None when the folder has no review-path.md.
     The text is read each time, so a rewrite shows on the next call. Raises
-    CouldNotRead when the file or the changeset can't be read."""
+    CouldNotRead when the file or the changeset can't be read, and
+    BadReviewPath when the file can't be read as a review path: a heading out
+    of shape, a file named twice, a file not in the changeset."""
     text = code.review_path_text()
     if text is None:
         return None
-    return parse(text).with_viewed(list_viewed(store, code, history))
+    path = parse(text)
+    check_files(path, code.diff_hashes())
+    return path.with_viewed(list_viewed(store, code, history))
