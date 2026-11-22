@@ -336,7 +336,7 @@ The watcher (the latest Python, nothing else) serves the **review API** on `127.
 
 | Request | What it does |
 |---|---|
-| `GET /api/review` | Start or reuse the review of the checked-out branch: `id`, `branch` and `base` (they change when the watcher follows another branch), `mode` and `held` (as `GET /api/mode`), and `folder`, the checked-out folder the watcher runs in (what a viewer passes to `GET /api/export` as `reply_folder`) |
+| `GET /api/review` | Start or reuse the review of the checked-out branch: `id`, `branch` and `base` (they change when the watcher follows another branch), `mode` and `held` (as `GET /api/mode`), and `folder`, the checked-out folder the watcher runs in (what a viewer passes to `GET /api/export` as `reply_folder`), and `warnings` about the review (each with an `id`, a `time` and a `text`; a `review-path.md` that can't be read as a review path is one, and it is gone from the next answer once the file is fixed) |
 | `GET /api/view` | The view viewers show: `view` (`""` all changes, a commit such as `HEAD~2` for the commits after it, `HEAD` uncommitted, `staged`, `unstaged`) |
 | `PUT /api/view` | Show another view: `view`. `difftate <view>` sends this, then opens the viewer itself: the watcher never opens one |
 | `GET /api/changeset?view=<view>` | The review's changeset in a view (default: the one viewers show), from git: `view`, `base`, `commit` (where the branch left the base), `diff` (unified, new untracked files included) |

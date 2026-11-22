@@ -13,8 +13,11 @@ def review_path_problem(code: ForReadingTheCode) -> Optional[str]:
     """What is wrong with the folder's review-path.md, as a line a viewer shows
     as a warning; None when there is no file or it reads as a review path. The
     file is read each time, so a fixed one has no problem on the next call.
-    Writes nothing: the viewed marks are not read."""
+    Writes nothing: the viewed marks are not read. While another branch is
+    checked out the file is that branch's: no problem is said."""
     try:
+        if not code.on_branch():
+            return None
         text = code.review_path_text()
         if text is None:
             return None

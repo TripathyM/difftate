@@ -216,6 +216,11 @@ class ABrokenReviewPathIsAProblemAndNoPath(unittest.TestCase):
         self.assertIsNone(review_path_problem(code))
         self.assertEqual(len(read_review_path(self.store, code, self.history).stops), 3)
 
+    def test_while_another_branch_is_checked_out_the_file_is_its_and_has_no_problem_here(self):
+        code = FakeCode(CHANGED, base={}, review_path="## 1 `src/gone.ts`\n", on_branch=False)
+
+        self.assertIsNone(review_path_problem(code))
+
     def test_checking_a_path_writes_nothing(self):
         self.problem("## 1 `src/gone.ts`\n")
 
