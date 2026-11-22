@@ -12,13 +12,21 @@ end
 
 --- Let the reviewer choose among <entries> ({ { text, value } }): on_choice(value) once
 --- one is picked, never when the picker is dismissed. An entry with no value is a heading: picking
---- it does nothing. <title> names the picker.
-function M.choose(entries, title, on_choice)
+--- it does nothing. <title> names the picker. <opts>: `current`, a function of an entry's value that is
+--- true for the row the cursor starts on (Snacks only), and an entry's `preview`, markdown shown beside
+--- the rows when Snacks is there (vim.ui.select shows rows only).
+function M.choose(entries, title, on_choice, opts)
+  opts = opts or {}
   local picker = snacks_picker()
   if picker then
-    local items = {}
+    local items, previewed, current = {}, false, nil
     for i, entry in ipairs(entries) do
-      items[i] = { idx = i, text = entry.text, value = entry.value }
+      previewed = previewed or entry.preview ~= nil
+      items[i] = { idx = i, text = entry.text, value = entry.value,
+        preview = { text = entry.preview or "", ft = "markdown", loc = false } }
+      if not current and entry.value ~= nil and opts.current and opts.current(entry.value) then
+        current = i
+      end
     end
     picker.pick({
       title = title,
@@ -26,8 +34,21 @@ function M.choose(entries, title, on_choice)
       format = function(item)
         return { { item.text } }
       end,
-      preview = false,
-      layout = { preset = "select" },
+      preview = previewed and "preview" or false,
+      layout = { preset = previewed and "default" or "select" },
+      on_show = current and function(shown)
+        -- the rows come in a moment after the picker shows: wait for them, a few times at most
+        local tries = 0
+        local function move()
+          tries = tries + 1
+          if shown.list:count() >= current then
+            shown.list:move(current, true)
+          elseif tries < 20 then
+            vim.defer_fn(move, 10)
+          end
+        end
+        move()
+      end or nil,
       confirm = function(self, item)
         if item and item.value == nil then
           return

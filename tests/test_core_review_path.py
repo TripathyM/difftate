@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core_fakes import FakeCode, FakeHistory  # noqa: E402
 from difftate.adapters.outbound.memory_store import MemoryStore  # noqa: E402
-from difftate.core.review.review_path import BadReviewPath, Question, SideFile, Skipped, Stop  # noqa: E402
+from difftate.core.review.review_path import BadReviewPath, Question, Section, SideFile, Skipped, Spec, Stop  # noqa: E402
 from difftate.core.review.use_cases.mark_viewed import mark_viewed  # noqa: E402
 from difftate.core.review.use_cases.read_review_path import read_review_path  # noqa: E402
 from difftate.core.review.use_cases.review_path_problem import review_path_problem  # noqa: E402
@@ -113,7 +113,7 @@ class ReadingTheReviewPath(unittest.TestCase):
     def test_a_stop_lists_its_side_files_in_order_with_no_number_and_no_questions(self):
         path = self.read(A_PATH)
 
-        self.assertEqual(path.stops[0].side_files, (SideFile("src/cards/cards.css"),))
+        self.assertEqual(path.stops[0].side_files, (SideFile("src/cards/cards.css", text="Layout only."),))
         self.assertEqual(path.stops[1].side_files, ())
         self.assertEqual([q.question for q in path.stops[0].questions], ["What does the list do?", "Is the fetch cancelled?"])
 
@@ -121,7 +121,7 @@ class ReadingTheReviewPath(unittest.TestCase):
         path = self.read("## 1 `a.py`\n\n### A?\nx\n\n## 1.1 `b.py`\n\n### B?\nx\n\n### Side file: `b.css:1-4`\nStyle.\n")
 
         self.assertEqual(path.stops[0].side_files, ())
-        self.assertEqual(path.stops[0].children[0].side_files, (SideFile("b.css"),))
+        self.assertEqual(path.stops[0].children[0].side_files, (SideFile("b.css", ranges=((1, 4),), text="Style."),))
 
     def test_the_changed_files_the_path_does_not_name_are_not_on_the_path(self):
         files = {"src/cards/CardList.tsx": "1\n", "src/cards/Card.tsx": "1\n", "src/cards/cards.css": "1\n",
@@ -160,7 +160,7 @@ class ReadingTheReviewPath(unittest.TestCase):
         path = read_review_path(self.store, self.code, self.history)
 
         self.assertEqual([s.viewed for s in path.all_stops()], [False, True, False])
-        self.assertEqual(path.stops[0].side_files, (SideFile("src/cards/cards.css", viewed=True),))
+        self.assertEqual(path.stops[0].side_files, (SideFile("src/cards/cards.css", viewed=True, text="Layout only."),))
 
     def test_a_heading_inside_a_code_block_in_an_answer_is_text(self):
         path = self.read(textwrap.dedent("""\
@@ -188,6 +188,47 @@ class ReadingTheReviewPath(unittest.TestCase):
         path = self.read("## 1 `docs/time:zones.md`\n\n### Why?\nBecause.\n")
 
         self.assertEqual(path.stops[0].file, "docs/time:zones.md")
+
+    def test_a_stop_and_a_side_file_carry_their_line_ranges_and_none_means_the_whole_file(self):
+        path = self.read("## 1 `a.py:10-48,90-120`\n\n### A?\nx\n\n### Side file: `a.css:3`\nStyle.\n\n"
+                         "## 2 `b.py:7`\n\n### B?\nx\n\n## 3 `c.py`\n\n### C?\nx\n")
+
+        self.assertEqual([s.ranges for s in path.stops], [((10, 48), (90, 120)), ((7, 7),), ()])
+        self.assertEqual(path.stops[0].side_files[0].ranges, ((3, 3),))
+
+    def test_a_file_whose_name_has_a_colon_has_no_ranges(self):
+        self.assertEqual(self.read("## 1 `docs/time:zones.md`\n\n### Why?\nBecause.\n").stops[0].ranges, ())
+
+    def test_a_stop_lists_the_specs_under_its_heading_in_order(self):
+        path = self.read(A_PATH + "\n## 3 `lib.py`\nSpec: `lib.test.py` \"one\"\nSpec: `lib.test.py` \"two\"\nSpec: `x.test.py`\n\n### Q?\nA.\n")
+
+        self.assertEqual(path.stops[0].specs, (Spec("src/cards/CardList.test.tsx", "shows three cards"),))
+        self.assertEqual(path.stops[1].specs, ())
+        self.assertEqual(path.stops[-1].specs, (Spec("lib.test.py", "one"), Spec("lib.test.py", "two"), Spec("x.test.py", "")))
+
+    def test_a_spec_line_after_a_question_is_part_of_its_answer(self):
+        path = self.read("## 1 `a.py`\n\n### A?\nSpec: `a.test.py` \"x\"\n")
+
+        self.assertEqual(path.stops[0].specs, ())
+        self.assertEqual(path.stops[0].questions[0].answer, 'Spec: `a.test.py` "x"')
+
+    def test_a_side_file_keeps_the_text_under_it(self):
+        self.assertEqual(self.read(A_PATH).stops[0].side_files[0].text, "Layout only.")
+
+    def test_the_path_sections_come_with_their_text_in_order_a_deeper_heading_being_text(self):
+        path = self.read(A_PATH + "")
+
+        self.assertEqual(path.sections, (Section("State flow", "### Not a question\nFree text."),))
+        two = self.read("## 1 `a.py`\n\n### A?\nx\n\n## Section: One\nfirst\n\n```\n## 2 `b.py`\n```\n\n"
+                        "## Section: Two words\nsecond\n\n## Skipped\n")
+        self.assertEqual(two.sections, (Section("One", "first\n\n```\n## 2 `b.py`\n```"), Section("Two words", "second")))
+
+    def test_a_stop_links_to_the_sections_its_answers_point_to_by_name(self):
+        path = self.read('## 1 `a.py`\n\n### A?\nSee "State flow".\n\n### B?\nAlso see "Events" and "State flow" and "Nowhere".\n\n'
+                         '## 1.1 `b.py`\n\n### C?\nplain\n\n## Section: Events\ne\n\n## Section: State flow\ns\n')
+
+        self.assertEqual(path.stops[0].see, ("State flow", "Events"))
+        self.assertEqual(path.stops[0].children[0].see, ())
 
     def test_text_with_no_stops_is_a_path_with_none(self):
         self.assertEqual(self.read("Just some words.\n").stops, ())
