@@ -455,9 +455,9 @@ def _handler(folders, token, login, default_reviewer, page_url, on_stop):
         try:
             return review_path_json(s.review.read_review_path(view))
         except BadReviewPath:
-            return {"path": None}
+            return {"path": None}  # the problem is a warning in /api/review; the viewers use the changeset's order
         except NotFound as e:  # the view shown is no view now
-            raise BadRequest(str(e)) from e  # the problem is a warning in /api/review; the viewers use the changeset's order
+            raise BadRequest(str(e)) from e
 
     def switch_view(s, q, p):
         return s.shown.switch(a_view(s, fields(p).get("view", "")))
