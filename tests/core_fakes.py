@@ -32,12 +32,15 @@ class FakeCode:
     <diff_hashes> are each file's diff hash in the changeset (default: made
     from each file that differs from the base). <on_branch> is whether the
     review's branch is checked out ("other" is, when it isn't). <messages>
-    are the review's commit messages, oldest first.
+    are the review's commit messages, oldest first. <review_path> is the text
+    of review-path.md in the checked-out folder (None: there is none); a test
+    sets it again to rewrite the file.
     """
 
     def __init__(self, files, commit="commit-1", diff_hashes=None, on_branch=True, base=None, views=None,
-                 messages=None):
+                 messages=None, review_path=None):
         self.files = files
+        self.review_path = review_path
         self.messages = list(messages or [])
         self.base = files if base is None else base
         self.views = views or {}
@@ -105,6 +108,9 @@ class FakeCode:
 
     def commit_messages(self):
         return list(self.messages)
+
+    def review_path_text(self):
+        return self.review_path
 
     def changeset(self, view):
         if view not in ("", "staged", "unstaged", "HEAD", self.commit):

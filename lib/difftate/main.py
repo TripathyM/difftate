@@ -45,6 +45,7 @@ from .core.review.use_cases.open_thread import open_thread
 from .core.review.use_cases.read_agent_override import read_agent_override
 from .core.review.use_cases.read_done import read_done
 from .core.review.use_cases.read_mode import read_mode
+from .core.review.use_cases.read_review_path import read_review_path
 from .core.review.use_cases.recover_runs import recover_runs
 from .core.review.use_cases.set_agent_override import set_agent_override
 from .core.review.use_cases.set_done import set_done
@@ -106,6 +107,7 @@ def bind_review(store, code, history, about):
         set_status=one_at_a_time(set_status, store, notes, history),
         mark_viewed=one_at_a_time(mark_viewed, store, code, history),
         list_viewed=one_at_a_time(list_viewed, store, code, history),
+        read_review_path=one_at_a_time(read_review_path, store, code, history),
         set_done=one_at_a_time(set_done, store, code, history),
         read_done=functools.partial(read_done, store, code),
         set_mode=one_at_a_time(set_mode, store, notes, history),

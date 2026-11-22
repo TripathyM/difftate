@@ -46,6 +46,12 @@ watcher serves. Naming another base switches the folder's review to it.
   PUT   /api/viewed                     mark a file viewed, or not: {"file", "viewed"?: true|false
                                         (default true)}: {"files"}. 404 for a file
                                         that isn't in the changeset
+  GET   /api/review-path                the review path the coding agent wrote in the folder
+                                        (review-path.md, read at each request): {"path": null}
+                                        without one, else {"path": {"stops": [{"number" ("1",
+                                        "2.1"), "file", "viewed", "questions": [{"question",
+                                        "answer"}]}] in reading order, "skipped": [{"file",
+                                        "reason"}]}}
   GET   /api/done                       whether the review is Done: {"done", "time", "commit" (the
                                         mark that made it Done: null when it isn't), "lastMark":
                                         {"kind": "done"|"undone"|"cleared", "time", "commit"} or
@@ -168,7 +174,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ....core.review.model import AUTHOR_OF, DIFFTATE, REVIEWER, Conflict, CouldNotRead, NotAllowed, NotFound
 from .json_format import (NOTE_KINDS, BadRequest, agent_json, anchor_from_json, changeset_json, comment_json, done_json,
                           fields, mode_json, need, need_agent, need_bool, need_kind, need_mode, need_status, need_text,
-                          reviewer_name, submitted_json, thread_json)
+                          review_path_json, reviewer_name, submitted_json, thread_json)
 
 MAX_BODY = 1 << 20
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -331,7 +337,7 @@ class ReviewApi:
     serves for a checked-out folder: an object with review (the use cases of
     the review served now, with its ports bound: main.bind_review: about
     ({"id", "branch", "base"}), list_threads, open_thread, add_comment,
-    edit_note, set_status, mark_viewed, list_viewed, set_done, read_done,
+    edit_note, set_status, mark_viewed, list_viewed, read_review_path, set_done, read_done,
     set_mode, read_mode, set_agent_override, read_agent_override, submit,
     export, changeset and checked_out), shown (a ShownView), root (the
     folder's top), who_replies() (who replies: see agent_json) and check_agent(name)
@@ -520,6 +526,7 @@ def _handler(folders, token, login, default_reviewer, page_url, on_stop):
         ("PATCH", r"/api/threads/([^/]+)/status", patch_status, True),
         ("GET", r"/api/viewed", lambda s, q, p: {"files": s.review.list_viewed()}, True),
         ("PUT", r"/api/viewed", put_viewed, True),
+        ("GET", r"/api/review-path", lambda s, q, p: review_path_json(s.review.read_review_path()), True),
         ("GET", r"/api/done", lambda s, q, p: done_json(s.review.read_done()), True),
         ("PUT", r"/api/done", put_done, True),
         ("GET", r"/api/mode", lambda s, q, p: mode_json(s.review.read_mode()), True),

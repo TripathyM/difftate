@@ -14,6 +14,7 @@ local done = require("difftate.done")
 local export = require("difftate.export")
 local nav = require("difftate.nav")
 local pick = require("difftate.pick")
+local review_path = require("difftate.path")
 local threads = require("difftate.threads")
 local view = require("difftate.view")
 
@@ -999,7 +1000,16 @@ function M.pick_thread()
   end)
 end
 
---- The changed files picker: the changeset's files, viewed ones marked; the picked one opens.
+-- The review path the coding agent wrote in the review's folder: on_path(path), nil when there is
+-- none, or when the watcher can't say (one older than the review path): the picker is then as before
+local function the_review_path(review, on_path)
+  api.request(review.watcher, "GET", "/api/review-path", function(answer)
+    on_path(answer and answer.path or nil)
+  end)
+end
+
+--- The changed files picker: the changeset's files, viewed ones marked; the picked one opens. With a
+--- review path, its stops come first in reading order, then the files it doesn't name.
 function M.pick_file()
   local review = open_review("list its files")
   if not review then
@@ -1017,23 +1027,28 @@ function M.pick_file()
     for _, path in ipairs(answer.files or {}) do
       viewed[path] = true
     end
-    snapshot(review, function(_, files)
-      if #files == 0 then
-        say("No changed files in this review")
+    the_review_path(review, function(path)
+      if current ~= review then
         return
       end
-      local entries = vim.tbl_map(function(file)
-        return { text = nav.file_row(file, viewed[file.path]), value = file }
-      end, files)
-      pick.choose(entries, "Changed files", function(file)
-        if current ~= review then
+      snapshot(review, function(_, files)
+        if #files == 0 then
+          say("No changed files in this review")
           return
         end
-        if file.deleted then
-          say(("%s was deleted: there is no file to open"):format(file.path))
-          return
-        end
-        open_file(review, file.path)
+        local entries = path and review_path.entries(path, files, viewed) or vim.tbl_map(function(file)
+          return { text = nav.file_row(file, viewed[file.path]), value = file }
+        end, files)
+        pick.choose(entries, "Changed files", function(file)
+          if current ~= review then
+            return
+          end
+          if file.deleted then
+            say(("%s was deleted: there is no file to open"):format(file.path))
+            return
+          end
+          open_file(review, file.path)
+        end)
       end)
     end)
   end)

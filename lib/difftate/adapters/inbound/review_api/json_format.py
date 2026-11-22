@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 from ....core.changes.model import Changeset
 from ....core.review.model import (AUTHOR_OF, MODES, NOTE_KINDS, Anchor, Comment, DoneMark, DoneStatus, ListedThread,
                                    ModeStatus)
+from ....core.review.review_path import ReviewPath
 
 KINDS = tuple(AUTHOR_OF)  # comment, reply, queued, progress
 THREAD_STATUSES = ("open", "resolved", "dismissed")
@@ -150,6 +151,20 @@ def changeset_json(changeset: Changeset) -> Dict[str, Any]:
     as its anchor's "version"."""
     return {"view": changeset.view, "base": changeset.base, "commit": changeset.commit, "diff": changeset.diff,
             "versions": {f: {"old": v.old, "new": v.new} for f, v in changeset.versions.items()}}
+
+
+def review_path_json(path: Optional[ReviewPath]) -> Dict[str, Any]:
+    """{"path": null} with no review path; else its stops in reading order
+    ({"number", "file", "viewed", "questions": [{"question", "answer"}]}) and
+    the files skipped on purpose ({"file", "reason"})."""
+    if path is None:
+        return {"path": None}
+    return {"path": {
+        "stops": [{"number": s.number, "file": s.file, "viewed": s.viewed,
+                   "questions": [{"question": q.question, "answer": q.answer} for q in s.questions]}
+                  for s in path.stops],
+        "skipped": [{"file": s.file, "reason": s.reason} for s in path.skipped],
+    }}
 
 
 def done_mark_json(mark: Optional[DoneMark]) -> Optional[Dict[str, Any]]:
