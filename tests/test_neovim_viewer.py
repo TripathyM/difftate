@@ -575,7 +575,7 @@ FAKE_SELECT = ("vim.ui.select = function(items, opts, on_choice) T.menu = { via 
                "T.choose_menu = function(n) on_choice(items[n], n) end end")
 FAKE_SNACKS = ("_G.Snacks = { picker = { pick = function(o) T.menu = { via = 'snacks', title = o.title, "
                "lines = vim.tbl_map(function(i) return i.text end, o.items), preview = o.preview, "
-               "previews = vim.tbl_map(function(i) return i.preview and i.preview.text or false end, o.items) }; "
+               "win = o.win, previews = vim.tbl_map(function(i) return i.preview and i.preview.text or false end, o.items) }; "
                "T.choose_menu = function(n) o.confirm({ close = function() end }, o.items[n]) end; "
                "if o.on_show then o.on_show({ list = { count = function() return #o.items end, "
                "move = function(_, n, absolute) T.menu.cursor = n; T.menu.absolute = absolute end } }) end end } }")
@@ -1914,6 +1914,13 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         nvim.pick(4)
 
         self.settle(nvim, ["app.py", 2])
+
+    def test_with_snacks_only_the_pickers_own_preview_window_wraps_long_lines_at_word_breaks(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        self.a_review_path("## 1 `util.py:5-6` ★\n\n### Q?\nA very long answer.\n")
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["win"], {"preview": {"wo": {"wrap": True, "linebreak": True}}})
 
     def test_following_the_review_path_with_snacks_changes_no_option_or_key_of_the_reviewers_window_or_buffer(self):
         """Adds only: the preview and the cursor row belong to the picker; opening at a range moves the cursor and nothing else."""
