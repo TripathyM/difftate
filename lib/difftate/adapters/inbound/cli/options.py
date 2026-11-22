@@ -26,9 +26,11 @@ Options:
   --base <branch>        The branch the review compares against (default: the repository's
                          default branch, origin/HEAD; else main or master)
   --open <where>         browser, nvim or both (default: $DT_OPEN, else browser).
-                         The viewer to open, not the host. nvim: the Neovim viewer, in a
-                         "Review · <folder>" tab running nvim when difftate runs where Herdr is reachable (or
-                         switches to it), else the command to run is printed.
+                         The viewer to open, not the host. nvim: the Neovim viewer: with a terminal,
+                         nvim runs right there, in the repository (difftate ends and nvim takes its
+                         place); without one, in a "Review · <folder>" Herdr tab when Herdr is
+                         reachable (or switches to it), else the command to run is printed.
+                         both: the browser first, then nvim.
   --cwd <path>           A folder of the repository (default: current directory)
   --help                 Show this help
 
