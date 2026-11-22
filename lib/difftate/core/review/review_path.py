@@ -9,9 +9,9 @@ per stop (number, the file in backticks with optional line ranges, optional
 are the grammar; a heading inside a fenced code block is text.
 
 Pure: it reads text and knows no files and no git. It reads the stops in
-document order with their questions, and the skipped files; ranges, ★, specs,
-side files, key stops and nesting too; line ranges, specs and path sections are
-read by a later ticket (#183).
+document order with their questions, line ranges, specs, ★, side files (with
+the text under them) and nesting, the path sections with their text, the links
+from a stop's answers to a section (`see "State flow"`), and the skipped files.
 """
 from __future__ import annotations
 
@@ -27,6 +27,8 @@ SIDE_FILE = re.compile(r"^### +Side file:(?: *`([^`]+)`)?")
 SKIPPED = re.compile(r"^## +Skipped *$")
 SECTION = re.compile(r"^## +Section: *\S")
 # - `package-lock.json` — lockfile only
+SPEC = re.compile(r'^Spec: +`([^`]+)`(?: +"(.*)")? *$')
+SEE = re.compile(r'\bsee "([^"]+)"', re.IGNORECASE)
 SKIPPED_FILE = re.compile(r"^[-*] +`([^`]+)`(?: *[—–-]+ *(.*))?$")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
@@ -43,17 +45,37 @@ class Question:
 
 
 @dataclass(frozen=True)
+class Spec:
+    """A test that shows a stop's behaviour: its file, and the test's name ("" for none)."""
+    file: str
+    name: str = ""
+
+
+@dataclass(frozen=True)
+class Section:
+    """A path section: named text after the stops that a stop's answer can point to."""
+    name: str
+    text: str
+
+
+@dataclass(frozen=True)
 class SideFile:
-    """A file read with its stop: no number, no questions."""
+    """A file read with its stop: no number, no questions. <ranges>: the (first,
+    last) lines of the new file it names, none for the whole file; <text>: what
+    the agent says it is for."""
     file: str
     viewed: bool = False
+    ranges: Tuple[Tuple[int, int], ...] = ()
+    text: str = ""
 
 
 @dataclass(frozen=True)
 class Stop:
     """A numbered file on the review path ("1", "2.1"), with its questions, its
     side files and the stops under it, and the reviewer's viewed mark for the
-    file. <key>: the agent marked it ★."""
+    file. <key>: the agent marked it ★. <ranges>: the (first, last) lines of the
+    new file the stop is about, none for the whole file; <specs>: the tests that
+    show its behaviour; <see>: the names of the path sections its answers point to."""
     number: str
     file: str
     questions: Tuple[Question, ...]
@@ -61,6 +83,9 @@ class Stop:
     side_files: Tuple[SideFile, ...] = ()
     children: Tuple["Stop", ...] = ()
     viewed: bool = False
+    ranges: Tuple[Tuple[int, int], ...] = ()
+    specs: Tuple[Spec, ...] = ()
+    see: Tuple[str, ...] = ()
 
     def walk(self) -> Iterator["Stop"]:
         """This stop, then the stops under it, in reading order."""
@@ -96,6 +121,7 @@ class ReviewPath:
     stops: Tuple[Stop, ...]
     skipped: Tuple[Skipped, ...] = ()
     not_on_the_path: Tuple[str, ...] = ()
+    sections: Tuple[Section, ...] = ()
 
     def all_stops(self) -> Iterator[Stop]:
         """Every stop, children after their parent: the reading order."""
@@ -132,6 +158,18 @@ def _nest(flat: List[Stop]) -> Tuple[Stop, ...]:
 def _file_of(target: str) -> str:
     """The file a stop heading names: its backticked text without line ranges."""
     return LINE_RANGES.sub("", target)
+
+
+def _ranges_of(target: str) -> Tuple[Tuple[int, int], ...]:
+    """The line ranges a stop heading's backticked text ends in: ":10-48,90" -> ((10, 48), (90, 90))."""
+    found = LINE_RANGES.search(target)
+    if not found:
+        return ()
+    out = []
+    for part in found[0][1:].split(","):
+        first, _, last = part.partition("-")
+        out.append((int(first), int(last or first)))
+    return tuple(out)
 
 
 def _headings(text: str) -> List[Tuple[Optional[str], str]]:
@@ -175,9 +213,27 @@ def parse(text: str) -> ReviewPath:
     question: Optional[str] = None
     answer: List[str] = []
     in_skipped = False
+    sections: List[Section] = []
+    section: Optional[str] = None
+    section_lines: List[str] = []
+    side_lines: Optional[List[str]] = None  # the text under the side file just read
+
+    def end_side():
+        nonlocal stop, side_lines
+        if stop is not None and side_lines is not None and stop.side_files:
+            last = replace(stop.side_files[-1], text="\n".join(side_lines).strip())
+            stop = replace(stop, side_files=stop.side_files[:-1] + (last,))
+        side_lines = None
+
+    def end_section():
+        nonlocal section, section_lines
+        if section is not None:
+            sections.append(Section(section, "\n".join(section_lines).strip()))
+        section, section_lines = None, []
 
     def end_question():
         nonlocal stop, question, answer
+        end_side()
         if stop is not None and question is not None:
             stop = replace(stop, questions=stop.questions + (Question(question, "\n".join(answer).strip()),))
         question, answer = None, []
@@ -195,6 +251,13 @@ def parse(text: str) -> ReviewPath:
         if heading is None:
             if question is not None:
                 answer.append(line)
+            elif section is not None:
+                section_lines.append(line)
+            elif side_lines is not None:
+                side_lines.append(line)
+            elif stop is not None and SPEC.match(line.strip()):
+                found = SPEC.match(line.strip())
+                stop = replace(stop, specs=stop.specs + (Spec(found[1], found[2] or ""),))
             elif in_skipped:
                 found = SKIPPED_FILE.match(line.strip())
                 if found:
@@ -202,10 +265,13 @@ def parse(text: str) -> ReviewPath:
             continue
         if heading.startswith("## ") or heading.startswith("# "):
             end_stop()
+            end_section()
             in_skipped = bool(SKIPPED.match(heading))
             found = STOP.match(heading)
+            if SECTION.match(heading):
+                section = heading.partition(":")[2].strip()
             if found:
-                stop = Stop(found[1], _file_of(found[2]), (), key=bool(found[3]))
+                stop = Stop(found[1], _file_of(found[2]), (), key=bool(found[3]), ranges=_ranges_of(found[2]))
             elif heading.startswith("## ") and not in_skipped and not SECTION.match(heading):
                 raise BadReviewPath(f'line {at}: "{heading.strip()}" is not a stop, a "## Section:" or "## Skipped"')
         elif heading.startswith("### ") and stop is not None:
@@ -213,16 +279,26 @@ def parse(text: str) -> ReviewPath:
             side = SIDE_FILE.match(heading)
             if side:
                 if side[1]:
-                    stop = replace(stop, side_files=stop.side_files + (SideFile(_file_of(side[1])),))
+                    stop = replace(stop, side_files=stop.side_files + (
+                        SideFile(_file_of(side[1]), ranges=_ranges_of(side[1])),))
+                    side_lines = []
             else:
                 question = heading[4:].strip()
         elif question is not None:
             answer.append(line)  # a deeper heading is part of the answer
+        elif section is not None:
+            section_lines.append(line)
+        elif side_lines is not None:
+            side_lines.append(line)
     end_stop()
+    end_section()
     seen = set()
     for stop in stops:
         for file in [stop.file] + [f.file for f in stop.side_files]:
             if file in seen:
                 raise BadReviewPath(f"`{file}` is named twice")
             seen.add(file)
-    return ReviewPath(_nest(stops), tuple(skipped))
+    names = {s.name for s in sections}
+    stops = [replace(s, see=tuple(dict.fromkeys(
+        n for q in s.questions for n in SEE.findall(q.answer) if n in names))) for s in stops]
+    return ReviewPath(_nest(stops), tuple(skipped), sections=tuple(sections))

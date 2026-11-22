@@ -913,6 +913,13 @@ local function open_file(review, path)
   return ok
 end
 
+-- Put the cursor of the current window on <row> of its buffer (the jump list keeps where it was)
+local function go_to_line(row)
+  vim.cmd("normal! m'")
+  vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(row, vim.api.nvim_buf_line_count(0))), 0 })
+  vim.cmd("normal! ^zvzz")
+end
+
 -- Go to <thread>: where it is drawn (opening its file when the cursor is in another), or, for a
 -- thread with no line (a general one, or one whose code is on another branch), its read float
 local function go_to(review, thread, parsed)
@@ -1046,6 +1053,7 @@ function M.pick_file()
             table.insert(entries, { text = nav.file_row(file, viewed[file.path]), value = file })
           end
         end
+        local here = path_in_review(review, vim.api.nvim_get_current_buf())
         pick.choose(entries, "Changed files", function(file)
           if current ~= review then
             return
@@ -1054,8 +1062,12 @@ function M.pick_file()
             say(("%s was deleted: there is no file to open"):format(file.path))
             return
           end
-          open_file(review, file.path)
-        end)
+          if open_file(review, file.path) and file.line then
+            go_to_line(file.line)
+          end
+        end, { current = function(file)
+          return file.path == here
+        end })
       end)
     end)
   end)

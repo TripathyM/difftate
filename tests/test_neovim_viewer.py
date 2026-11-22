@@ -574,8 +574,11 @@ FAKE_SELECT = ("vim.ui.select = function(items, opts, on_choice) T.menu = { via 
                "lines = vim.tbl_map(function(i) return opts.format_item and opts.format_item(i) or tostring(i) end, items) }; "
                "T.choose_menu = function(n) on_choice(items[n], n) end end")
 FAKE_SNACKS = ("_G.Snacks = { picker = { pick = function(o) T.menu = { via = 'snacks', title = o.title, "
-               "lines = vim.tbl_map(function(i) return i.text end, o.items) }; "
-               "T.choose_menu = function(n) o.confirm({ close = function() end }, o.items[n]) end end } }")
+               "lines = vim.tbl_map(function(i) return i.text end, o.items), preview = o.preview, "
+               "previews = vim.tbl_map(function(i) return i.preview and i.preview.text or false end, o.items) }; "
+               "T.choose_menu = function(n) o.confirm({ close = function() end }, o.items[n]) end; "
+               "if o.on_show then o.on_show({ list = { count = function() return #o.items end, "
+               "move = function(_, n, absolute) T.menu.cursor = n; T.menu.absolute = absolute end } }) end end } }")
 
 FAKE_WHICH_KEY = os.path.join(ROOT, "tests", "nvim", "fake-which-key")
 
@@ -1824,6 +1827,112 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
 
         self.assertEqual(nvim.at(), where)
         self.assertIsNone(nvim.lua("return T.err"))
+
+    def test_with_snacks_the_picker_previews_a_stop_with_its_questions_specs_side_files_and_the_section_it_points_to(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        self.write("util.css", "x\n")
+        self.a_review_path("## 1 `util.py:5-6` ★\nSpec: `test_util.py` \"shouts\"\n\n### What does shout do?\nUpper-cases.\n\n"
+                           "### Why a helper?\nTwo callers. See \"State flow\".\n\n### Side file: `util.css:2-4`\nStyle.\n\n"
+                           "## Section: State flow\nIt starts idle.\n\n## Skipped\n- `app.py` — one line\n")
+
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        menu = nvim.menu()
+        self.assertEqual(menu["preview"], "preview")
+        self.assertEqual(menu["previews"][0], "\n".join([
+            "# 1 util.py ★", "Lines 5-6", "", "## What does shout do?", "Upper-cases.", "",
+            "## Why a helper?", 'Two callers. See "State flow".', "",
+            "## Spec", '- test_util.py "shouts"', "",
+            "## Side file", "- util.css (lines 2-4): Style.", "",
+            "## State flow", "It starts idle."]))
+        self.assertEqual(menu["previews"][1], "# util.css (lines 2-4)\nSide file of 1 util.py\n\nStyle.")
+        self.assertEqual(menu["lines"][2:], ["Skipped", "  └─ app.py — one line"])
+        self.assertEqual(menu["previews"][3], "# app.py\nSkipped: one line")
+
+    def test_with_no_review_path_the_picker_has_no_preview(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertFalse(nvim.menu()["preview"])
+        self.assertEqual(nvim.menu()["previews"], ["", ""])
+
+    def test_the_picker_opens_with_the_cursor_on_the_row_of_the_file_the_buffer_shows(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        self.a_review_path("## 1 `util.py`\n\n### Q?\nA.\n")
+        nvim.command("edit app.py")
+
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], ["  1 util.py · Q?", "Not on the path", "  └─ app.py  +1 −1"])
+        self.assertEqual((nvim.menu()["cursor"], nvim.menu()["absolute"]), (3, True))
+
+    def test_the_picker_starts_on_its_first_row_when_the_buffer_is_no_file_of_the_review(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        self.a_review_path("## 1 `util.py`\n\n### Q?\nA.\n")
+        nvim.command("enew")
+
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertNotIn("cursor", nvim.menu())
+
+    def test_enter_opens_the_file_at_the_stops_first_range(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        self.a_review_path("## 1 `util.py:5-6,1-2`\n\n### Q?\nA.\n")
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+
+        nvim.pick(1)
+
+        self.settle(nvim, ["util.py", 5])
+
+    def test_enter_opens_a_stop_that_names_no_range_at_the_files_first_change(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        self.a_review_path("## 1 `app.py`\n\n### Q?\nA.\n")
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+
+        nvim.pick(1)
+
+        self.settle(nvim, ["app.py", 2])
+
+    def test_enter_opens_a_side_file_at_its_range_and_a_file_not_on_the_path_at_its_first_change(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        self.write("util.css", "a\nb\nc\nd\n")
+        self.a_review_path("## 1 `util.py`\n\n### Q?\nA.\n\n### Side file: `util.css:3-4`\n")
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.pick(2)
+        self.settle(nvim, ["util.css", 3])
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+
+        nvim.pick(4)
+
+        self.settle(nvim, ["app.py", 2])
+
+    def test_following_the_review_path_with_snacks_changes_no_option_or_key_of_the_reviewers_window_or_buffer(self):
+        """Adds only: the preview and the cursor row belong to the picker; opening at a range moves the cursor and nothing else."""
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        self.a_review_path("## 1 `util.py:5-6` ★\nSpec: `t.py` \"x\"\n\n### Q?\nA. See \"Flow\".\n\n## Section: Flow\ntext\n")
+        nvim.command("1")
+        window = nvim.lua("return vim.api.nvim_get_current_win()")
+        before = nvim.lua(f"return T.snapshot({window})")
+        settings = nvim.lua("return T.settings()")
+        foreign = nvim.lua("return T.foreign_extmarks(0)")
+
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        nvim.pick(1)
+        self.settle(nvim, ["util.py", 5])
+
+        self.assertEqual(nvim.lua(f"return T.snapshot({window})"), before)
+        self.assertEqual(nvim.lua("return T.settings()"), settings)
+        self.assertEqual(nvim.lua("return T.foreign_extmarks(0)"), foreign)
 
     def test_a_rewritten_review_path_shows_on_the_next_leader_rf_and_skipped_files_are_listed_with_their_reasons(self):
         nvim = self.a_review_of_two_files(before=FAKE_SELECT)

@@ -15,6 +15,20 @@ local function is_general(thread)
   return thread.anchor == nil
 end
 
+--- The line of the new file where <file> (diff.parse) first changes: its first added line, or for
+--- a change that only deletes, the line the deletion sits at. nil when the diff has no change.
+function M.first_change(file)
+  for _, hunk in ipairs(file.hunks) do
+    local line = hunk.new_count == 0 and hunk.new_start + 1 or hunk.new_start
+    for _, c in ipairs(hunk.body) do
+      if c == "+" or c == "-" then
+        return math.max(line, 1)
+      end
+      line = line + 1
+    end
+  end
+end
+
 --- The files of the changeset (the review API's diff text), in its order:
 --- { { path, additions, deletions, deleted } }.
 function M.files(diff_text)
@@ -28,7 +42,7 @@ function M.files(diff_text)
       end
     end
     table.insert(out, { path = file.new or file.old, additions = additions, deletions = deletions,
-                        deleted = file.new == nil })
+                        deleted = file.new == nil, first_change = M.first_change(file) })
   end
   return out
 end

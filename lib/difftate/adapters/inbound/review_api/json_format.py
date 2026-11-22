@@ -156,22 +156,28 @@ def changeset_json(changeset: Changeset) -> Dict[str, Any]:
 def _stop_json(stop: Stop) -> Dict[str, Any]:
     return {"number": stop.number, "file": stop.file, "key": stop.key, "viewed": stop.viewed,
             "questions": [{"question": q.question, "answer": q.answer} for q in stop.questions],
-            "side_files": [{"file": f.file, "viewed": f.viewed} for f in stop.side_files],
+            "ranges": [list(r) for r in stop.ranges],
+            "specs": [{"file": sp.file, "name": sp.name} for sp in stop.specs], "see": list(stop.see),
+            "side_files": [{"file": f.file, "viewed": f.viewed, "ranges": [list(r) for r in f.ranges], "text": f.text}
+                           for f in stop.side_files],
             "children": [_stop_json(c) for c in stop.children]}
 
 
 def review_path_json(path: Optional[ReviewPath]) -> Dict[str, Any]:
     """{"path": null} with no review path; else its top-level stops in reading
     order, each ({"number", "file", "key", "viewed", "questions": [{"question",
-    "answer"}], "side_files": [{"file", "viewed"}], "children": [stops]}), the
-    files skipped on purpose ({"file", "reason"}), and "not_on_the_path": the
-    changed files it names nowhere."""
+    "answer"}], "ranges": [[first, last]], "specs": [{"file", "name"}], "see":
+    [the names of the path sections its answers point to], "side_files":
+    [{"file", "viewed", "ranges", "text"}], "children": [stops]}), the files
+    skipped on purpose ({"file", "reason"}), "not_on_the_path": the changed
+    files it names nowhere, and "sections": [{"name", "text"}], the path sections."""
     if path is None:
         return {"path": None}
     return {"path": {
         "stops": [_stop_json(s) for s in path.stops],
         "skipped": [{"file": s.file, "reason": s.reason} for s in path.skipped],
         "not_on_the_path": list(path.not_on_the_path),
+        "sections": [{"name": s.name, "text": s.text} for s in path.sections],
     }}
 
 

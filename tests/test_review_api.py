@@ -766,11 +766,29 @@ class TheReviewPathRoute(ServedOnFakes, unittest.TestCase):
             {"number": "1", "file": "lib.py", "key": True, "viewed": False, "questions": [
                 {"question": "What is new?", "answer": "A helper."},
                 {"question": "Why here?", "answer": "Both callers live here."}],
-             "side_files": [{"file": "lib.css", "viewed": True}],
+             "side_files": [{"file": "lib.css", "viewed": True, "ranges": [], "text": "Style."}],
+             "ranges": [], "specs": [], "see": [],
              "children": [
                  {"number": "1.1", "file": "app.py", "key": False, "viewed": True, "questions": [
-                     {"question": "Who calls it?", "answer": "main."}], "side_files": [], "children": []}]},
-        ], "skipped": [{"file": "uv.lock", "reason": "lockfile only"}], "not_on_the_path": ["notes.md"]}}))
+                     {"question": "Who calls it?", "answer": "main."}], "side_files": [], "children": [],
+                  "ranges": [], "specs": [], "see": []}]},
+        ], "skipped": [{"file": "uv.lock", "reason": "lockfile only"}], "not_on_the_path": ["notes.md"],
+            "sections": []}}))
+
+    def test_it_answers_ranges_specs_the_sections_a_stop_points_to_and_the_sections_text(self):
+        text = ("## 1 `lib.py:3-9,20` ★\nSpec: `lib.test.py` \"adds\"\nSpec: `edge.test.py`\n\n"
+                "### What is new?\nA helper, see \"State flow\".\n\n### Side file: `lib.css:2-4`\nStyle.\n\n"
+                "## Section: State flow\nIt starts idle.\n\n### Then\nIt loads.\n")
+        self.serve(code=FakeCode({"lib.py": "y = 1\n", "lib.css": "a {}\n"}, base={}, review_path=text))
+
+        path = self.ask("GET", "/api/review-path")[1]["path"]
+
+        stop = path["stops"][0]
+        self.assertEqual((stop["ranges"], stop["specs"], stop["see"]), (
+            [[3, 9], [20, 20]], [{"file": "lib.test.py", "name": "adds"}, {"file": "edge.test.py", "name": ""}],
+            ["State flow"]))
+        self.assertEqual(stop["side_files"], [{"file": "lib.css", "viewed": False, "ranges": [[2, 4]], "text": "Style."}])
+        self.assertEqual(path["sections"], [{"name": "State flow", "text": "It starts idle.\n\n### Then\nIt loads."}])
 
     def test_a_rewritten_file_shows_on_the_next_request(self):
         code = FakeCode({"app.py": "x = 1\n", "lib.py": "y = 1\n", "uv.lock": "z\n"}, base={},

@@ -1,7 +1,8 @@
 -- The review path's drawing (GLOSSARY.md, Review path): the rows of the changed files picker
 -- when the coding agent wrote a review path. One entry point, M.entries, turns what
 -- GET /api/review-path answers into rows, so a pane or virtual lines can replace the
--- picker later without touching the rest. Pure: no editor.
+-- picker later without touching the rest. It also writes what the picker's preview shows for a
+-- row, and the line a row opens at. Pure: no editor.
 local nav = require("difftate.nav")
 
 local M = {}
@@ -11,6 +12,66 @@ local MARK = { [true] = "✓ ", [false] = "  " }
 -- A row: the viewed mark, the tree's drawing (<prefix>), then <label>.
 local function row(viewed, prefix, label)
   return MARK[viewed and true or false] .. prefix .. label
+end
+
+-- "5-6" or "5-6, 9": the ranges ({ { first, last } }) of a stop or a side file, "" for none
+local function ranges_text(ranges)
+  local parts = {}
+  for _, r in ipairs(ranges or {}) do
+    table.insert(parts, r[1] == r[2] and tostring(r[1]) or ("%d-%d"):format(r[1], r[2]))
+  end
+  return table.concat(parts, ", ")
+end
+
+local function lines_note(ranges)
+  local text = ranges_text(ranges)
+  return text == "" and "" or ("lines " .. text)
+end
+
+-- The text of <stop> in the preview: its heading, ranges, questions with their answers, specs, side
+-- files, and the path sections it points to, in markdown
+local function stop_preview(stop, sections)
+  local out = { ("# %s %s%s"):format(stop.number, stop.file, stop.key and " ★" or "") }
+  local note = lines_note(stop.ranges)
+  if note ~= "" then
+    table.insert(out, (note:gsub("^l", "L")))
+  end
+  for _, q in ipairs(stop.questions or {}) do
+    vim.list_extend(out, { "", "## " .. q.question, q.answer })
+  end
+  if #(stop.specs or {}) > 0 then
+    table.insert(out, "")
+    table.insert(out, "## " .. (#stop.specs > 1 and "Specs" or "Spec"))
+    for _, spec in ipairs(stop.specs) do
+      table.insert(out, "- " .. spec.file .. (spec.name ~= "" and (' "' .. spec.name .. '"') or ""))
+    end
+  end
+  if #(stop.side_files or {}) > 0 then
+    table.insert(out, "")
+    table.insert(out, "## " .. (#stop.side_files > 1 and "Side files" or "Side file"))
+    for _, side in ipairs(stop.side_files) do
+      local range = lines_note(side.ranges)
+      table.insert(out, "- " .. side.file .. (range ~= "" and (" (" .. range .. ")") or "")
+        .. ((side.text or "") ~= "" and (": " .. side.text:gsub("\n", " ")) or ""))
+    end
+  end
+  for _, name in ipairs(stop.see or {}) do
+    local section = sections[name]
+    if section then
+      vim.list_extend(out, { "", "## " .. section.name, section.text })
+    end
+  end
+  return table.concat(out, "\n")
+end
+
+local function side_preview(side, stop)
+  local range = lines_note(side.ranges)
+  local out = { "# " .. side.file .. (range ~= "" and (" (" .. range .. ")") or ""),
+    ("Side file of %s %s"):format(stop.number, stop.file) }
+  if (side.text or "") ~= "" then
+    vim.list_extend(out, { "", side.text })
+  end
+  return table.concat(out, "\n")
 end
 
 -- The label of <stop> ({ number, file, key, questions }): "1 util.py ★ · What does shout do?"
@@ -31,14 +92,23 @@ function M.entries(written, files, viewed)
   for _, file in ipairs(files) do
     by_path[file.path] = file
   end
-  local function value_of(path)
-    return by_path[path] or { path = path }
+  -- the file's entry in the changeset (a copy), with <line>: where Enter opens it. A file with no
+  -- range opens at its first change.
+  local function value_of(path, ranges)
+    local file = vim.deepcopy(by_path[path] or { path = path })
+    file.line = ranges and ranges[1] and ranges[1][1] or file.first_change
+    return file
+  end
+  local sections = {}
+  for _, section in ipairs(written.sections or {}) do
+    sections[section.name] = section
   end
   local entries = {}
 
   -- <stop>'s rows, then its side files' and children's below it, <prefix> being the drawing so far
   local function add_stop(stop, prefix, connector)
-    table.insert(entries, { text = row(stop.viewed, prefix .. connector, stop_label(stop)), value = value_of(stop.file) })
+    table.insert(entries, { text = row(stop.viewed, prefix .. connector, stop_label(stop)),
+      value = value_of(stop.file, stop.ranges), preview = stop_preview(stop, sections) })
     local below = prefix .. (connector == "├─ " and "│  " or connector == "└─ " and "   " or "")
     local items = {}
     for _, side in ipairs(stop.side_files or {}) do
@@ -50,7 +120,8 @@ function M.entries(written, files, viewed)
     for i, item in ipairs(items) do
       local last = i == #items and "└─ " or "├─ "
       if item.side then
-        table.insert(entries, { text = row(item.side.viewed, below .. last, item.side.file), value = value_of(item.side.file) })
+        table.insert(entries, { text = row(item.side.viewed, below .. last, item.side.file),
+          value = value_of(item.side.file, item.side.ranges), preview = side_preview(item.side, stop) })
       else
         add_stop(item.child, below, last)
       end
@@ -66,12 +137,14 @@ function M.entries(written, files, viewed)
     end
     table.insert(entries, { text = heading })
     for i, item in ipairs(items) do
-      table.insert(entries, { text = row(item.viewed, i == #items and "└─ " or "├─ ", text_of(item)), value = item.value })
+      table.insert(entries, { text = row(item.viewed, i == #items and "└─ " or "├─ ", text_of(item)),
+        value = item.value, preview = item.preview })
     end
   end
   local skipped = {}
   for _, one in ipairs(written.skipped or {}) do
-    table.insert(skipped, { value = value_of(one.file), one = one })
+    table.insert(skipped, { value = value_of(one.file), one = one,
+      preview = ("# %s\nSkipped: %s"):format(one.file, one.reason ~= "" and one.reason or "no reason given") })
   end
   add_group("Skipped", skipped, function(item)
     return item.one.file .. (item.one.reason ~= "" and (" — " .. item.one.reason) or "")
@@ -81,7 +154,8 @@ function M.entries(written, files, viewed)
   if written.not_on_the_path then
     for _, path in ipairs(written.not_on_the_path) do
       if by_path[path] then
-        table.insert(off, { value = by_path[path], viewed = viewed[path] })
+        table.insert(off, { value = value_of(path), viewed = viewed[path],
+          preview = ("# %s\nNot on the review path: the coding agent named it nowhere."):format(path) })
       end
     end
   end

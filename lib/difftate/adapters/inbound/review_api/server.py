@@ -51,10 +51,14 @@ watcher serves. Naming another base switches the folder's review to it.
                                         without one, and when the file is broken (that is a warning
                                         in /api/review), else {"path": {"stops": [{"number" ("1"),
                                         "file", "key" (★), "viewed", "questions": [{"question",
-                                        "answer"}], "side_files": [{"file", "viewed"}],
+                                        "answer"}], "ranges": [[first, last]] (none: the whole
+                                        file), "specs": [{"file", "name"}], "see": [names of the
+                                        path sections its answers point to], "side_files":
+                                        [{"file", "viewed", "ranges", "text"}],
                                         "children": [stops, numbered "1.1"]}] in reading order,
                                         "skipped": [{"file", "reason"}], "not_on_the_path": [file]:
-                                        the changed files it names nowhere}}
+                                        the changed files it names nowhere, "sections": [{"name",
+                                        "text"}]: the path sections}}
   GET   /api/done                       whether the review is Done: {"done", "time", "commit" (the
                                         mark that made it Done: null when it isn't), "lastMark":
                                         {"kind": "done"|"undone"|"cleared", "time", "commit"} or
