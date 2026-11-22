@@ -21,7 +21,7 @@ watcher serves. Naming another base switches the folder's review to it.
                                         "checkedOut", "folder" (the checked-out folder
                                         the watcher runs in), "warnings": [{"id", "time",
                                         "text"}] about the review (a store changed outside
-                                        difftate, restored)}. The watcher follows the branch, so
+                                        difftate, restored; review-path.md that can't be read as a review path)}. The watcher follows the branch, so
                                         they change after a checkout; until a run in
                                         progress ends, "waitingForRun" is true and
                                         "checkedOut" names the branch it moves to
@@ -48,7 +48,8 @@ watcher serves. Naming another base switches the folder's review to it.
                                         that isn't in the changeset
   GET   /api/review-path                the review path the coding agent wrote in the folder
                                         (review-path.md, read at each request): {"path": null}
-                                        without one, else {"path": {"stops": [{"number" ("1",
+                                        without one, and when the file is broken (that is a warning
+                                        in /api/review), else {"path": {"stops": [{"number" ("1",
                                         "2.1"), "file", "viewed", "questions": [{"question",
                                         "answer"}]}] in reading order, "skipped": [{"file",
                                         "reason"}]}}
@@ -157,6 +158,7 @@ API request), after which the code is refused. The page (/) and its scripts
 with the header "X-Difftate: page" (which another site's page can't send without
 asking) and, when the browser says, the API's own Origin. Anything else gets 401.
 """
+import hashlib
 import hmac
 import http.cookies
 import json
@@ -169,8 +171,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import namedtuple
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from ....core.review.review_path import BadReviewPath
 from ....core.review.model import AUTHOR_OF, DIFFTATE, REVIEWER, Conflict, CouldNotRead, NotAllowed, NotFound
 from .json_format import (NOTE_KINDS, BadRequest, agent_json, anchor_from_json, changeset_json, comment_json, done_json,
                           fields, mode_json, need, need_agent, need_bool, need_kind, need_mode, need_status, need_text,
@@ -337,7 +341,8 @@ class ReviewApi:
     serves for a checked-out folder: an object with review (the use cases of
     the review served now, with its ports bound: main.bind_review: about
     ({"id", "branch", "base"}), list_threads, open_thread, add_comment,
-    edit_note, set_status, mark_viewed, list_viewed, read_review_path, set_done, read_done,
+    edit_note, set_status, mark_viewed, list_viewed, read_review_path, review_path_problem (None, or why
+    review-path.md can't be used: a warning), set_done, read_done,
     set_mode, read_mode, set_agent_override, read_agent_override, submit,
     export, changeset and checked_out), shown (a ShownView), root (the
     folder's top), who_replies() (who replies: see agent_json) and check_agent(name)
@@ -422,7 +427,23 @@ def _handler(folders, token, login, default_reviewer, page_url, on_stop):
         review = s.review
         about = {"id": review.about["id"], "branch": review.about["branch"], "base": review.about["base"]}
         return dict(about, **waiting_for_run(review), **mode_json(review.read_mode()), folder=s.root,
-                    warnings=s.shown_warnings())
+                    warnings=s.shown_warnings() + review_path_warnings(review))
+
+    def review_path_warnings(review):
+        """A review-path.md that can't be read as a review path, as a warning
+        about the review. Derived at each request, so a fixed file has none on
+        the next. Its id comes from its text: a viewer shows it once."""
+        problem = review.review_path_problem()
+        if problem is None:
+            return []
+        return [{"id": "review-path-" + hashlib.sha1(problem.encode()).hexdigest()[:8], "text": problem,
+                 "time": datetime.now(timezone.utc).isoformat(timespec="seconds")}]
+
+    def get_review_path(s, q, p):
+        try:
+            return review_path_json(s.review.read_review_path())
+        except BadReviewPath:
+            return {"path": None}  # the problem is a warning in /api/review; the viewers use the changeset's order
 
     def switch_view(s, q, p):
         return s.shown.switch(a_view(s, fields(p).get("view", "")))
@@ -526,7 +547,7 @@ def _handler(folders, token, login, default_reviewer, page_url, on_stop):
         ("PATCH", r"/api/threads/([^/]+)/status", patch_status, True),
         ("GET", r"/api/viewed", lambda s, q, p: {"files": s.review.list_viewed()}, True),
         ("PUT", r"/api/viewed", put_viewed, True),
-        ("GET", r"/api/review-path", lambda s, q, p: review_path_json(s.review.read_review_path()), True),
+        ("GET", r"/api/review-path", get_review_path, True),
         ("GET", r"/api/done", lambda s, q, p: done_json(s.review.read_done()), True),
         ("PUT", r"/api/done", put_done, True),
         ("GET", r"/api/mode", lambda s, q, p: mode_json(s.review.read_mode()), True),

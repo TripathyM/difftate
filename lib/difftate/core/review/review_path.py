@@ -23,9 +23,15 @@ STOP = re.compile(r"^## +(\d+(?:\.\d+)*) +`([^`]+)`(?: +★)? *$")
 LINE_RANGES = re.compile(r":\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$")
 SIDE_FILE = re.compile(r"^### +Side file:")
 SKIPPED = re.compile(r"^## +Skipped *$")
+SECTION = re.compile(r"^## +Section: *\S")
 # - `package-lock.json` — lockfile only
 SKIPPED_FILE = re.compile(r"^[-*] +`([^`]+)`(?: *[—–-]+ *(.*))?$")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+class BadReviewPath(Exception):
+    """The text can't be read as a review path. str(e) names the problem: the
+    heading out of shape (with its line), or the file named wrongly."""
 
 
 @dataclass(frozen=True)
@@ -89,8 +95,18 @@ def _headings(text: str) -> List[Tuple[Optional[str], str]]:
     return out
 
 
+def check_files(path: ReviewPath, changed: Collection[str]) -> None:
+    """Raises BadReviewPath when a file the path names (a stop, or a skipped
+    file) is not one of <changed>, the changeset's files."""
+    for file in [s.file for s in path.stops] + [s.file for s in path.skipped]:
+        if file not in changed:
+            raise BadReviewPath(f"`{file}` is named, but is not in the changeset")
+
+
 def parse(text: str) -> ReviewPath:
-    """The review path written in <text>."""
+    """The review path written in <text>. Raises BadReviewPath for a `##`
+    heading that is no stop, `## Section:` or `## Skipped`, and for a file
+    named by two stops."""
     stops: List[Stop] = []
     skipped: List[Skipped] = []
     stop: Optional[Stop] = None
@@ -111,7 +127,9 @@ def parse(text: str) -> ReviewPath:
             stops.append(stop)
         stop = None
 
-    for heading, line in _headings(text):
+    headings = _headings(text)
+    first_line = len(text.splitlines()) - len(headings) + 1  # the frontmatter is not in <headings>
+    for at, (heading, line) in enumerate(headings, first_line):
         if heading is None:
             if question is not None:
                 answer.append(line)
@@ -126,6 +144,8 @@ def parse(text: str) -> ReviewPath:
             found = STOP.match(heading)
             if found:
                 stop = Stop(found[1], _file_of(found[2]), ())
+            elif heading.startswith("## ") and not in_skipped and not SECTION.match(heading):
+                raise BadReviewPath(f'line {at}: "{heading.strip()}" is not a stop, a "## Section:" or "## Skipped"')
         elif heading.startswith("### ") and stop is not None:
             end_question()
             if not SIDE_FILE.match(heading):
@@ -133,4 +153,9 @@ def parse(text: str) -> ReviewPath:
         elif question is not None:
             answer.append(line)  # a deeper heading is part of the answer
     end_stop()
+    seen = set()
+    for stop in stops:
+        if stop.file in seen:
+            raise BadReviewPath(f"`{stop.file}` is named twice")
+        seen.add(stop.file)
     return ReviewPath(tuple(stops), tuple(skipped))

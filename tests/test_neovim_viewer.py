@@ -1790,6 +1790,31 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         wait_for("the skipped file left out", lambda: (nvim.menu() or {}).get("lines") == [
             "  1 util.py · Who calls it?"])
 
+    def test_a_broken_review_path_is_warned_about_once_and_leader_rf_lists_the_changesets_order_until_fixed(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+        nvim.lua("T.notes = {}; vim.notify = function(m, level, o) table.insert(T.notes, { m, level, o and o.title }) end")
+        before = nvim.lua("return T.snapshot()")
+        self.a_review_path("## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n\n"
+                           "## 2 `gone.py`\n\n### Why?\nBecause.\n")
+
+        wait_for("the warning", lambda: any("gone.py" in n[0] for n in nvim.lua("return T.notes")))
+        time.sleep(1)  # more polls, each still carrying it
+        notes = [n for n in nvim.lua("return T.notes") if "review-path.md" in n[0]]
+        self.assertEqual(len(notes), 1, f"shown once: {notes}")
+        self.assertEqual((notes[0][1], notes[0][2]), (3, "difftate"), "at warning level, titled difftate")
+        self.assertIn("not in the changeset", notes[0][0])
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], ["  app.py  +1 −1", "  util.py  +6 −0"], "the changeset's order")
+
+        nvim.lua("T.menu = nil")
+        self.write("review-path.md", "## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n")
+        nvim.keys("<leader>rf")
+        wait_for("the path again", lambda: (nvim.menu() or {}).get("lines") == [
+            "  1 util.py · What does shout do?", "  app.py  +1 −1"])
+        self.assertEqual(self.api("GET", "/api/review")["warnings"], [], "a fixed file clears the warning")
+        self.assertEqual(nvim.lua("return T.snapshot()"), before, "the warning changed no option or key")
+
     def test_following_the_review_path_changes_no_option_or_key_of_the_reviewers_window_or_buffer(self):
         nvim = self.a_review_of_two_files(before=FAKE_SELECT)
         self.a_review_path("## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n")
