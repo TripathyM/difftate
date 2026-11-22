@@ -118,6 +118,19 @@ tr.below > td { padding: 6px 10px; background: var(--panel); border-top: 1px sol
 section.elsewhere { margin-bottom: 16px; }
 section.elsewhere > h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
 
+/* The review path (review_path.js): its rows in the file list, and a stop above a file's diff. Not a thread's look:
+   a left bar and the page's panel colour, no border box, no buttons. */
+aside .path-row, aside .path-mark { font-family: var(--mono); font-size: 12px; white-space: pre; }
+aside .path-mark { color: var(--muted); }
+aside li.path-heading { color: var(--muted); font-size: 12px; margin: 6px 0 2px 6px; }
+.review-path-stop { padding: 8px 12px; background: var(--panel); border-left: 4px solid var(--accent); border-bottom: 1px solid var(--border); }
+.review-path-stop .label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
+.review-path-stop h4 { margin: 4px 0 2px; font-size: 13px; }
+.review-path-stop h4.head { font-family: var(--mono); }
+.review-path-stop .lines { color: var(--muted); font-size: 12px; }
+.review-path-stop .part { margin-top: 8px; }
+.review-path-stop .answer { white-space: pre-wrap; }
+
 @media (max-width: 800px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
   aside { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--border); }
