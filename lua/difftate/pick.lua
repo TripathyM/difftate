@@ -2,6 +2,15 @@
 -- vim.ui.select; the files sidebar, a list that stays open, is Snacks only. A picker is the reviewer's own tool: the plugin sets no option or key on it.
 local M = {}
 
+-- How Snacks draws a row: its text, the folder it ends with (entry.folder) dimmed
+local function format(item)
+  local text, folder = item.text, item.folder
+  if folder and #text > #folder and text:sub(-#folder) == folder then
+    return { { text:sub(1, #text - #folder) }, { folder, "DifftateFolder" } }
+  end
+  return { { text } }
+end
+
 local function snacks_picker()
   local snacks = rawget(_G, "Snacks") or package.loaded["snacks"]
   local ok, pick = pcall(function()
@@ -10,11 +19,12 @@ local function snacks_picker()
   return ok and type(pick) == "function" and snacks.picker or nil
 end
 
---- Let the reviewer choose among <entries> ({ { text, value } }): on_choice(value) once
+--- Let the reviewer choose among <entries> ({ { text, value, folder } }): on_choice(value) once
 --- one is picked, never when the picker is dismissed. An entry with no value is a heading: picking
 --- it does nothing. <title> names the picker. <opts>: `current`, a function of an entry's value that is
 --- true for the row the cursor starts on (Snacks only), and an entry's `preview`, markdown shown beside
---- the rows when Snacks is there (vim.ui.select shows rows only).
+--- the rows when Snacks is there (vim.ui.select shows rows only). An entry's `folder`, the end of its
+--- text, is dimmed (Snacks only).
 function M.choose(entries, title, on_choice, opts)
   opts = opts or {}
   local picker = snacks_picker()
@@ -22,7 +32,7 @@ function M.choose(entries, title, on_choice, opts)
     local items, previewed, current = {}, false, nil
     for i, entry in ipairs(entries) do
       previewed = previewed or entry.preview ~= nil
-      items[i] = { idx = i, text = entry.text, value = entry.value,
+      items[i] = { idx = i, text = entry.text, folder = entry.folder, value = entry.value,
         preview = { text = entry.preview or "", ft = "markdown", loc = false } }
       if not current and entry.value ~= nil and opts.current and opts.current(entry.value) then
         current = i
@@ -31,9 +41,7 @@ function M.choose(entries, title, on_choice, opts)
     picker.pick({
       title = title,
       items = items,
-      format = function(item)
-        return { { item.text } }
-      end,
+      format = format,
       preview = previewed and "preview" or false,
       -- long answers wrap at word breaks, in this picker's own preview window only
       win = previewed and { preview = { wo = { wrap = true, linebreak = true } } } or nil,
@@ -97,7 +105,7 @@ function M.sidebar(entries, title, on_choose, opts)
   local function items_of(list)
     local items = {}
     for i, entry in ipairs(list) do
-      items[i] = { idx = i, text = entry.text, value = entry.value }
+      items[i] = { idx = i, text = entry.text, folder = entry.folder, value = entry.value }
     end
     return items
   end
@@ -120,9 +128,7 @@ function M.sidebar(entries, title, on_choose, opts)
     finder = function()
       return items
     end,
-    format = function(item)
-      return { { item.text } }
-    end,
+    format = format,
     preview = false,
     layout = { preset = "right", preview = false },
     auto_close = false,

@@ -1130,7 +1130,9 @@ local function file_entries(review, quiet, on_entries)
           entries = review_path.entries(written, files, viewed)
         else
           for _, file in ipairs(files) do
-            table.insert(entries, { text = nav.file_row(file, viewed[file.path]), value = file })
+            local _, folder = nav.name_and_folder(file.path)
+            table.insert(entries, { text = nav.file_row(file, viewed[file.path]), value = file,
+              folder = folder ~= "" and folder or nil })
           end
         end
         on_entries(#files > 0 and entries or {})

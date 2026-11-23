@@ -7,6 +7,8 @@ local LINKS = {
   DifftateBar = "Comment", DifftateHead = "Title", DifftateDim = "Comment", DifftateReviewer = "Identifier",
   DifftateAgent = "String", DifftateNote = "Comment", DifftateDeleted = "DiffDelete",
   DifftateCode = "Comment", DifftateSign = "DiagnosticSignInfo", DifftateNumber = "DiagnosticInfo",
+  -- The folder a row of the changed files picker ends with, after the file name
+  DifftateFolder = "Comment",
   -- The tint of added and changed lines
   DifftateAdd = "DiffAdd",
 }
