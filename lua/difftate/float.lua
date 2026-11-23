@@ -76,6 +76,8 @@ function M.open(thread)
   set("linebreak", true)
   show(current, thread)
   vim.api.nvim_set_option_value("filetype", "markdown", { buf = buf })
+  -- markdown for its colours, not a document: a linter (LazyVim's markdownlint) shows nothing here
+  vim.diagnostic.enable(false, { bufnr = buf })
 
   for _, key in ipairs({ "q", "<Esc>" }) do
     vim.keymap.set("n", key, M.close, { buffer = buf, nowait = true, desc = "Close the thread" })
