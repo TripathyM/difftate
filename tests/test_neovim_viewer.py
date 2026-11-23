@@ -1072,7 +1072,7 @@ class ReadingAThreadInAFloat(NeovimHarness, unittest.TestCase):
         self.assertEqual(nvim.lua("return { vim.bo.filetype, vim.bo.modifiable, vim.wo.wrap, vim.wo.linebreak }"),
                          ["markdown", False, True, True])
         # a markdown linter's line-length warnings would cover the text: no diagnostics in the float
-        self.assertEqual(nvim.lua("return { vim.diagnostic.is_enabled({ bufnr = 0 }), vim.diagnostic.is_enabled() }"),
+        self.assertEqual(nvim.lua("return { vim.diagnostic.is_enabled({ bufnr = 0 }), vim.diagnostic.is_enabled({ bufnr = vim.fn.bufnr('app.py') }) }"),
                          [False, True])
 
     def test_it_can_be_yanked_from_and_searched_and_q_closes_it(self):
@@ -1233,7 +1233,7 @@ class CommentingOnLines(NeovimHarness, unittest.TestCase):
 
         wait_for("the compose float", lambda: nvim.compose_float())
         self.assertEqual(nvim.compose_float()["filetype"], "markdown")
-        self.assertEqual(nvim.lua("return { vim.diagnostic.is_enabled({ bufnr = 0 }), vim.diagnostic.is_enabled() }"),
+        self.assertEqual(nvim.lua("return { vim.diagnostic.is_enabled({ bufnr = 0 }), vim.diagnostic.is_enabled({ bufnr = vim.fn.bufnr('app.py') }) }"),
                          [False, True], "no linter warnings in the compose float; the reviewer's files keep theirs")
         self.assertIn("app.py:2", nvim.compose_float()["title"])
         nvim.write_text("Name the greeting first")
