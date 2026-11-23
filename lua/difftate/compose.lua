@@ -103,6 +103,8 @@ function M.open(opts)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, text)
   vim.bo[buf].modified = false -- its own buffer: :q closes it, the text is kept
   vim.api.nvim_set_option_value("filetype", "markdown", { buf = buf })
+  -- markdown for its colours, not a document: a linter (LazyVim's markdownlint) shows nothing here
+  vim.diagnostic.enable(false, { bufnr = buf })
   vim.api.nvim_win_set_cursor(win, { #text, #text[#text] })
 
   local function send()
