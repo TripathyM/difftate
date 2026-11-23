@@ -397,14 +397,14 @@ function M.close()
   say(("Review closed: git signs show changes since %s again"):format(base or "the index"))
 end
 
---- Expand every resolved, dismissed and outdated thread to full, or shrink them to
+--- Expand every resolved and dismissed thread to full, or shrink them to
 --- one line again.
 function M.toggle_expanded()
   if not (current and current.watcher) then
     say("No review is open: open it to expand its threads")
     return
   end
-  say(draw.toggle_expanded() and "Every thread is expanded" or "Resolved, dismissed and outdated threads are one line")
+  say(draw.toggle_expanded() and "Every thread is expanded" or "Resolved and dismissed threads are one line")
 end
 
 -- The review for a key that needs one, or nil (with the message): <what> says what the key does
