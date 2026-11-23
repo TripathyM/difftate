@@ -628,7 +628,20 @@ SHAPES_AFTER = "one = 1\ntwo = 22\nthree = 3\nfive = 5\nfive_and_a_half = 5.5\ns
 FAKE_SELECT = ("vim.ui.select = function(items, opts, on_choice) T.menu = { via = 'ui.select', title = opts.prompt, "
                "lines = vim.tbl_map(function(i) return opts.format_item and opts.format_item(i) or tostring(i) end, items) }; "
                "T.choose_menu = function(n) on_choice(items[n], n) end end")
-FAKE_SNACKS = ("_G.Snacks = { picker = { pick = function(o) T.menu = { via = 'snacks', title = o.title, "
+# The files sidebar (source difftate_files) is a long-lived picker: T.sidebar_picker is it (closed once the
+# plugin closes it), T.sidebar what it was given, T.sidebar_lines() the rows its finder gives now, T.sidebar_choose(n)
+# Enter on a row. It never lands in T.menu: that is the pop-up pickers'.
+FAKE_SIDEBAR = ("local p = { closed = false, main = vim.api.nvim_get_current_win() }; "
+                "function p:close() self.closed = true end; "
+                "function p:find() T.sidebar_finds = (T.sidebar_finds or 0) + 1 end; "
+                "T.sidebar_picker = p; T.sidebar_opened = (T.sidebar_opened or 0) + 1; "
+                "T.sidebar = { title = o.title, layout = o.layout, preview = o.preview, auto_close = o.auto_close }; "
+                "T.sidebar_lines = function() return vim.tbl_map(function(i) return i.text end, o.finder({}, {})) end; "
+                "T.sidebar_choose = function(n) o.confirm(p, o.finder({}, {})[n]) end; "
+                "if o.on_show then o.on_show({ list = { count = function() return #o.finder({}, {}) end, "
+                "move = function(_, n) T.sidebar.cursor = n end } }) end; return p")
+FAKE_SNACKS = ("_G.Snacks = { picker = { pick = function(o) if o.source == 'difftate_files' then " + FAKE_SIDEBAR + " end; "
+               "T.menu = { via = 'snacks', title = o.title, "
                "lines = vim.tbl_map(function(i) return i.text end, o.items), preview = o.preview, "
                "win = o.win, previews = vim.tbl_map(function(i) return i.preview and i.preview.text or false end, o.items) }; "
                "T.choose_menu = function(n) o.confirm({ close = function() end }, o.items[n]) end; "
@@ -685,7 +698,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
             "resolve": "<leader>gS", "reopen": "<leader>gO", "general": "<leader>gG",
             "threads": "<leader>gP", "files": "<leader>gF", "next": "<leader>gN", "previous": "<leader>gB",
             "mode": "<leader>gM", "agent": "<leader>gH", "submit": "<leader>gU", "done": "<leader>gD", "export": "<leader>gX", "viewed": "<leader>gV", "views": "<leader>gW",
-            "browser": "<leader>gY", "side_by_side": "<leader>gZ"}})
+            "browser": "<leader>gY", "side_by_side": "<leader>gZ", "files_sidebar": "<leader>gQ"}})
 
         self.assertEqual(nvim.lua("return require('which-key').added"), [])
 
@@ -697,7 +710,7 @@ class TheReviewKeys(NeovimHarness, unittest.TestCase):
         self.assertEqual(after["options"], before["options"])
         self.assertEqual(set(after["keys"]) - set(before["keys"]), {"n  rr", "n  re", "n  rt", "n  rc", "x  rc", "n  ra", "n  rR", "n  rO", "n  rG",
                                                                  "n  rs", "n  rf", "n ]r", "n [r", "n  rM", "n  rA", "n  rS", "n  rD", "n  rE", "n  rv", "n  rV",
-                                                                 "n  rB", "n  rd"})
+                                                                 "n  rB", "n  rd", "n  rF"})
         self.assertEqual({k: v for k, v in after["keys"].items() if k in before["keys"]}, before["keys"])
 
     def test_opening_and_closing_the_review_changes_no_option_or_key(self):
@@ -1613,6 +1626,10 @@ class ReviewOfTwoFiles(NeovimHarness):
         nvim = self.nvim(before=before)
         nvim.command("DifftateOpen")
         self.drawn(nvim)
+        if before == FAKE_SNACKS:
+            # The sidebar read the changeset when the review opened, and the watcher keeps what it read for a
+            # second: a test that writes files next wants to see them in the next picker
+            time.sleep(1.2)
         return nvim
 
     def settle(self, nvim, where):
@@ -1811,7 +1828,13 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         os.makedirs(os.path.dirname(exclude), exist_ok=True)
         with open(exclude, "a") as f:
             f.write("review-path.md\n")
+        nvim = self.neovims[-1]
+        shown = nvim.lua("return T.sidebar_lines and T.sidebar_lines()")
         self.write("review-path.md", text)
+        if shown is not None:
+            # The sidebar polls the watcher, which keeps what it read for a second: once the sidebar shows the path,
+            # the next picker reads it too
+            wait_for("the sidebar to show the path", lambda: nvim.lua("return T.sidebar_lines()") != shown)
 
     def test_leader_rf_follows_the_review_path_with_each_stops_first_question_then_the_other_files(self):
         nvim = self.a_review_of_two_files(before=FAKE_SELECT)
@@ -2146,6 +2169,137 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
 
 
 @needs(MISSING_GITSIGNS)
+class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
+    """#215: the changed files on the right, open when a review opens, <leader>rF shows or hides it."""
+
+    def sidebar_lines(self, nvim):
+        return nvim.lua("return T.sidebar_lines and T.sidebar_lines()")
+
+    def is_open(self, nvim):
+        return nvim.lua("return T.sidebar_picker ~= nil and not T.sidebar_picker.closed")
+
+    def test_a_review_opening_shows_it_on_the_right_with_the_rows_of_the_picker_and_no_preview(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        self.api("PUT", "/api/viewed", {"file": "util.py"})
+
+        wait_for("the sidebar", lambda: self.is_open(nvim))
+
+        sidebar = nvim.lua("return T.sidebar")
+        self.assertEqual(sidebar["title"], "Changed files")
+        self.assertEqual(sidebar["layout"], {"preset": "right", "preview": False})
+        self.assertFalse(sidebar["preview"])
+        self.assertFalse(sidebar["auto_close"], "Enter must leave it open")
+        wait_for("the viewed mark", lambda: self.sidebar_lines(nvim) == ["  app.py  +1 −1", "✓ util.py  +6 −0 · viewed"])
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], self.sidebar_lines(nvim))
+
+    def test_it_follows_the_review_path_like_the_picker(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        exclude = os.path.join(self.repo, ".git", "info", "exclude")
+        os.makedirs(os.path.dirname(exclude), exist_ok=True)
+        with open(exclude, "a") as f:
+            f.write("review-path.md\n")
+        self.write("review-path.md", "## 1 `util.py` ★\n\n### What does shout do?\nUpper-cases.\n")
+
+        wait_for("the path rows", lambda: self.sidebar_lines(nvim) == [
+            "  1 util.py ★ · What does shout do?", "Not on the path", "  └─ app.py  +1 −1"])
+
+    def test_leader_rF_hides_it_and_shows_it_again(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        wait_for("the sidebar", lambda: self.is_open(nvim))
+
+        nvim.keys("<leader>rF")
+        wait_for("it hidden", lambda: not self.is_open(nvim))
+        nvim.keys("<leader>rF")
+
+        wait_for("it shown again", lambda: nvim.lua("return T.sidebar_opened") == 2 and self.is_open(nvim))
+        wait_for("its rows", lambda: self.sidebar_lines(nvim) == ["  app.py  +1 −1", "  util.py  +6 −0"])
+
+    def test_leader_rf_stays_the_popup_picker(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        wait_for("the sidebar", lambda: self.is_open(nvim))
+        nvim.lua("T.sidebar_opened = 0")
+
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["title"], "Changed files")
+        self.assertEqual(nvim.menu()["lines"], ["  app.py  +1 −1", "  util.py  +6 −0"])
+        self.assertEqual(nvim.lua("return T.sidebar_opened"), 0, "the key opens no second sidebar")
+        self.assertTrue(self.is_open(nvim), "and does not hide this one")
+
+    def test_enter_on_a_row_opens_the_file_in_the_main_window_and_keeps_the_sidebar(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        wait_for("the sidebar", lambda: self.is_open(nvim))
+        main = nvim.lua("return vim.api.nvim_get_current_win()")
+        # as in Snacks, the sidebar is the current window while it is used
+        nvim.lua("vim.cmd('vnew'); T.sidebar_picker.main = " + str(main))
+
+        nvim.lua("T.sidebar_choose(2)")
+
+        wait_for("util.py in the main window", lambda: nvim.lua(
+            f"return vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf({main})):match('[^/]*$')") == "util.py")
+        self.assertEqual(nvim.lua("return vim.api.nvim_get_current_win()"), main)
+        self.assertTrue(self.is_open(nvim))
+
+    def test_a_heading_row_does_nothing(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        exclude = os.path.join(self.repo, ".git", "info", "exclude")
+        os.makedirs(os.path.dirname(exclude), exist_ok=True)
+        with open(exclude, "a") as f:
+            f.write("review-path.md\n")
+        self.write("review-path.md", "## 1 `util.py`\n\n### Q?\nA.\n")
+        wait_for("the path rows", lambda: len(self.sidebar_lines(nvim) or []) == 3)
+        where = nvim.at()
+
+        nvim.lua("T.sidebar_choose(2)")
+        time.sleep(0.5)
+
+        self.assertEqual(nvim.at(), where)
+        self.assertTrue(self.is_open(nvim))
+
+    def test_a_viewed_mark_shows_within_a_poll(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        wait_for("the sidebar", lambda: self.is_open(nvim))
+
+        self.api("PUT", "/api/viewed", {"file": "app.py"})
+
+        wait_for("the mark", lambda: self.sidebar_lines(nvim) == ["✓ app.py  +1 −1 · viewed", "  util.py  +6 −0"])
+
+    def test_it_refreshes_only_when_the_rows_changed(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        wait_for("the sidebar", lambda: self.is_open(nvim))
+        wait_for("its rows", lambda: self.sidebar_lines(nvim))
+        time.sleep(1)  # several polls
+        before = nvim.lua("return T.sidebar_finds or 0")
+
+        time.sleep(1)
+
+        self.assertEqual(nvim.lua("return T.sidebar_finds or 0"), before)
+
+    def test_closing_the_review_closes_it(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        wait_for("the sidebar", lambda: self.is_open(nvim))
+
+        nvim.command("DifftateClose")
+
+        wait_for("it closed", lambda: not self.is_open(nvim))
+        nvim.keys("<leader>rF")
+        self.assertIn("No review is open", nvim.messages())
+        self.assertFalse(self.is_open(nvim))
+
+    def test_without_snacks_the_review_opens_and_the_key_says_a_sidebar_needs_it(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SELECT)
+
+        nvim.keys("<leader>rF")
+
+        wait_for("the message", lambda: "needs Snacks" in nvim.messages())
+        self.assertNotEqual(nvim.status(), "")
+        self.assertNotIn("Error", nvim.messages())
+
+
+@needs(MISSING_GITSIGNS)
 class ReviewModeAndSubmit(NeovimHarness, unittest.TestCase):
     LIVE = "review open · live · git signs show changes since main"
 
@@ -2402,7 +2556,7 @@ class ReviewModeAndSubmit(NeovimHarness, unittest.TestCase):
         self.assertIsNone(nvim.gitsigns_base(), "the review isn't opened here: <leader>rB asks for nothing else")
 
     def test_the_browser_key_comes_from_opts_keys_false_maps_none_and_a_taken_one_stays_theirs(self):
-        nvim = self.nvim(opts={"keys": {"browser": "<leader>gY", "side_by_side": "<leader>gZ"}})
+        nvim = self.nvim(opts={"keys": {"browser": "<leader>gY", "side_by_side": "<leader>gZ", "files_sidebar": "<leader>gQ"}})
         self.assertEqual(nvim.lua("return vim.fn.maparg('<leader>rB', 'n')"), "")
         self.assertNotEqual(nvim.lua("return vim.fn.maparg('<leader>gY', 'n')"), "")
         unmapped = self.nvim(opts={"keys": {"browser": False}})
