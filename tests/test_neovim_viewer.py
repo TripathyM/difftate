@@ -3131,13 +3131,35 @@ class TheDiffLook(NeovimHarness, unittest.TestCase):
         wait_for("the look", lambda: nvim.look()["deleted"])  # the first drawing defines them
         links = nvim.lua("""
             local out = {}
-            for _, name in ipairs({ "DifftateAdd", "DifftateDeleted", "DifftateBox", "DifftateBody" }) do
+            for _, name in ipairs({ "DifftateAdd", "DifftateDeleted" }) do
               local hl = vim.api.nvim_get_hl(0, { name = name, link = true })
               out[name] = { hl.link, hl.default }
             end
             return out""")
-        self.assertEqual(links, {"DifftateAdd": ["DiffAdd", True], "DifftateDeleted": ["DiffDelete", True],
-                                 "DifftateBox": ["NormalFloat", True], "DifftateBody": ["NormalFloat", True]})
+        self.assertEqual(links, {"DifftateAdd": ["DiffAdd", True], "DifftateDeleted": ["DiffDelete", True]})
+
+    def test_a_thread_box_is_the_editors_background_with_a_tint_of_the_info_colour(self):
+        self.shapes()
+
+        nvim = self.open_shapes(before="""
+            vim.api.nvim_set_hl(0, 'Normal', { fg = '#c0c0c0', bg = '#000000' })
+            vim.api.nvim_set_hl(0, 'NormalFloat', { fg = '#d0d0d0', bg = '#101010' })
+            vim.api.nvim_set_hl(0, 'DiagnosticInfo', { fg = '#0000ff' })""")
+
+        wait_for("the look", lambda: nvim.look()["deleted"])
+        box, body = nvim.lua("""return { vim.api.nvim_get_hl(0, { name = 'DifftateBox' }),
+                                         vim.api.nvim_get_hl(0, { name = 'DifftateBody' }) }""")
+        self.assertEqual((box.get("bg"), box.get("default")), (0x000014, True), "8% of the blue on black")
+        self.assertEqual((body.get("fg"), body.get("bg")), (0xd0d0d0, None), "a colour only: the tint shows under it")
+
+    def test_a_thread_box_on_a_transparent_editor_is_the_colorschemes_float(self):
+        self.shapes()
+
+        nvim = self.open_shapes(before="vim.api.nvim_set_hl(0, 'Normal', { fg = '#c0c0c0' })")
+
+        wait_for("the look", lambda: nvim.look()["deleted"])
+        self.assertEqual(nvim.lua("return vim.api.nvim_get_hl(0, { name = 'DifftateBox', link = true }).link"),
+                         "NormalFloat")
 
     def test_a_highlight_the_reviewer_set_themselves_wins_over_the_default(self):
         self.shapes()
