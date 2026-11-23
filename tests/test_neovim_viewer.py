@@ -527,6 +527,60 @@ class WhileTheReviewIsOpen(NeovimHarness, unittest.TestCase):
         wait_for("gitsigns on the index", lambda: nvim.gitsigns_base() is None)
         self.assertEqual(nvim.lua("return T.snapshot()"), before)
 
+    def disk(self, name, text, folder=None):
+        with open(os.path.join(folder or self.repo, name), "w") as f:
+            f.write(text)
+
+    def first_line(self, nvim, name="app.py"):
+        return nvim.lua(f"return vim.api.nvim_buf_get_lines(vim.fn.bufnr({vim_string(name)}), 0, 1, false)[1]")
+
+    def test_a_file_a_run_changed_reloads_within_a_poll_without_a_focus_change_or_an_option(self):
+        nvim = self.an_open_review()
+        before = nvim.lua("return T.snapshot()")
+
+        self.disk("app.py", "print('a run wrote this, and it is longer')\n")
+
+        wait_for("the buffer to reload", lambda: "a run wrote this" in self.first_line(nvim))
+        after = nvim.lua("return T.snapshot()")
+        # Neovim's own reload runs the filetype plugin again (buffer options): those aren't the plugin's
+        is_global = lambda options: {k: v for k, v in options.items() if not k.startswith("b:")}
+        self.assertEqual(is_global(after["options"]), is_global(before["options"]))
+        self.assertEqual(after["keys"], before["keys"])
+
+    def test_a_buffer_with_unsaved_edits_is_not_overwritten_and_the_warning_comes_once(self):
+        nvim = self.an_open_review()
+        nvim.lua("vim.api.nvim_buf_set_lines(0, 0, 1, false, { 'unsaved edit' })")
+        nvim.command("messages clear")
+
+        self.disk("app.py", "print('a run wrote this, and it is longer')\n")
+        time.sleep(1)  # five polls
+
+        self.assertEqual(self.first_line(nvim), "unsaved edit")
+        self.assertLessEqual(nvim.messages().count("W12"), 1, nvim.messages())
+
+    def test_a_file_outside_the_reviews_folder_is_left_alone(self):
+        outside = os.path.join(self.tmp, "outside")
+        os.mkdir(outside)
+        self.disk("notes.txt", "old\n", outside)
+        nvim = self.an_open_review()
+        nvim.command("edit " + os.path.join(outside, "notes.txt"))
+        nvim.command("edit app.py")
+
+        self.disk("notes.txt", "new and longer\n", outside)
+        time.sleep(1)
+
+        self.assertEqual(self.first_line(nvim, os.path.join(outside, "notes.txt")), "old")
+
+    def test_an_error_while_checking_is_not_shown(self):
+        nvim = self.an_open_review()
+        nvim.lua("T.checks = 0; local c = vim.cmd; vim.cmd = function(x) "
+                 "if type(x) == 'string' and x:find('checktime') then T.checks = T.checks + 1; error('E11: boom') end; return c(x) end")
+        nvim.command("messages clear")
+
+        wait_for("a poll to check", lambda: nvim.lua("return T.checks") >= 2)
+
+        self.assertNotIn("boom", nvim.messages())
+
     def test_requests_never_block_the_editor_even_when_the_watcher_hangs(self):
         self.commit()
         self.start_watcher()

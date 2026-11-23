@@ -237,6 +237,20 @@ local function read_view(review, on_done)
   end)
 end
 
+-- Have Neovim look at the disk for each loaded file of the review's folder, as LazyVim does on focus: a file
+-- a run changed reloads (when the reviewer's own 'autoread' says so; an unsaved edit gets Neovim's warning, once
+-- per change, never an overwrite). Errors (the command-line window, say) are swallowed.
+local function check_files(review)
+  local top = vim.uv.fs_realpath(review.watcher.top) or review.watcher.top
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    local name = vim.api.nvim_buf_get_name(buf)
+    if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].buftype == "" and name ~= ""
+        and vim.startswith(vim.uv.fs_realpath(name) or name, top .. "/") then
+      pcall(vim.cmd, "silent! checktime " .. buf)
+    end
+  end
+end
+
 -- One poll of the open <review>: the review API (the base may change after a
 -- checkout), the merge-base, then the threads. One at a time: a slow one is skipped over.
 local function poll(review)
@@ -259,6 +273,7 @@ local function poll(review)
     end
     review.lost = false
     review.base = answer.base
+    check_files(review)
     -- A warning about the review (a store changed outside difftate): shown once, as it comes
     review.warned = review.warned or {}
     for _, warning in ipairs(answer.warnings or {}) do
