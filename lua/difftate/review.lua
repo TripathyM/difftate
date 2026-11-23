@@ -1184,6 +1184,12 @@ end
 -- Show the sidebar of <review>; the rows come in a moment. <by_key>: the reviewer asked for it, so the
 -- cursor goes into it, and it says when there is no Snacks to show it with.
 function show_sidebar(review, by_key)
+  if not pick.can_sidebar() then
+    if by_key then
+      say("The files sidebar needs Snacks.picker (LazyVim's picker): <leader>rf lists the files")
+    end
+    return -- no request for rows that nothing would show
+  end
   file_entries(review, true, function(entries)
     if current ~= review or (review.sidebar and review.sidebar.is_open()) then
       return
@@ -1191,9 +1197,6 @@ function show_sidebar(review, by_key)
     review.sidebar = pick.sidebar(entries, "Changed files", function(file)
       open_row(review, file)
     end, { focus = by_key, current = row_of_here(review) })
-    if not review.sidebar and by_key then
-      say("The files sidebar needs Snacks.picker (LazyVim's picker): <leader>rf lists the files")
-    end
   end)
 end
 

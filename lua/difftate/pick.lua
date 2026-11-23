@@ -77,6 +77,11 @@ function M.choose(entries, title, on_choice, opts)
   end)
 end
 
+--- Whether a sidebar can be shown: Snacks is there.
+function M.can_sidebar()
+  return snacks_picker() ~= nil
+end
+
 --- A list that stays down the right side of the screen (Snacks only; nil when it is not there), with
 --- the rows of <entries> as `choose` shows them, but no preview: like LazyVim's explorer, it stays
 --- open when a row is picked. on_choose(value) runs in the window the list was opened from. <opts>:

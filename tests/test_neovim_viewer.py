@@ -1626,6 +1626,10 @@ class ReviewOfTwoFiles(NeovimHarness):
         nvim = self.nvim(before=before)
         nvim.command("DifftateOpen")
         self.drawn(nvim)
+        if before == FAKE_SNACKS:
+            # The sidebar read the changeset when the review opened, and the watcher keeps what it read for a
+            # second: a test that writes files next wants to see them in the next picker
+            time.sleep(1.2)
         return nvim
 
     def settle(self, nvim, where):
@@ -1824,7 +1828,13 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         os.makedirs(os.path.dirname(exclude), exist_ok=True)
         with open(exclude, "a") as f:
             f.write("review-path.md\n")
+        nvim = self.neovims[-1]
+        shown = nvim.lua("return T.sidebar_lines and T.sidebar_lines()")
         self.write("review-path.md", text)
+        if shown is not None:
+            # The sidebar polls the watcher, which keeps what it read for a second: once the sidebar shows the path,
+            # the next picker reads it too
+            wait_for("the sidebar to show the path", lambda: nvim.lua("return T.sidebar_lines()") != shown)
 
     def test_leader_rf_follows_the_review_path_with_each_stops_first_question_then_the_other_files(self):
         nvim = self.a_review_of_two_files(before=FAKE_SELECT)
