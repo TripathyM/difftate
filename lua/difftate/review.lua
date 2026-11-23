@@ -21,6 +21,7 @@ local view = require("difftate.view")
 local M = {}
 
 local current -- the open review, or the one opening: { watcher, base, ... }
+local show_sidebar, refresh_sidebar -- the changed files sidebar, below
 
 local function say(message, level)
   vim.notify(message, level or vim.log.levels.INFO, { title = "difftate" })
@@ -294,6 +295,7 @@ local function poll(review)
             read_done(review, function()
               read_threads(review, function()
                 review.polling = false
+                refresh_sidebar(review)
               end)
             end)
           end)
@@ -366,6 +368,7 @@ function M.open(cwd, opts)
                 look.show(watcher.top, opts.diff)
                 read_threads(review, function()
                   start_polling(review, opts.poll_ms)
+                  show_sidebar(review, false)
                 end)
               end)
             end)
@@ -383,6 +386,9 @@ function M.close()
     return
   end
   stop_polling(current)
+  if current.sidebar then
+    current.sidebar.close()
+  end
   current = nil
   float.close()
   compose.close() -- what is typed stays, for when a review is open again
@@ -951,9 +957,12 @@ end
 -- ]r, [r and the pickers ------------------------------------------------------
 
 -- The review's threads and its changeset's files as they are now: then_(threads, files, diff
--- files) once both came; a request that failed says why and calls nothing.
-local function snapshot(review, then_)
+-- files) once both came; a request that failed says why (unless <quiet>) and calls nothing.
+local function snapshot(review, then_, quiet)
   local function failed(err)
+    if quiet then
+      return
+    end
     say(err.missing and no_watcher(review.watcher.top) or err.message, vim.log.levels.ERROR)
   end
   api.request(review.watcher, "GET", view.query("/api/threads", shown_view(review)), function(listed, err)
@@ -1092,20 +1101,20 @@ local function written_path(review, on_written)
   end)
 end
 
---- The changed files picker: the changeset's files, viewed ones marked; the picked one opens. With a
---- review path, its stops come first in reading order as a tree, then the files it skips, then the
---- files it doesn't name.
-function M.pick_file()
-  local review = open_review("list its files")
-  if not review then
-    return
-  end
+-- The rows of the changed files (the picker's and the sidebar's): on_entries(entries) once they are
+-- known; a failed request says why (when <quiet> is not set) and calls nothing. With a review
+-- path, its stops come first in reading order as a tree, then the files it skips, then the
+-- files it doesn't name; with none, every file in the changeset's order. Called with no entries
+-- when the changeset has no file.
+local function file_entries(review, quiet, on_entries)
   api.request(review.watcher, "GET", "/api/viewed", function(answer, err)
     if current ~= review then
       return
     end
     if not answer then
-      say(err.missing and no_watcher(review.watcher.top) or err.message, vim.log.levels.ERROR)
+      if not quiet then
+        say(err.missing and no_watcher(review.watcher.top) or err.message, vim.log.levels.ERROR)
+      end
       return
     end
     local viewed = {}
@@ -1117,11 +1126,6 @@ function M.pick_file()
         return
       end
       snapshot(review, function(_, files)
-        if #files == 0 then
-          say("No changed files in this review")
-          return
-        end
-        -- No review path: no stops, every file in the changeset's order, as before there was one
         local entries = {}
         if written then
           entries = review_path.entries(written, files, viewed)
@@ -1130,24 +1134,91 @@ function M.pick_file()
             table.insert(entries, { text = nav.file_row(file, viewed[file.path]), value = file })
           end
         end
-        local here = path_in_review(review, vim.api.nvim_get_current_buf())
-        pick.choose(entries, "Changed files", function(file)
-          if current ~= review then
-            return
-          end
-          if file.deleted then
-            say(("%s was deleted: there is no file to open"):format(file.path))
-            return
-          end
-          if open_file(review, file.path) and file.line then
-            go_to_line(file.line)
-          end
-        end, { current = function(file)
-          return file.path == here
-        end })
-      end)
+        on_entries(#files > 0 and entries or {})
+      end, quiet)
     end)
   end)
+end
+
+-- What choosing the file <file> of a row does: open it (at its line, when the row has one)
+local function open_row(review, file)
+  if current ~= review then
+    return
+  end
+  if file.deleted then
+    say(("%s was deleted: there is no file to open"):format(file.path))
+    return
+  end
+  if open_file(review, file.path) and file.line then
+    go_to_line(file.line)
+  end
+end
+
+-- The row that shows the file the current buffer is, for a list to start on
+local function row_of_here(review)
+  local here = path_in_review(review, vim.api.nvim_get_current_buf())
+  return function(file)
+    return file.path == here
+  end
+end
+
+--- The changed files picker: the changeset's files, viewed ones marked; the picked one opens.
+function M.pick_file()
+  local review = open_review("list its files")
+  if not review then
+    return
+  end
+  file_entries(review, false, function(entries)
+    if #entries == 0 then
+      say("No changed files in this review")
+      return
+    end
+    pick.choose(entries, "Changed files", function(file)
+      open_row(review, file)
+    end, { current = row_of_here(review) })
+  end)
+end
+
+-- The changed files sidebar -----------------------------------------------------
+
+-- Show the sidebar of <review>; the rows come in a moment. <by_key>: the reviewer asked for it, so the
+-- cursor goes into it, and it says when there is no Snacks to show it with.
+function show_sidebar(review, by_key)
+  file_entries(review, true, function(entries)
+    if current ~= review or (review.sidebar and review.sidebar.is_open()) then
+      return
+    end
+    review.sidebar = pick.sidebar(entries, "Changed files", function(file)
+      open_row(review, file)
+    end, { focus = by_key, current = row_of_here(review) })
+    if not review.sidebar and by_key then
+      say("The files sidebar needs Snacks.picker (LazyVim's picker): <leader>rf lists the files")
+    end
+  end)
+end
+
+-- Bring the rows of the open sidebar up to date: they change with the viewed marks, the files and the path
+function refresh_sidebar(review)
+  if review.sidebar and review.sidebar.is_open() then
+    file_entries(review, true, function(entries)
+      if current == review and review.sidebar then
+        review.sidebar.update(entries)
+      end
+    end)
+  end
+end
+
+--- Show the sidebar of the open review, or hide it when it is shown (<leader>rF).
+function M.toggle_files_sidebar()
+  local review = open_review("show its files")
+  if not review then
+    return
+  end
+  if review.sidebar and review.sidebar.is_open() then
+    review.sidebar.close()
+    return
+  end
+  show_sidebar(review, true)
 end
 
 --- Say whether the review is open, and what git signs show.

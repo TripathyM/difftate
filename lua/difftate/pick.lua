@@ -77,4 +77,92 @@ function M.choose(entries, title, on_choice, opts)
   end)
 end
 
+--- A list that stays down the right side of the screen (Snacks only; nil when it is not there), with
+--- the rows of <entries> as `choose` shows them, but no preview: like LazyVim's explorer, it stays
+--- open when a row is picked. on_choose(value) runs in the window the list was opened from. <opts>:
+--- `focus`, whether the cursor goes into the list (else it stays in the window it was in), and
+--- `current`, as for `choose`. Gives { update(entries), close(), is_open() }: update changes the
+--- rows when their text changed.
+function M.sidebar(entries, title, on_choose, opts)
+  opts = opts or {}
+  local picker = snacks_picker()
+  if not picker then
+    return nil
+  end
+  local function items_of(list)
+    local items = {}
+    for i, entry in ipairs(list) do
+      items[i] = { idx = i, text = entry.text, value = entry.value }
+    end
+    return items
+  end
+  local function texts_of(list)
+    return vim.tbl_map(function(entry)
+      return entry.text
+    end, list)
+  end
+  local items, texts = items_of(entries), texts_of(entries)
+  local current
+  for i, entry in ipairs(entries) do
+    if entry.value ~= nil and opts.current and opts.current(entry.value) then
+      current = i
+      break
+    end
+  end
+  local shown = picker.pick({
+    source = "difftate_files",
+    title = title,
+    finder = function()
+      return items
+    end,
+    format = function(item)
+      return { { item.text } }
+    end,
+    preview = false,
+    layout = { preset = "right", preview = false },
+    auto_close = false,
+    focus = opts.focus and "list" or false,
+    on_show = current and function(list_picker)
+      local tries = 0
+      local function move()
+        tries = tries + 1
+        if list_picker.list:count() >= current then
+          list_picker.list:move(current, true)
+        elseif tries < 20 then
+          vim.defer_fn(move, 10)
+        end
+      end
+      move()
+    end or nil,
+    confirm = function(self, item)
+      if not (item and item.value ~= nil) then
+        return
+      end
+      if self.main and vim.api.nvim_win_is_valid(self.main) then
+        vim.api.nvim_set_current_win(self.main)
+      end
+      vim.schedule(function()
+        on_choose(item.value)
+      end)
+    end,
+  })
+  local handle = {}
+  function handle.is_open()
+    return shown ~= nil and not shown.closed
+  end
+  function handle.close()
+    if handle.is_open() then
+      shown:close()
+    end
+  end
+  function handle.update(list)
+    local new = texts_of(list)
+    if handle.is_open() and not vim.deep_equal(new, texts) then
+      items, texts = items_of(list), new
+      shown:find({ refresh = true })
+    end
+  end
+  return handle
+end
+
 return M
