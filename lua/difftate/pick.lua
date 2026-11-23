@@ -1,5 +1,5 @@
 -- The chooser of the pickers: Snacks.picker when it is loaded (LazyVim's default), else
--- vim.ui.select. A picker is the reviewer's own tool: the plugin sets no option or key on it.
+-- vim.ui.select; the files sidebar, a list that stays open, is Snacks only. A picker is the reviewer's own tool: the plugin sets no option or key on it.
 local M = {}
 
 local function snacks_picker()

@@ -7,7 +7,7 @@
 -- while the review is open), git, draw (the threads in the buffers), threads (their text),
 -- wrap, diff (the changeset's diff),
 -- float (the read float), nav (the order of the threads, the rows of the pickers), review_path (the
--- review path's rows in the changed files picker), pick (Snacks.picker or vim.ui.select).
+-- review path's rows in the changed files picker), pick (Snacks.picker or vim.ui.select; the files sidebar is Snacks only).
 --
 -- Additive only (spec #124): it maps only the keys in opts.keys, never one that is
 -- mapped already, and sets no option. Keys are under <leader>r, which LazyVim's core
