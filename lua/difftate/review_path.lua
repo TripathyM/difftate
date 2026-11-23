@@ -74,11 +74,10 @@ local function side_preview(side, stop)
   return table.concat(out, "\n")
 end
 
--- The label of <stop> ({ number, file, key, questions }): "1 util.py ★ · What does shout do?"
+-- The label of <stop> ({ number, file, key }): "1 util.py ★". Its questions are the preview's:
+-- after a long path they were cut off to a word or two.
 local function stop_label(stop)
-  local first = stop.questions and stop.questions[1]
-  return ("%s %s%s%s"):format(stop.number, stop.file, stop.key and " ★" or "",
-    first and (" · " .. first.question) or "")
+  return ("%s %s%s"):format(stop.number, stop.file, stop.key and " ★" or "")
 end
 
 --- The entries of the changed files picker ({ { text, value } }, value a file of
