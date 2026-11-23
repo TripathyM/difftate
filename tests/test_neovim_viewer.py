@@ -4164,6 +4164,18 @@ class SideBySide(NeovimHarness, unittest.TestCase):
         self.assertTrue(right["name"].endswith("notes.py") and "gitsigns://" not in right["name"])
         self.assertEqual((left["diff"], right["diff"], left["current"], right["current"]), (True, True, False, True))
 
+    def test_the_unified_look_is_not_drawn_in_the_split_and_comes_back_with_it_closed(self):
+        nvim = self.open_notes()
+        wait_for("the look", lambda: nvim.look()["deleted"] and nvim.look()["tinted"])
+        look = nvim.look()
+
+        self.split_on(nvim)
+
+        wait_for("the look to go", lambda: nvim.look() == {"deleted": [], "tinted": []})
+        nvim.keys(self.KEY)
+        self.one_window(nvim)
+        wait_for("the look back", lambda: nvim.look() == look)
+
     def test_the_base_is_that_of_the_view_shown(self):
         nvim = self.open_notes()
         ChoosingTheView.choose(self, nvim, 4)  # the last commit

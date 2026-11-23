@@ -82,8 +82,19 @@ local function deleted_lines(hunk, width, tabstop)
   return out
 end
 
+-- Extmarks belong to a buffer, not a window: a buffer shown in any window in diff mode (side by
+-- side) gets no look, as Neovim's diff colours and the old text in the other pane show the change.
+local function in_diff(buf)
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.wo[win].diff then
+      return true
+    end
+  end
+  return false
+end
+
 local function draw_buffer(buf)
-  local hunks = in_review(buf) and hunks_of(buf) or {}
+  local hunks = in_review(buf) and not in_diff(buf) and hunks_of(buf) or {}
   local width, tabstop = width_of(buf), vim.bo[buf].tabstop
   local sig = vim.json.encode({ hunks, width, tabstop, state.tint })
   if state.sigs[buf] == sig then
@@ -164,6 +175,7 @@ function M.show(top, opts)
   local id = vim.api.nvim_create_augroup(group, { clear = true })
   vim.api.nvim_create_autocmd({ "WinResized", "VimResized", "WinNew", "WinClosed", "TabEnter", "BufWinEnter",
                                 "BufReadPost" }, { group = id, callback = redraw_soon })
+  vim.api.nvim_create_autocmd("OptionSet", { group = id, pattern = "diff", callback = redraw_soon })
   vim.api.nvim_create_autocmd("User", { group = id, pattern = "GitSignsUpdate", callback = redraw_soon })
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, { group = id, callback = redraw_after_typing })
   vim.api.nvim_create_autocmd("ColorScheme", { group = id, callback = highlights.define })
