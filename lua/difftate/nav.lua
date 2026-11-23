@@ -211,10 +211,25 @@ function M.thread_row(thread)
   return threads.sign(thread) .. " " .. table.concat(parts, " · ")
 end
 
---- What a row of the changed files picker says of <file> (M.files): "app.py  +3 −1 · viewed", the
+--- <path>'s file name and its folder ("" at the top of the repository): "src/a.py" → "a.py", "src".
+function M.name_and_folder(path)
+  local folder, name = path:match("^(.*)/([^/]+)$")
+  return name or path, folder or ""
+end
+
+--- <label> with <path>'s folder after it, the end of a row: "a.py ★  src". Rows show the file name first,
+--- so a long folder is what gets cut off, not the name.
+function M.with_folder(label, path)
+  local _, folder = M.name_and_folder(path)
+  return folder ~= "" and (label .. "  " .. folder) or label
+end
+
+--- What a row of the changed files picker says of <file> (M.files): "app.py  +3 −1 · viewed  src", the
 --- viewed mark not included.
 function M.file_label(file, viewed)
-  return ("%s  +%d −%d%s"):format(file.path, file.additions, file.deletions, viewed and " · viewed" or "")
+  local name = M.name_and_folder(file.path)
+  return M.with_folder(("%s  +%d −%d%s"):format(name, file.additions, file.deletions, viewed and " · viewed" or ""),
+    file.path)
 end
 
 --- The row of <file> in the changed files picker, <viewed> when the reviewer marked it viewed:

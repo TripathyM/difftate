@@ -9,6 +9,12 @@ local M = {}
 
 local MARK = { [true] = "✓ ", [false] = "  " }
 
+-- <path>'s folder, which a row ends with (the picker dims it); nil at the top of the repository
+local function folder_of(path)
+  local _, folder = nav.name_and_folder(path)
+  return folder ~= "" and folder or nil
+end
+
 -- A row: the viewed mark, the tree's drawing (<prefix>), then <label>.
 local function row(viewed, prefix, label)
   return MARK[viewed and true or false] .. prefix .. label
@@ -74,13 +80,14 @@ local function side_preview(side, stop)
   return table.concat(out, "\n")
 end
 
--- The label of <stop> ({ number, file, key }): "1 util.py ★". Its questions are the preview's:
+-- The label of <stop> ({ number, file, key }): "1 util.py ★  src". Its questions are the preview's:
 -- after a long path they were cut off to a word or two.
 local function stop_label(stop)
-  return ("%s %s%s"):format(stop.number, stop.file, stop.key and " ★" or "")
+  local name = nav.name_and_folder(stop.file)
+  return nav.with_folder(("%s %s%s"):format(stop.number, name, stop.key and " ★" or ""), stop.file)
 end
 
---- The entries of the changed files picker ({ { text, value } }, value a file of
+--- The entries of the changed files picker ({ { text, folder, value } }, value a file of
 --- nav.files; none for a heading) for the review path <written> (the "path" of
 --- GET /api/review-path) over the changeset's <files>, <viewed> { [path] = true }: the stops in
 --- reading order as a tree (side files, then the stops under a stop, below it with ├─ and └─),
@@ -107,7 +114,7 @@ function M.entries(written, files, viewed)
   -- <stop>'s rows, then its side files' and children's below it, <prefix> being the drawing so far
   local function add_stop(stop, prefix, connector)
     table.insert(entries, { text = row(stop.viewed, prefix .. connector, stop_label(stop)),
-      value = value_of(stop.file, stop.ranges), preview = stop_preview(stop, sections) })
+      folder = folder_of(stop.file), value = value_of(stop.file, stop.ranges), preview = stop_preview(stop, sections) })
     local below = prefix .. (connector == "├─ " and "│  " or connector == "└─ " and "   " or "")
     local items = {}
     for _, side in ipairs(stop.side_files or {}) do
@@ -119,7 +126,8 @@ function M.entries(written, files, viewed)
     for i, item in ipairs(items) do
       local last = i == #items and "└─ " or "├─ "
       if item.side then
-        table.insert(entries, { text = row(item.side.viewed, below .. last, item.side.file),
+        table.insert(entries, { text = row(item.side.viewed, below .. last,
+            nav.with_folder((nav.name_and_folder(item.side.file)), item.side.file)), folder = folder_of(item.side.file),
           value = value_of(item.side.file, item.side.ranges), preview = side_preview(item.side, stop) })
       else
         add_stop(item.child, below, last)
@@ -137,7 +145,7 @@ function M.entries(written, files, viewed)
     table.insert(entries, { text = heading })
     for i, item in ipairs(items) do
       table.insert(entries, { text = row(item.viewed, i == #items and "└─ " or "├─ ", text_of(item)),
-        value = item.value, preview = item.preview })
+        folder = folder_of(item.value.path), value = item.value, preview = item.preview })
     end
   end
   local skipped = {}
@@ -146,7 +154,8 @@ function M.entries(written, files, viewed)
       preview = ("# %s\nSkipped: %s"):format(one.file, one.reason ~= "" and one.reason or "no reason given") })
   end
   add_group("Skipped", skipped, function(item)
-    return item.one.file .. (item.one.reason ~= "" and (" — " .. item.one.reason) or "")
+    local name = nav.name_and_folder(item.one.file)
+    return nav.with_folder(name .. (item.one.reason ~= "" and (" — " .. item.one.reason) or ""), item.one.file)
   end)
 
   local off = {}

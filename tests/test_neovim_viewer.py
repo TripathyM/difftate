@@ -643,6 +643,7 @@ FAKE_SIDEBAR = ("local p = { closed = false, main = vim.api.nvim_get_current_win
 FAKE_SNACKS = ("_G.Snacks = { picker = { pick = function(o) if o.source == 'difftate_files' then " + FAKE_SIDEBAR + " end; "
                "T.menu = { via = 'snacks', title = o.title, "
                "lines = vim.tbl_map(function(i) return i.text end, o.items), preview = o.preview, "
+               "drawn = vim.tbl_map(function(i) return o.format(i) end, o.items), "
                "win = o.win, previews = vim.tbl_map(function(i) return i.preview and i.preview.text or false end, o.items) }; "
                "T.choose_menu = function(n) o.confirm({ close = function() end }, o.items[n]) end; "
                "if o.on_show then o.on_show({ list = { count = function() return #o.items end, "
@@ -1856,6 +1857,26 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
                                                 "  └─ app.py  +1 −1"])
         nvim.pick(1)
         self.settle(nvim, ["util.py", 1])
+
+    def test_a_row_shows_the_file_name_first_and_its_folder_after_it_dimmed(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        for name in ("src/pkg/deep.py", "src/pkg/side.css", "lib/off.py"):
+            os.makedirs(os.path.join(self.repo, os.path.dirname(name)), exist_ok=True)
+            self.write(name, "x\n")
+        self.a_review_path("## 1 `src/pkg/deep.py` ★\n\n### Why deep?\nBecause.\n\n"
+                           "### Side file: `src/pkg/side.css`\nStyle.\n\n"
+                           "## 2 `util.py`\n\n### Who calls it?\napp.py.\n")
+
+        nvim.keys("<leader>rf")
+
+        wait_for("the picker", lambda: nvim.menu())
+        self.assertEqual(nvim.menu()["lines"], [
+            "  1 deep.py ★  src/pkg", "  └─ side.css  src/pkg", "  2 util.py", "Not on the path",
+            "  ├─ app.py  +1 −1", "  └─ off.py  +1 −0  lib"])
+        drawn = nvim.menu()["drawn"]
+        self.assertEqual(drawn[0], [["  1 deep.py ★  "], ["src/pkg", "DifftateFolder"]])
+        self.assertEqual(drawn[2], [["  2 util.py"]], "a file at the top has no folder")
+        self.assertEqual(drawn[5], [["  └─ off.py  +1 −0  "], ["lib", "DifftateFolder"]])
 
     def test_leader_rf_draws_the_path_as_a_tree_with_side_files_child_stops_skipped_and_not_on_the_path(self):
         nvim = self.a_review_of_two_files(before=FAKE_SELECT)
