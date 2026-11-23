@@ -1852,7 +1852,7 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
 
         wait_for("the picker", lambda: nvim.menu())
         self.assertEqual(nvim.menu()["title"], "Changed files")
-        self.assertEqual(nvim.menu()["lines"], ["✓ 1 util.py ★ · What does shout do?", "Not on the path",
+        self.assertEqual(nvim.menu()["lines"], ["✓ 1 util.py ★", "Not on the path",
                                                 "  └─ app.py  +1 −1"])
         nvim.pick(1)
         self.settle(nvim, ["util.py", 1])
@@ -1874,10 +1874,10 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
 
         wait_for("the picker", lambda: nvim.menu())
         self.assertEqual(nvim.menu()["lines"], [
-            "✓ 1 util.py ★ · What does shout do?",
+            "✓ 1 util.py ★",
             "✓ ├─ util.css",
-            "  ├─ 1.1 tips.py · Where do tips come from?",
-            "✓ └─ 1.2 more.py ★ · Why more?",
+            "  ├─ 1.1 tips.py",
+            "✓ └─ 1.2 more.py ★",
             "Skipped",
             "  └─ uv.lock — lockfile only",
             "Not on the path",
@@ -1895,8 +1895,8 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
 
         wait_for("the picker", lambda: nvim.menu())
         self.assertEqual(nvim.menu()["lines"], [
-            "  1 util.py · Q?", "  ├─ 1.1 a.py · Q?", "  │  └─ 1.1.1 b.py · Q?", "  └─ 1.2 c.py · Q?",
-            "  2 d.py · Q?", "Skipped", "  └─ app.py — reviewed"])
+            "  1 util.py", "  ├─ 1.1 a.py", "  │  └─ 1.1.1 b.py", "  └─ 1.2 c.py",
+            "  2 d.py", "Skipped", "  └─ app.py — reviewed"])
 
     def test_picking_a_heading_does_nothing(self):
         nvim = self.a_review_of_two_files(before=FAKE_SELECT)
@@ -1950,7 +1950,7 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         nvim.keys("<leader>rf")
 
         wait_for("the picker", lambda: nvim.menu())
-        self.assertEqual(nvim.menu()["lines"], ["  1 util.py · Q?", "Not on the path", "  └─ app.py  +1 −1"])
+        self.assertEqual(nvim.menu()["lines"], ["  1 util.py", "Not on the path", "  └─ app.py  +1 −1"])
         self.assertEqual((nvim.menu()["cursor"], nvim.menu()["absolute"]), (3, True))
 
     def test_the_picker_starts_on_its_first_row_when_the_buffer_is_no_file_of_the_review(self):
@@ -2036,13 +2036,13 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         nvim.keys("<leader>rf")
 
         wait_for("the new path", lambda: (nvim.menu() or {}).get("lines") == [
-            "  1 app.py · Why the f-string?", "  2 util.py · Who calls it?"])
+            "  1 app.py", "  2 util.py"])
         nvim.lua("T.menu = nil")
         self.write("review-path.md", "## 1 `util.py`\n\n### Who calls it?\napp.py.\n\n"
                                      "## Skipped\n- `app.py` — one line, reviewed before\n")
         nvim.keys("<leader>rf")
         wait_for("the skipped file listed", lambda: (nvim.menu() or {}).get("lines") == [
-            "  1 util.py · Who calls it?", "Skipped", "  └─ app.py — one line, reviewed before"])
+            "  1 util.py", "Skipped", "  └─ app.py — one line, reviewed before"])
 
     def test_a_broken_review_path_is_warned_about_once_and_leader_rf_lists_the_changesets_order_until_fixed(self):
         nvim = self.a_review_of_two_files(before=FAKE_SELECT)
@@ -2065,7 +2065,7 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         self.write("review-path.md", "## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n")
         nvim.keys("<leader>rf")
         wait_for("the path again", lambda: (nvim.menu() or {}).get("lines") == [
-            "  1 util.py · What does shout do?", "Not on the path", "  └─ app.py  +1 −1"])
+            "  1 util.py", "Not on the path", "  └─ app.py  +1 −1"])
         self.assertEqual(self.api("GET", "/api/review")["warnings"], [], "a fixed file clears the warning")
         self.assertEqual(nvim.lua("return T.snapshot()"), before, "the warning changed no option or key")
 
@@ -2219,7 +2219,7 @@ class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
         self.write("review-path.md", "## 1 `util.py` ★\n\n### What does shout do?\nUpper-cases.\n")
 
         wait_for("the path rows", lambda: self.sidebar_lines(nvim) == [
-            "  1 util.py ★ · What does shout do?", "Not on the path", "  └─ app.py  +1 −1"])
+            "  1 util.py ★", "Not on the path", "  └─ app.py  +1 −1"])
 
     def test_leader_rF_hides_it_and_shows_it_again(self):
         nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
@@ -3877,7 +3877,7 @@ class ChoosingTheView(NeovimHarness, unittest.TestCase):
         wait_for("the review to open", lambda: nvim.status() != "")
         nvim.keys("<leader>rf")
         wait_for("the picker", lambda: nvim.menu())
-        self.assertEqual(nvim.menu()["lines"], ["  1 notes.py ★ · What changed?", "  2 extra.py · What is new?",
+        self.assertEqual(nvim.menu()["lines"], ["  1 notes.py ★", "  2 extra.py",
                                                 "  └─ extra.css"])
         nvim.lua("T.menu = nil")
 
@@ -3886,7 +3886,7 @@ class ChoosingTheView(NeovimHarness, unittest.TestCase):
         nvim.keys("<leader>rf")
 
         wait_for("the picker", lambda: nvim.menu())
-        self.assertEqual(nvim.menu()["lines"], ["  2 extra.py · What is new?", "  └─ extra.css"])
+        self.assertEqual(nvim.menu()["lines"], ["  2 extra.py", "  └─ extra.css"])
 
     def test_following_the_review_path_in_a_view_changes_no_option_or_key_of_the_reviewers_window_or_buffer(self):
         """Adds only: asking for the path in a view maps no key and sets no option on the reviewer's buffer or window."""
