@@ -1626,10 +1626,6 @@ class ReviewOfTwoFiles(NeovimHarness):
         nvim = self.nvim(before=before)
         nvim.command("DifftateOpen")
         self.drawn(nvim)
-        if before == FAKE_SNACKS:
-            # The sidebar read the changeset when the review opened, and the watcher keeps what it read for a
-            # second: a test that writes files next wants to see them in the next picker
-            time.sleep(1.2)
         return nvim
 
     def settle(self, nvim, where):
@@ -2170,7 +2166,7 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
 
 @needs(MISSING_GITSIGNS)
 class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
-    """#215: the changed files on the right, open when a review opens, <leader>rF shows or hides it."""
+    """#215: the changed files on the right; hidden when a review opens, <leader>rF shows or hides it."""
 
     def sidebar_lines(self, nvim):
         return nvim.lua("return T.sidebar_lines and T.sidebar_lines()")
@@ -2178,11 +2174,21 @@ class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
     def is_open(self, nvim):
         return nvim.lua("return T.sidebar_picker ~= nil and not T.sidebar_picker.closed")
 
-    def test_a_review_opening_shows_it_on_the_right_with_the_rows_of_the_picker_and_no_preview(self):
+    def shown(self, nvim):
+        nvim.keys("<leader>rF")
+        wait_for("the sidebar", lambda: self.is_open(nvim))
+
+    def test_a_review_opening_leaves_it_hidden(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        time.sleep(1)  # the threads read and the first poll
+
+        self.assertIsNone(nvim.lua("return T.sidebar_opened"))
+
+    def test_leader_rF_shows_it_on_the_right_with_the_rows_of_the_picker_and_no_preview(self):
         nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
         self.api("PUT", "/api/viewed", {"file": "util.py"})
 
-        wait_for("the sidebar", lambda: self.is_open(nvim))
+        self.shown(nvim)
 
         sidebar = nvim.lua("return T.sidebar")
         self.assertEqual(sidebar["title"], "Changed files")
@@ -2196,6 +2202,7 @@ class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
 
     def test_it_follows_the_review_path_like_the_picker(self):
         nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        self.shown(nvim)
         exclude = os.path.join(self.repo, ".git", "info", "exclude")
         os.makedirs(os.path.dirname(exclude), exist_ok=True)
         with open(exclude, "a") as f:
@@ -2207,7 +2214,7 @@ class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
 
     def test_leader_rF_hides_it_and_shows_it_again(self):
         nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
-        wait_for("the sidebar", lambda: self.is_open(nvim))
+        self.shown(nvim)
 
         nvim.keys("<leader>rF")
         wait_for("it hidden", lambda: not self.is_open(nvim))
@@ -2218,7 +2225,7 @@ class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
 
     def test_leader_rf_stays_the_popup_picker(self):
         nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
-        wait_for("the sidebar", lambda: self.is_open(nvim))
+        self.shown(nvim)
         nvim.lua("T.sidebar_opened = 0")
 
         nvim.keys("<leader>rf")
@@ -2231,7 +2238,7 @@ class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
 
     def test_enter_on_a_row_opens_the_file_in_the_main_window_and_keeps_the_sidebar(self):
         nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
-        wait_for("the sidebar", lambda: self.is_open(nvim))
+        self.shown(nvim)
         main = nvim.lua("return vim.api.nvim_get_current_win()")
         # as in Snacks, the sidebar is the current window while it is used
         nvim.lua("vim.cmd('vnew'); T.sidebar_picker.main = " + str(main))
@@ -2245,6 +2252,7 @@ class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
 
     def test_a_heading_row_does_nothing(self):
         nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        self.shown(nvim)
         exclude = os.path.join(self.repo, ".git", "info", "exclude")
         os.makedirs(os.path.dirname(exclude), exist_ok=True)
         with open(exclude, "a") as f:
@@ -2261,7 +2269,7 @@ class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
 
     def test_a_viewed_mark_shows_within_a_poll(self):
         nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
-        wait_for("the sidebar", lambda: self.is_open(nvim))
+        self.shown(nvim)
 
         self.api("PUT", "/api/viewed", {"file": "app.py"})
 
@@ -2269,7 +2277,7 @@ class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
 
     def test_it_refreshes_only_when_the_rows_changed(self):
         nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
-        wait_for("the sidebar", lambda: self.is_open(nvim))
+        self.shown(nvim)
         wait_for("its rows", lambda: self.sidebar_lines(nvim))
         time.sleep(1)  # several polls
         before = nvim.lua("return T.sidebar_finds or 0")
@@ -2280,7 +2288,7 @@ class TheFilesSidebar(ReviewOfTwoFiles, unittest.TestCase):
 
     def test_closing_the_review_closes_it(self):
         nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
-        wait_for("the sidebar", lambda: self.is_open(nvim))
+        self.shown(nvim)
 
         nvim.command("DifftateClose")
 

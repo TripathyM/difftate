@@ -368,7 +368,6 @@ function M.open(cwd, opts)
                 look.show(watcher.top, opts.diff)
                 read_threads(review, function()
                   start_polling(review, opts.poll_ms)
-                  show_sidebar(review, false)
                 end)
               end)
             end)
@@ -1181,13 +1180,10 @@ end
 
 -- The changed files sidebar -----------------------------------------------------
 
--- Show the sidebar of <review>; the rows come in a moment. <by_key>: the reviewer asked for it, so the
--- cursor goes into it, and it says when there is no Snacks to show it with.
-function show_sidebar(review, by_key)
+-- Show the sidebar of <review>, with the cursor in it; the rows come in a moment.
+function show_sidebar(review)
   if not pick.can_sidebar() then
-    if by_key then
-      say("The files sidebar needs Snacks.picker (LazyVim's picker): <leader>rf lists the files")
-    end
+    say("The files sidebar needs Snacks.picker (LazyVim's picker): <leader>rf lists the files")
     return -- no request for rows that nothing would show
   end
   file_entries(review, true, function(entries)
@@ -1196,7 +1192,7 @@ function show_sidebar(review, by_key)
     end
     review.sidebar = pick.sidebar(entries, "Changed files", function(file)
       open_row(review, file)
-    end, { focus = by_key, current = row_of_here(review) })
+    end, { focus = true, current = row_of_here(review) })
   end)
 end
 
@@ -1221,7 +1217,7 @@ function M.toggle_files_sidebar()
     review.sidebar.close()
     return
   end
-  show_sidebar(review, true)
+  show_sidebar(review)
 end
 
 --- Say whether the review is open, and what git signs show.
