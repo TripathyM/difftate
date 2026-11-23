@@ -848,7 +848,7 @@ class OneLineThreads(NeovimHarness, unittest.TestCase):
         self.api("POST", f"/api/threads/{resolved}/comments", {"kind": "reply", "body": "Renamed."})
         return self.nvim()
 
-    def test_resolved_dismissed_and_outdated_threads_are_one_line_each(self):
+    def test_resolved_and_dismissed_threads_are_one_line_each_and_an_open_outdated_one_stays_in_full(self):
         nvim = self.a_review_of_a_resolved_a_dismissed_and_an_outdated_thread()
 
         nvim.command("DifftateOpen")
@@ -859,7 +859,11 @@ class OneLineThreads(NeovimHarness, unittest.TestCase):
             ["│ ○ dismissed by Test · 1 comment · “Add a docstring”"]])
         nvim.command("edit notes.md")
         self.assertEqual([t["lines"] for t in self.drawn(nvim)], [
-            ["│ ● open · held until you submit · outdated · 1 comment · “Is this the style…”"]])
+            ["│ ● open · held until you submit · outdated",
+             "│ code when written (it changed since)",
+             "│ > Another style",
+             "│ Test",
+             "│   Is this the style we want?"]])
 
     def test_the_toggle_expands_every_one_and_collapses_them_again(self):
         nvim = self.a_review_of_a_resolved_a_dismissed_and_an_outdated_thread()

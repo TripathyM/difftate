@@ -35,9 +35,10 @@ function M.is_old(thread)
 end
 
 --- Whether the thread shrinks to one line unless the reviewer expands them all:
---- resolved, dismissed and outdated threads do.
+--- resolved and dismissed threads do. An open outdated thread stays in full: its code
+--- changed, but its question still waits for an answer.
 function M.is_collapsible(thread)
-  return thread.status ~= "open" or thread.outdated == true
+  return thread.status ~= "open"
 end
 
 --- How many comments and replies the thread holds (notes are not counted).
@@ -91,7 +92,7 @@ local function first_words(thread)
   return vim.trim((first:gsub("%s+", " ")))
 end
 
---- The one line a resolved, dismissed or outdated thread shrinks to, in <columns>:
+--- The one line a resolved or dismissed thread shrinks to, in <columns>:
 --- its status, its comment count and the first words of its first comment.
 function M.summary(thread, columns)
   local line = ("%s · %s"):format(head_text(thread), plural(M.count(thread), "comment"))
@@ -119,7 +120,7 @@ local function quoted(code, mark, columns)
 end
 
 --- The lines drawn for <thread> in <columns> columns (after the bar): { { text, hl } }.
---- <expanded>: a resolved, dismissed or outdated thread is drawn in full too.
+--- <expanded>: a resolved or dismissed thread is drawn in full too.
 function M.lines(thread, columns, expanded)
   columns = math.max(columns, MIN_COLUMNS)
   if M.is_collapsible(thread) and not expanded then
