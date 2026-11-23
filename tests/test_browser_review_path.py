@@ -45,17 +45,21 @@ class TheBrowserDrawsTheReviewPath(unittest.TestCase):
     def rows(self, written):
         return self.run_js(f"console.log(JSON.stringify(rp.rows({json.dumps(written)}).map((r) => r.text)));")
 
-    def test_the_file_list_is_in_path_order_as_a_tree(self):
+    def test_the_file_list_is_in_path_order_as_a_tree_each_file_name_first_then_its_folder(self):
         self.assertEqual(self.rows(WRITTEN), [
-            "1 src/loader.py ★ · What does load do?",
-            "├─ src/cache.py",
-            "└─ 2 src/tips.py · Which tip shows?",
-            "3 src/view.py · Where is it drawn?",
+            "1 loader.py ★  src",
+            "├─ cache.py  src",
+            "└─ 2 tips.py  src",
+            "3 view.py  src",
             "Skipped",
             "└─ uv.lock — lockfile only",
             "Not on the path",
             "└─ notes.txt",
         ])
+
+    def test_a_row_names_the_folder_it_ends_with_for_the_list_to_dim(self):
+        folders = self.run_js(f"console.log(JSON.stringify(rp.rows({json.dumps(WRITTEN)}).map((r) => r.folder ?? null)));")
+        self.assertEqual(folders, ["src", "src", "src", "src", None, "", None, ""])
 
     def test_with_no_path_there_are_no_rows(self):
         self.assertEqual(self.run_js("console.log(JSON.stringify(rp.rows(null)));"), [])
