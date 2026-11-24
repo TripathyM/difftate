@@ -642,10 +642,12 @@ FAKE_SIDEBAR = ("local p = { closed = false, main = vim.api.nvim_get_current_win
                 "move = function(_, n) T.sidebar.cursor = n end } }) end; return p")
 FAKE_SNACKS = ("_G.Snacks = { picker = { pick = function(o) if o.source == 'difftate_files' then " + FAKE_SIDEBAR + " end; "
                "T.menu = { via = 'snacks', title = o.title, "
-               "lines = vim.tbl_map(function(i) return i.text end, o.items), preview = o.preview, "
+               "lines = vim.tbl_map(function(i) return i.text end, o.items), "
+               "preview = type(o.preview) == 'function' and 'a previewer' or o.preview, "
                "drawn = vim.tbl_map(function(i) return o.format(i) end, o.items), "
                "win = o.win, previews = vim.tbl_map(function(i) return i.preview and i.preview.text or false end, o.items) }; "
                "T.choose_menu = function(n) o.confirm({ close = function() end }, o.items[n]) end; "
+               "T.preview_menu = function(n, buf) return o.preview({ item = o.items[n], buf = buf }) end; "
                "if o.on_show then o.on_show({ list = { count = function() return #o.items end, "
                "move = function(_, n, absolute) T.menu.cursor = n; T.menu.absolute = absolute end } }) end end } }")
 
@@ -1943,7 +1945,7 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
 
         wait_for("the picker", lambda: nvim.menu())
         menu = nvim.menu()
-        self.assertEqual(menu["preview"], "preview")
+        self.assertEqual(menu["preview"], "a previewer")
         self.assertEqual(menu["previews"][0], "\n".join([
             "# 1 util.py ★", "Lines 5-6", "", "## What does shout do?", "Upper-cases.", "",
             "## Why a helper?", 'Two callers. See "State flow".', "",
@@ -2018,6 +2020,24 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         nvim.pick(4)
 
         self.settle(nvim, ["app.py", 2])
+
+    def test_with_snacks_the_preview_is_snacks_text_preview_with_no_linter_warnings(self):
+        nvim = self.a_review_of_two_files(before=FAKE_SNACKS)
+        self.a_review_path("## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n")
+        nvim.keys("<leader>rf")
+        wait_for("the picker", lambda: nvim.menu())
+
+        shown = nvim.lua("""
+            package.loaded['snacks.picker.preview'] = { preview = function(ctx)
+              vim.api.nvim_buf_set_lines(ctx.buf, 0, -1, false, vim.split(ctx.item.preview.text, '\\n'))
+              vim.bo[ctx.buf].filetype = 'markdown'
+            end }
+            local buf = vim.api.nvim_create_buf(false, true)
+            T.preview_menu(1, buf)
+            return { vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1], vim.diagnostic.is_enabled({ bufnr = buf }),
+                     vim.diagnostic.is_enabled({ bufnr = vim.api.nvim_get_current_buf() }) }""")
+
+        self.assertEqual(shown, ["# 1 util.py", False, True], "Snacks' preview drew it; no diagnostics there, only there")
 
     def test_with_snacks_only_the_pickers_own_preview_window_wraps_long_lines_at_word_breaks(self):
         nvim = self.a_review_of_two_files(before=FAKE_SNACKS)

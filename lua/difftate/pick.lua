@@ -2,6 +2,16 @@
 -- vim.ui.select; the files sidebar, a list that stays open, is Snacks only. A picker is the reviewer's own tool: the plugin sets no option or key on it.
 local M = {}
 
+-- Snacks' text preview, with no diagnostics on its buffer: the text is markdown for its colours, not
+-- a document, so a linter (LazyVim's markdownlint) shows nothing there
+local function preview(ctx)
+  local shown = require("snacks.picker.preview").preview(ctx)
+  if ctx.buf and vim.api.nvim_buf_is_valid(ctx.buf) then
+    vim.diagnostic.enable(false, { bufnr = ctx.buf })
+  end
+  return shown
+end
+
 -- How Snacks draws a row: its text, the folder it ends with (entry.folder) dimmed
 local function format(item)
   local text, folder = item.text, item.folder
@@ -42,7 +52,7 @@ function M.choose(entries, title, on_choice, opts)
       title = title,
       items = items,
       format = format,
-      preview = previewed and "preview" or false,
+      preview = previewed and preview or false,
       -- long answers wrap at word breaks, in this picker's own preview window only
       win = previewed and { preview = { wo = { wrap = true, linebreak = true } } } or nil,
       layout = { preset = previewed and "default" or "select" },
