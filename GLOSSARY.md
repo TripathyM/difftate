@@ -180,8 +180,24 @@ _Avoid_: uncovered, missing
 ### Viewing
 
 **Viewer**:
-Where the reviewer reads a review and writes comments: the browser or the Neovim viewer. A viewer never starts the watcher.
+Where the reviewer reads a review and writes comments: a bundled viewer, or one the reviewer's own agent built for their editor. A viewer never starts the watcher.
 _Avoid_: UI, frontend, client
+
+**Bundled viewer**:
+A viewer that ships with difftate: the browser and the Neovim viewer. It uses only what any other viewer can use.
+_Avoid_: built-in viewer, official viewer
+
+**Capability**:
+One thing difftate can do that a viewer may use, such as threads, the review path or batched mode, with the rules that come with it. A viewer uses the capabilities it wants; none is required.
+_Avoid_: feature, must
+
+**Viewer guide**:
+What a coding agent reads to build a viewer: the review API, difftate's capabilities, where to start, and how to check the work against the demo review.
+_Avoid_: recipe, SDK, docs
+
+**Demo review**:
+A throwaway review with one example of each capability, to check a viewer against.
+_Avoid_: sample, fixture, test review
 
 **Neovim viewer**:
 The viewer inside the reviewer's own Neovim: the review's threads shown on the real files, which the reviewer reads, edits and moves through with their own editor.
