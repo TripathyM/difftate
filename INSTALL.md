@@ -14,7 +14,7 @@ Install difftate by following https://raw.githubusercontent.com/TripathyM/diffta
 - Ask the user only the questions in [Questions](#questions). Use the defaults for everything else.
 - Before editing `~/.zshrc`: back it up, show the exact lines you will add, and wait for the user's yes.
 - In the Neovim config, only add a new file, after showing it and getting a yes. Never edit a file that is already there.
-- Never use `sudo`. Never read or edit Claude or OpenCode settings files (`~/.claude*/settings.json` etc.).
+- Never use `sudo`. Never read or edit Claude or OpenCode settings files (`~/.claude*/settings.json` etc.): for the agent list, aliases come from the shell only.
 - If a step fails, stop, show the error, and suggest the fix listed here. If no fix is listed, ask the user. Don't improvise workarounds.
 - Don't start `difftate` itself: it launches the watcher, which runs the agent. The user does that.
 
@@ -28,7 +28,7 @@ Run each check. Report all results together, then stop if anything **required** 
 | latest python3 (required, for the watcher and the `difftate` program) | `python3 --version`, and `command -v python3` should be Homebrew's (`/opt/homebrew/bin/python3`) | macOS: `brew install python`. The built-in `/usr/bin/python3` (Command Line Tools, 3.9) is no longer supported |
 | An agent CLI (one is required) | `command -v claude` and `command -v opencode`, run separately (in `zsh -ic '…'` if your shell's config sets up the `PATH`) | Install [Claude Code](https://docs.claude.com/en/docs/claude-code) or [OpenCode](https://opencode.ai) |
 
-The agent CLI check passes when at least one of the two prints a path to a real program, not an alias or function.
+The agent CLI check passes when at least one of the two prints a path to a real program, or is an alias for one (section 5 writes the program, never the alias). Keep what it found: question 4 uses it.
 
 Only if the user chose **Browser + Neovim** (question 2), also check:
 
@@ -42,7 +42,7 @@ LazyVim is not needed: any Neovim 0.10 with gitsigns works. LazyVim, which-key, 
 
 If Neovim is missing or too old, say so and go on with **Browser only**: the browser viewer still works.
 
-Tell the user which agent will reply: `claude` unless they list others in the agent list (section 5). Tell them too that the agent may edit files and run commands in the repository to answer a comment, as it does in their own sessions.
+Tell the user that no coding agent replies until the agent list names it: there is no default (question 4, section 5). Tell them too that the agent may edit files and run commands in the repository to answer a comment, as it does in their own sessions.
 
 ## 2. Clone the repo
 
@@ -117,24 +117,45 @@ The plugin is loaded from the clone (`dir = "DT_HOME"`), so one `git pull` updat
 4. Check it loads: `nvim --headless "+DifftateStatus" +qa` prints no error.
 5. Tell the user: the keys are under `<leader>r`, the leader key of their own config (Space in LazyVim, `\` in plain Neovim), so `<leader>rr` opens the review; `:DifftateOpen` does too. Any key can be renamed in `keys` (`setup({ keys = { toggle = "<F5>" } })`, or `opts.keys` with lazy.nvim). With LazyVim's refactoring extra, `<leader>rs` and `<leader>rf` are already taken: rename those two.
 
-## 5. The agent list (optional)
+## 5. The agent list
 
-Without a list, `claude` replies. To choose agents, write `~/.difftate/agents.toml` (`$DIFFTATE_HOME/agents.toml`): ask which coding agents and accounts they use, then write one `[agents.<name>]` table for each (`tool` = `claude` or `opencode`, `cmd` = the command or shell alias, `env` = what it needs, such as `{ CLAUDE_CONFIG_DIR = "~/.claude-personal" }`, optional `model`) and a `default`. A personal and a work account:
+The agent list, `~/.difftate/agents.toml` (`$DIFFTATE_HOME/agents.toml`), is the only thing that says which coding agents can reply. Without it, difftate opens reviews and takes comments, but nothing replies.
 
-```toml
-default = "personal"
+**If the file exists:** show it and leave it as it is. If an entry has no `tool`, or its `cmd` is not a program by the check in step 2, say that its runs are refused and show the lines to change. The user edits the file. Go to step 5.
 
-[agents.personal]
-tool = "claude"
-cmd = "ccp"
-env = { CLAUDE_CONFIG_DIR = "~/.claude-personal" }
+1. **Collect the names.** Start from what the requirements check found (`claude`, `opencode`). Look for aliases that start them, `zsh -ic 'alias' | grep -E 'claude|opencode'`, and ask the user for any other command they start a coding agent or an account with.
+2. **Check each name** with `zsh -ic 'whence -w <name>'`. **`cmd` must be a real program, on `PATH` or a full path, never a shell alias or function**: difftate does not read your shell config.
+   - `command` (or `hashed`): it can be `cmd` as is.
+   - `alias`: read its text with `zsh -ic 'alias <name>'`. Write its program as `cmd` and its `VAR=value` parts as `env`. For example, `ccw='CLAUDE_CONFIG_DIR=~/.claude-work claude'` becomes `cmd = "claude"`, `env = { CLAUDE_CONFIG_DIR = "~/.claude-work" }`. Show the result and ask whether it is right. `command -v <program>` in `sh` must find the program; if the program is another alias, read that one too. In `env`, difftate expands only a leading `~`, so write `$HOME/…` as `~/…` and ask for the value of any other variable. In `cmd` it expands nothing: write a full path out, without `~`. An entry can't pass arguments: if the alias has any, say that they are left out.
+   - `function`: show it to the user (`zsh -ic 'whence -f <name>'`) and ask which program it starts, and with what environment.
+   - `none`: say that it was not found, and ask for the program's full path.
+3. **Suggest the list** (question 4). Each entry is an `[agents.<name>]` table: `tool` (`claude` or `opencode`, required), `cmd` (required), `env` (what it needs, optional) and `model` (optional).
+   - Only `claude`, or only `opencode`, found: suggest a list with that one agent. A list of one needs no `default` line.
 
-[agents.work]
-tool = "claude"
-cmd = "ccw"
-```
+     ```toml
+     [agents.claude]
+     tool = "claude"
+     cmd = "claude"
+     ```
 
-Then, in each repository, `difftate agent <name>` says which of them replies there (for its worktrees too); the default replies in a repository with none. The file is read for each run: no restart.
+   - Both found, or more than one account: suggest one entry for each real command, and ask for their names and which one is the `default`. A list of two or more needs `default`. An example, for a personal account started by a program `ccp` and a work account started by the alias `ccw` above:
+
+     ```toml
+     default = "personal"
+
+     [agents.personal]
+     tool = "claude"
+     cmd = "ccp"
+     env = { CLAUDE_CONFIG_DIR = "~/.claude-personal" }
+
+     [agents.work]
+     tool = "claude"
+     cmd = "claude"
+     env = { CLAUDE_CONFIG_DIR = "~/.claude-work" }
+     ```
+
+4. Show the user the full `agents.toml`, wait for a yes, then write it. The file is read for each run: no restart.
+5. With two or more agents, tell the user to run `difftate agent <name>` once in each repository that should use one that is not the default (it covers the repository's worktrees too).
 
 ## 6. The review path skill (optional)
 
@@ -178,13 +199,14 @@ First, open a new terminal (or run `source ~/.zshrc`). Then `cd` into a git repo
 
 ## Questions
 
-Ask these, together, before section 2. If `~/.zshrc` already has the `PATH` line for difftate (an earlier install), skip question 1: the clone is where that line points.
+Ask these, together, before section 2 (question 4 needs the results of section 1). If `~/.zshrc` already has the `PATH` line for difftate (an earlier install), skip question 1: the clone is where that line points.
 
 1. **Where should difftate be cloned?** Default: `~/difftate`.
 2. **Which viewer do you want?**
    - **Browser only** (default): reviews open in a browser tab. Nothing more to install.
    - **Browser + Neovim**: also adds the Neovim viewer, to review in your own Neovim (any Neovim 0.10 with gitsigns; LazyVim not needed). The browser still works.
 3. Only for **Browser + Neovim**: **Should `difftate` open Neovim instead of the browser by default?** Default: no (`difftate --open nvim` opens it each time).
+4. **Which coding agents should reply to your comments?** Skip it if the agent list already exists (section 5). Suggest an answer from what the requirements check found, by steps 1 to 3 of section 5: one agent when only `claude` or only `opencode` was found; with both, or more than one account, one entry for each real command, and ask for their names and the default. The file is written only after the user has seen all of it (section 5, step 4).
 
 ## Uninstall
 

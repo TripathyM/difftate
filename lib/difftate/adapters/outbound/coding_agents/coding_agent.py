@@ -23,7 +23,7 @@ class CodingAgent:
     override (empty for the default). Each run starts a fresh agent session.
     Its runs work in <cwd>; <off_limits>() is what a run may not touch, read
     again for each run (a worktree added since gets its watcher's folder)."""
-    name = default_cmd = ""
+    name = ""
     reply_command = REPLY_COMMAND
 
     def __init__(self, cmd: str, model: str = "", cwd: str = ".",

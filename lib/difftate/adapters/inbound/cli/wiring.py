@@ -53,8 +53,8 @@ class Wiring:
         which chooses the agent when a run starts (the review's own choice, else
         the repository's, else the machine's default, from the agent list as it
         is then; loop() tells it which review) and raises the
-        core's CouldNotStart for an agent that isn't listed or whose command
-        isn't found.
+        core's CouldNotStart with no agent list, for an agent that isn't listed
+        or whose command isn't found.
     agent_choice(cwd, override): the agent that replies in the repository of
         <cwd>, or <override> ("" for none), a review's own choice: an object
         with name, source ("review", "repository" or "machine"), names (the

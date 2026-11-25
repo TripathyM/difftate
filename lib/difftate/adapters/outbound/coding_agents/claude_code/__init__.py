@@ -20,7 +20,6 @@ class RunAccess(namedtuple("RunAccess", "write deny_write deny_read")):
 
 class ClaudeCode(CodingAgent):
     name = "claude"
-    default_cmd = "claude"
 
     @staticmethod
     def run_settings(access: RunAccess) -> str:

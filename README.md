@@ -30,7 +30,7 @@ echo 'export PATH="$HOME/difftate/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-That is all the browser viewer needs. For the Neovim viewer too, add the plugin from the clone ([Review in Neovim](#review-in-neovim)).
+That is all the browser viewer needs to open a review. For replies, write [the agent list](#the-agent-list): no coding agent replies until you do. For the Neovim viewer too, add the plugin from the clone ([Review in Neovim](#review-in-neovim)).
 
 `difftate`, `dt-export` and `dt-reply` are programs in the repository's `bin/`, so the board and scripts run them as well as your shell. `difftate` finds the watcher next to itself.
 
@@ -111,19 +111,22 @@ The session replies with `dt-reply <thread> "<answer>"` (the export's command, w
 
 ## The agent list
 
-The coding agents that can reply are listed in one file on the machine, `~/.difftate/agents.toml` (`$DIFFTATE_HOME/agents.toml`): each entry a name, the coding agent (`tool`: `claude` or `opencode`), the command (`cmd`, a program or a shell alias), the environment it needs (`env`, optional) and a model (`model`, optional: the coding agent's own default when empty), plus the `default`. For a personal and a work account:
+The coding agents that can reply are listed in one file on the machine, `~/.difftate/agents.toml` (`$DIFFTATE_HOME/agents.toml`): each entry a name, the coding agent (`tool`: `claude` or `opencode`), the command (`cmd`: a program on `PATH`, or its full path, not a shell alias or function), the environment it needs (`env`, optional) and a model (`model`, optional: the coding agent's own default when empty). `tool` and `cmd` are required. **There is no default agent:** with no `agents.toml`, `difftate` says so and opens the review, where you can read and comment, but each run is refused, naming the file to write. A list with one agent needs no `default` line; a list with two or more does. The [install](INSTALL.md#5-the-agent-list) asks which agents reply and writes the file.
+
+An alias such as `ccw='CLAUDE_CONFIG_DIR=~/.claude-work claude'` is written as its program and its variables. An example, for a personal account (`ccp` is a program) and a work account:
 
 ```toml
 default = "personal"
 
 [agents.personal]
 tool = "claude"
-cmd = "ccp"                                          # the wrapper or alias that runs Claude
+cmd = "ccp"                                          # a wrapper program that runs Claude
 env = { CLAUDE_CONFIG_DIR = "~/.claude-personal" }   # ~ is your home
 
 [agents.work]
 tool = "claude"
-cmd = "ccw"
+cmd = "claude"
+env = { CLAUDE_CONFIG_DIR = "~/.claude-work" }
 
 [agents.open]
 tool = "opencode"
@@ -136,7 +139,7 @@ difftate agent work      # this repository, and all its worktrees, are answered 
 difftate agent           # which agent replies here, and whether the repository or the machine default says so
 ```
 
-The choice is kept in the repository's own git config (`difftate.agent`, shared by its worktrees, never committed). A name that isn't in the list is refused with the names; so is an agent whose command isn't found. A run whose agent has gone from the list, or whose command isn't found, fails with a note saying so, and the watcher keeps going. With no `agents.toml`, the list is one agent, `claude`.
+The choice is kept in the repository's own git config (`difftate.agent`, shared by its worktrees, never committed). A name that isn't in the list is refused with the names; so is an agent whose command isn't found. A run whose agent has gone from the list, or whose command isn't found, fails with a note saying so, and the watcher keeps going.
 
 ## Review in Neovim
 

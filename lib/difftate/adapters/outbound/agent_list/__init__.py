@@ -5,12 +5,14 @@ default (ADR 0008). A TOML file in the difftate home, agents.toml:
 
     [agents.personal]
     tool = "claude"                                   # claude or opencode
-    cmd = "ccp"                                       # the command, or a shell alias
+    cmd = "ccp"                                       # a program on PATH, or its full path
     env = { CLAUDE_CONFIG_DIR = "~/.claude-personal" } # what it needs in its environment (optional)
     model = "claude-opus-5-5"                         # optional: the coding agent's own default
 
-With no file, the list is one agent, `claude`. The file is read again each
-time a run starts, so a change to it needs no restart.
+There is no default agent: with no file, nothing replies. `tool` and `cmd` are
+required; `cmd` is a program, never a shell alias or function (its variables go
+in `env`). A list of one agent needs no `default` line; a longer one does. The
+file is read again each time a run starts, so a change to it needs no restart.
 """
 from __future__ import annotations
 
@@ -62,7 +64,7 @@ def load(home: str, home_dir: Optional[str] = None) -> AgentList:
         with open(path, "rb") as f:
             data = tomllib.load(f)
     except FileNotFoundError:
-        return AgentList(path, [Agent("claude", "claude", "claude", {}, "")], "claude")
+        raise AgentListError(f"No agent list: write {path} to choose the coding agents that reply (see INSTALL.md)")
     except (OSError, tomllib.TOMLDecodeError) as e:
         raise AgentListError(f"could not read the agent list {path}: {e}")
 
@@ -77,7 +79,9 @@ def load(home: str, home_dir: Optional[str] = None) -> AgentList:
     for name, entry in table.items():
         if not isinstance(entry, dict):
             raise wrong(f"agent '{name}' is not a table")
-        tool, cmd, model = entry.get("tool", "claude"), entry.get("cmd"), entry.get("model", "")
+        tool, cmd, model = entry.get("tool"), entry.get("cmd"), entry.get("model", "")
+        if tool is None:
+            raise wrong(f"agent '{name}' needs a tool ({' or '.join(TOOLS)})")
         if tool not in TOOLS:
             raise wrong(f"agent '{name}': tool '{tool}' is not one of {', '.join(TOOLS)}")
         if not isinstance(cmd, str) or not cmd.strip():
