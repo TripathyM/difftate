@@ -22,4 +22,5 @@ Spec: #228. difftate can't write and maintain a viewer for every editor (VS Code
 - A viewer built this way is opened by the reviewer, not by difftate: they run `difftate` so the watcher runs, then open their editor, and the viewer finds the watcher from `api.json` in the difftate folder of the home. difftate needs a way to start the watcher and open the review without opening a viewer for this, which the spec of ADR 0009 (#201) rejected when no viewer needed it.
 - `difftate --guide` and a copy in the repository come from one source, and a test checks that the guide names every call of the API.
 - The demo review also serves the hand checks of the bundled viewers.
+- The design borrows from Herdr's mods ([herdr-architecture.md](../research/herdr-architecture.md) §4 and §9): a guide printed by the tool for its own version, shipped parts on the public API, an API that only grows.
 - A popular viewer can become bundled later, as VS Code may when we build our own from the guide.
