@@ -11,13 +11,12 @@ from ....core.dispatch.model import CouldNotStart
 STOP_GRACE_S = 3
 
 
-def find_command(cmd):
-    """<cmd>, once it is a program on PATH or the path of one. A shell alias or
-    function isn't one, and the reviewer's shell config is never read. Raises
-    the core's CouldNotStart."""
-    if shutil.which(cmd):
-        return cmd
-    raise CouldNotStart(f"command '{cmd}' not found on PATH (a shell alias can't be a cmd: write its program and env)")
+def need_command(cmd):
+    """<cmd> is a program on PATH or the path of one. A shell alias or function
+    isn't one, and the reviewer's shell config is never read. Raises the core's
+    CouldNotStart."""
+    if not shutil.which(cmd):
+        raise CouldNotStart(f"command '{cmd}' not found on PATH (a shell alias can't be a cmd: write its program and env)")
 
 
 def descendants(pid):

@@ -28,7 +28,7 @@ Run each check. Report all results together, then stop if anything **required** 
 | latest python3 (required, for the watcher and the `difftate` program) | `python3 --version`, and `command -v python3` should be Homebrew's (`/opt/homebrew/bin/python3`) | macOS: `brew install python`. The built-in `/usr/bin/python3` (Command Line Tools, 3.9) is no longer supported |
 | An agent CLI (one is required) | `command -v claude` and `command -v opencode`, run separately (in `zsh -ic '…'` if your shell's config sets up the `PATH`) | Install [Claude Code](https://docs.claude.com/en/docs/claude-code) or [OpenCode](https://opencode.ai) |
 
-The agent CLI check passes when at least one of the two prints a path to a real program, or is an alias for one (section 5 writes the program, never the alias). Keep what it found: question 4 uses it.
+The agent CLI check passes when at least one of the two is a real program, or an alias or shell function (section 5 writes the program it starts, never the alias or function). Keep what it found: question 4 uses it.
 
 Only if the user chose **Browser + Neovim** (question 2), also check:
 
@@ -121,12 +121,12 @@ The plugin is loaded from the clone (`dir = "DT_HOME"`), so one `git pull` updat
 
 The agent list, `~/.difftate/agents.toml` (`$DIFFTATE_HOME/agents.toml`), is the only thing that says which coding agents can reply. Without it, difftate opens reviews and takes comments, but nothing replies.
 
-**If the file exists:** show it and leave it as it is. If an entry has no `tool`, or its `cmd` is not a program by the check in step 2, say that its runs are refused and show the lines to change. The user edits the file. Go to step 5.
+**If the file exists:** show it and leave it as it is. Check it, and show the lines to change for what is wrong. An entry with no `tool`, or a list of two or more with no `default`, makes difftate refuse the whole list: nothing replies. A `cmd` that is not a program by the check in step 2 gets that entry's runs refused. The user edits the file. Go to step 5.
 
 1. **Collect the names.** Start from what the requirements check found (`claude`, `opencode`). Look for aliases that start them, `zsh -ic 'alias' | grep -E 'claude|opencode'`, and ask the user for any other command they start a coding agent or an account with.
 2. **Check each name** with `zsh -ic 'whence -w <name>'`. **`cmd` must be a real program, on `PATH` or a full path, never a shell alias or function**: difftate does not read your shell config.
    - `command` (or `hashed`): it can be `cmd` as is.
-   - `alias`: read its text with `zsh -ic 'alias <name>'`. Write its program as `cmd` and its `VAR=value` parts as `env`. For example, `ccw='CLAUDE_CONFIG_DIR=~/.claude-work claude'` becomes `cmd = "claude"`, `env = { CLAUDE_CONFIG_DIR = "~/.claude-work" }`. Show the result and ask whether it is right. `command -v <program>` in `sh` must find the program; if the program is another alias, read that one too. In `env`, difftate expands only a leading `~`, so write `$HOME/…` as `~/…` and ask for the value of any other variable. In `cmd` it expands nothing: write a full path out, without `~`. An entry can't pass arguments: if the alias has any, say that they are left out.
+   - `alias`: read its text with `zsh -ic 'alias <name>'`. Write its program as `cmd` and its `VAR=value` parts as `env`. For example, `ccw='CLAUDE_CONFIG_DIR=~/.claude-work claude'` becomes `cmd = "claude"`, `env = { CLAUDE_CONFIG_DIR = "~/.claude-work" }`. Show the result and ask whether it is right. `zsh -ic 'whence -p <program>'` must find the program (or it is a full path); if `whence -w` says the program is itself an alias too, read that one as well, unless it is the same name. In `env`, difftate expands only a leading `~`, so write `$HOME/…` as `~/…` and ask for the value of any other variable. In `cmd` it expands nothing: write a full path out, without `~`. An entry can't pass arguments: if the alias has any, say that they are left out.
    - `function`: show it to the user (`zsh -ic 'whence -f <name>'`) and ask which program it starts, and with what environment.
    - `none`: say that it was not found, and ask for the program's full path.
 3. **Suggest the list** (question 4). Each entry is an `[agents.<name>]` table: `tool` (`claude` or `opencode`, required), `cmd` (required), `env` (what it needs, optional) and `model` (optional).
@@ -206,7 +206,7 @@ Ask these, together, before section 2 (question 4 needs the results of section 1
    - **Browser only** (default): reviews open in a browser tab. Nothing more to install.
    - **Browser + Neovim**: also adds the Neovim viewer, to review in your own Neovim (any Neovim 0.10 with gitsigns; LazyVim not needed). The browser still works.
 3. Only for **Browser + Neovim**: **Should `difftate` open Neovim instead of the browser by default?** Default: no (`difftate --open nvim` opens it each time).
-4. **Which coding agents should reply to your comments?** Skip it if the agent list already exists (section 5). Suggest an answer from what the requirements check found, by steps 1 to 3 of section 5: one agent when only `claude` or only `opencode` was found; with both, or more than one account, one entry for each real command, and ask for their names and the default. The file is written only after the user has seen all of it (section 5, step 4).
+4. **Which coding agents should reply to your comments?** Skip it if the agent list already exists (section 5). Suggest an answer from what the requirements check found, by steps 1 to 3 of section 5 (their follow-up questions are part of this one, and may be asked after the others): one agent when only `claude` or only `opencode` was found; with both, or more than one account, one entry for each real command, and ask for their names and the default. The file is written only after the user has seen all of it (section 5, step 4).
 
 ## Uninstall
 

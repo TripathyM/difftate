@@ -7,13 +7,13 @@ stream. Every run starts a fresh agent session. They share coding_agent.py
 (what every coding agent has), reply_channel/ (the run's folder and
 dt-reply), events.py (one JSON event per line), run.py (the process, read
 into news) and processes.py (stopping a process and everything it started,
-and finding the command).
+and checking the command is a program).
 """
 from __future__ import annotations
 
 from .claude_code import ClaudeCode
 from .coding_agent import CodingAgent, OffLimits
 from .opencode import OpenCode
-from .processes import find_command
+from .processes import need_command
 
-__all__ = ["ClaudeCode", "CodingAgent", "OffLimits", "OpenCode", "find_command"]
+__all__ = ["ClaudeCode", "CodingAgent", "OffLimits", "OpenCode", "need_command"]

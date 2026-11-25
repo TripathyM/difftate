@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from .adapters.inbound import cli
 from .adapters.inbound.review_api import ReviewApi, ShownView, ask_running_watcher, running_watcher, token_file
 from .adapters.outbound import agent_list, git
-from .adapters.outbound.coding_agents import ClaudeCode, CodingAgent, OffLimits, OpenCode, find_command
+from .adapters.outbound.coding_agents import ClaudeCode, CodingAgent, OffLimits, OpenCode, need_command
 from .adapters.outbound.coding_agents.reply_channel import ReplyError, RunFolder, reply_command
 from .adapters.outbound.git import GitCodeReader
 from .adapters.outbound.history_files import HistoryFiles
@@ -180,7 +180,7 @@ def check_agent(name):
     except agent_list.AgentListError as e:
         raise NotFound(str(e)) from e
     try:
-        find_command(entry.cmd)
+        need_command(entry.cmd)
     except CouldNotStart as e:
         raise NotFound(f"agent '{name}': {e}") from e
 
@@ -228,13 +228,13 @@ class ChosenAtRunStart:
         if entry is None:
             raise CouldNotStart(f"the review's agent '{chosen.name}' is not in the agent list ({chosen.path}): "
                                 f"{', '.join(chosen.names)}; choose another or clear it")
-        found = find_command(entry.cmd)
+        need_command(entry.cmd)
         home = difftate_home()
 
         def off_limits():
             return OffLimits(keep_out=[self.folder, home], secrets=[token_file(home), home])
 
-        return CODING_AGENTS[entry.tool](found, entry.model, cwd=self.cwd, off_limits=off_limits,
+        return CODING_AGENTS[entry.tool](entry.cmd, entry.model, cwd=self.cwd, off_limits=off_limits,
                                          env=entry.env).start(prompt, threads)
 
 

@@ -9,7 +9,7 @@ default (ADR 0008). A TOML file in the difftate home, agents.toml:
     env = { CLAUDE_CONFIG_DIR = "~/.claude-personal" } # what it needs in its environment (optional)
     model = "claude-opus-5-5"                         # optional: the coding agent's own default
 
-There is no default agent: with no file, nothing replies. `tool` and `cmd` are
+There is no default coding agent: with no file, nothing replies. `tool` and `cmd` are
 required; `cmd` is a program, never a shell alias or function (its variables go
 in `env`). A list of one agent needs no `default` line; a longer one does. The
 file is read again each time a run starts, so a change to it needs no restart.
