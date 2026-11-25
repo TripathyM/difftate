@@ -1744,6 +1744,40 @@ class WhoRepliesTest(Harness, unittest.TestCase):
         self.assertIn("could not start lost", self.terminal())
 
 
+class NoAgentListTest(Harness, unittest.TestCase):
+    """With no agent list nothing replies (#236): the review opens and takes
+    comments, and each run is refused, naming the file to write."""
+
+    def setUp(self):
+        super().setUp()
+        self.said = (f"No agent list: write {os.path.join(self.difftate_home, 'agents.toml')} "
+                     "to choose the coding agents that reply (see INSTALL.md)")
+        run = self.difftate()
+        self.output = run.stdout + run.stderr
+        self.assertEqual(run.returncode, 0, self.output + self.terminal())
+        self.read_running_files()
+
+    def test_difftate_starts_the_watcher_and_opens_the_review_saying_once_what_to_write(self):
+        self.assertEqual(self.output.count(self.said), 1, self.output)
+        self.assertIn("difftate is running", self.output)
+        self.assertIn("→ http://", self.output)
+        self.assertIsNone(self.watcher.poll())
+
+    def test_a_comment_is_kept_but_starts_no_run_and_the_viewers_get_the_message(self):
+        self.release_agent()
+
+        tid = self.open_thread("Why an f-string here?")["id"]
+
+        final = wait_for("the failed progress note", lambda: self.note(tid, "progress", "no reply"))
+        self.assertIn(self.said, final)
+        self.assertEqual(self.state(tid), "failed")
+        self.assertFalse(os.path.exists(os.path.join(self.agent_dir, "args")), "no run")
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            self.api("GET", "/api/agent")
+        self.assertIn(self.said, refused.exception.read().decode())
+        refused.exception.close()
+
+
 class BatchedReviewTest(Harness, unittest.TestCase):
     """The review mode through a running watcher (GLOSSARY.md, Review mode)."""
 

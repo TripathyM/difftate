@@ -11,26 +11,12 @@ from ....core.dispatch.model import CouldNotStart
 STOP_GRACE_S = 3
 
 
-def find_command(cmd):
-    """The command's path, following a zsh alias when it isn't on PATH.
-    Raises the core's CouldNotStart when it is neither."""
-    if shutil.which(cmd):
-        return cmd
-    try:
-        raw = subprocess.run(["zsh", "-ic", f"which {cmd}"], capture_output=True, text=True).stdout
-    except OSError:
-        raw = ""
-    lines = raw.strip().split("\n")
-    raw = lines[-1] if lines else ""
-    if "aliased to " in raw:
-        resolved = raw.split("aliased to ", 1)[1]
-    elif raw.startswith("/"):
-        resolved = raw
-    else:
-        resolved = ""
-    if resolved and os.access(resolved, os.X_OK):
-        return resolved
-    raise CouldNotStart(f"command '{cmd}' not found (not in PATH, not a shell alias)")
+def need_command(cmd):
+    """<cmd> is a program on PATH or the path of one. A shell alias or function
+    isn't one, and the reviewer's shell config is never read. Raises the core's
+    CouldNotStart."""
+    if not shutil.which(cmd):
+        raise CouldNotStart(f"command '{cmd}' not found on PATH (a shell alias can't be a cmd: write its program and env)")
 
 
 def descendants(pid):

@@ -12,7 +12,6 @@ from .events import OpenCodeEvents
 
 class OpenCode(CodingAgent):
     name = "opencode"
-    default_cmd = "opencode"
 
     def command(self, prompt: str, folder: RunFolder) -> Tuple[List[str], List[News]]:
         args = ["--auto", "--format", "json"]

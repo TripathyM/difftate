@@ -59,11 +59,12 @@ class ReadingTheList(Folder):
         self.assertEqual(agents.get("work").model, "claude-opus-5-5")
         self.assertEqual(agents.get("open").tool, "opencode")
 
-    def test_with_no_list_claude_is_the_only_agent_and_the_default(self):
-        agents = load(self.home)
+    def test_with_no_list_no_agent_replies_and_it_says_which_file_to_write(self):
+        with self.assertRaises(AgentListError) as refused:
+            load(self.home)
 
-        self.assertEqual((agents.names, agents.default), (["claude"], "claude"))
-        self.assertEqual((agents.get("claude").tool, agents.get("claude").cmd), ("claude", "claude"))
+        self.assertEqual(str(refused.exception),
+                         f"No agent list: write {self.path} to choose the coding agents that reply (see INSTALL.md)")
 
     def test_a_name_that_is_not_listed_is_refused_with_the_names(self):
         self.write(LIST)
@@ -80,6 +81,7 @@ class ReadingTheList(Folder):
             'default = "x"\n[agents.a]\ntool = "claude"\ncmd = "c"\n': "default 'x'",
             '[agents.a]\ntool = "gemini"\ncmd = "c"\n': "tool 'gemini'",
             '[agents.a]\ntool = "claude"\n': "cmd",
+            '[agents.a]\ncmd = "c"\n': "agent 'a' needs a tool (claude or opencode)",
             '[agents.a]\ntool = "claude"\ncmd = "c"\nenv = { N = 1 }\n': "env",
             '[agents.a]\ntool = "claude"\ncmd = "c"\n[agents.b]\ntool = "claude"\ncmd = "c"\n': "no default",
         }
@@ -173,6 +175,33 @@ class TheRepositorysAgent(Folder):
 
         self.assertEqual(code, 1, out)
         self.assertIn("command 'fake-work' not found", out)
+
+    def test_a_cmd_that_is_only_a_shell_alias_is_refused_and_says_what_to_write(self):
+        # An alias to a real program, which an interactive zsh would follow
+        with open(os.path.join(self.env["HOME"], ".zshrc"), "w") as f:
+            f.write(f"alias only-an-alias={os.path.join(self.bin, 'fake-work')}\n")
+        self.write('[agents.work]\ntool = "claude"\ncmd = "only-an-alias"\n')
+
+        code, out = self.difftate("work")
+
+        self.assertEqual(code, 1, out)
+        self.assertIn("command 'only-an-alias' not found on PATH (a shell alias can't be a cmd: "
+                      "write its program and env)", out)
+
+    def test_a_full_path_is_a_command(self):
+        self.write(f'[agents.work]\ntool = "claude"\ncmd = "{os.path.join(self.bin, "fake-work")}"\n')
+
+        code, out = self.difftate("work")
+
+        self.assertEqual(code, 0, out)
+
+    def test_with_no_list_it_says_which_file_to_write(self):
+        os.remove(self.path)
+
+        code, out = self.difftate()
+
+        self.assertEqual(code, 1, out)
+        self.assertIn(f"No agent list: write {self.path}", out)
 
     def test_a_setting_that_names_an_agent_gone_from_the_list_is_said(self):
         self.git("config", "difftate.agent", "gone")

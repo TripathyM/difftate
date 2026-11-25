@@ -11,7 +11,8 @@ watcher (ADR 0008): viewers and scripts only find the one that runs.
 `difftate browser` is the same with --open browser: the review opens in the browser, at its link.
 It adds the folder (the watcher serves a folder from the first request that
 names it), shows the view when one is given, and opens the viewer itself: the
-watcher never opens one. `difftate stop` stops the watcher through the review
+watcher never opens one. When no coding agent can reply (no agent list, or a
+wrong one), it says why and opens the review all the same. `difftate stop` stops the watcher through the review
 API; a run in flight ends failed "(the watcher stopped)". `difftate restart` stops it
 (if it runs) and starts it again: it serves again the folders it served.
 """
@@ -21,6 +22,7 @@ import time
 import urllib.parse
 
 from ....core.changes.model import View
+from ....core.review.model import NotFound
 from . import one_watcher, viewers
 from .options import USAGE, Exit, interval_of, parse
 
@@ -111,6 +113,10 @@ def _open(argv, wiring):
             raise Exit(1, f"Error: {_said(launch, status)}")
         url = launch["url"]
         print(f"  → {url}")
+    try:
+        wiring.agent_choice(root)
+    except NotFound as e:  # the review opens all the same: reading and commenting need no coding agent
+        print(e)
     viewers.open_review(wiring.viewers, opts["open"], url, root)
     return 0
 
