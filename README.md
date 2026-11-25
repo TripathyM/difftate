@@ -8,6 +8,9 @@ Review a diff in the browser (or in your own [Neovim](#review-in-neovim)), comme
 
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`) or [OpenCode](https://opencode.ai) (`opencode`)
 - `python3` (standard library only), `git`
+- For the Neovim viewer (optional): Neovim 0.10 or later, [lazy.nvim](https://github.com/folke/lazy.nvim) and [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) (LazyVim has both); [Snacks](https://github.com/folke/snacks.nvim) for the pickers' previews and the files sidebar
+
+The coding agent answers a comment as it works in your own sessions: it may edit files and run commands in the repository.
 
 ## Install
 
@@ -17,7 +20,7 @@ Review a diff in the browser (or in your own [Neovim](#review-in-neovim)), comme
 Install difftate by following https://raw.githubusercontent.com/TripathyM/difftate/main/INSTALL.md
 ```
 
-It checks requirements, clones the repo, and asks before editing `~/.zshrc`. See [INSTALL.md](INSTALL.md).
+It asks which viewer you want (the browser only, or the browser and Neovim), checks requirements, clones the repo, and asks before editing `~/.zshrc` or adding the Neovim plugin. Run it again to add the Neovim viewer later. See [INSTALL.md](INSTALL.md).
 
 **By hand:**
 
@@ -26,6 +29,8 @@ git clone https://github.com/TripathyM/difftate.git ~/difftate   # any folder wo
 echo 'export PATH="$HOME/difftate/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
+
+That is all the browser viewer needs. For the Neovim viewer too, add the plugin from the clone ([Review in Neovim](#review-in-neovim)).
 
 `difftate`, `dt-export` and `dt-reply` are programs in the repository's `bin/`, so the board and scripts run them as well as your shell. `difftate` finds the watcher next to itself.
 
@@ -142,7 +147,8 @@ The Neovim viewer reviews in your own Neovim (LazyVim), on the real files, with 
 ```lua
 return {
   {
-    "TripathyM/difftate", -- or, from a clone: dir = "~/difftate", name = "difftate",
+    dir = "~/difftate", -- your clone, so one `git pull` updates the plugin and the watcher together
+    name = "difftate",
     main = "difftate",
     opts = {}, -- keys = { toggle = "<leader>rr", expand = "<leader>re", thread = "<leader>rt", comment = "<leader>rc", add_comment = "<leader>ra", resolve = "<leader>rR", reopen = "<leader>rO", general = "<leader>rG", threads = "<leader>rs", files = "<leader>rf", files_sidebar = "<leader>rF", next = "]r", previous = "[r", mode = "<leader>rM", agent = "<leader>rA", submit = "<leader>rS", done = "<leader>rD", export = "<leader>rE", viewed = "<leader>rv", views = "<leader>rV", browser = "<leader>rB", side_by_side = "<leader>rd" } is the default; false maps none
   },
