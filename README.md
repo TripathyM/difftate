@@ -8,7 +8,7 @@ Review a diff in the browser (or in your own [Neovim](#review-in-neovim)), comme
 
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`) or [OpenCode](https://opencode.ai) (`opencode`)
 - `python3` (standard library only), `git`
-- For the Neovim viewer (optional): Neovim 0.10 or later, [lazy.nvim](https://github.com/folke/lazy.nvim) and [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) (LazyVim has both); [Snacks](https://github.com/folke/snacks.nvim) for the pickers' previews and the files sidebar
+- For the Neovim viewer (optional): Neovim 0.10 or later with [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim). LazyVim is not needed (it has gitsigns already); [Snacks](https://github.com/folke/snacks.nvim) adds the pickers' previews and the files sidebar, which-key the key list, lualine the statusline note
 
 The coding agent answers a comment as it works in your own sessions: it may edit files and run commands in the repository.
 
@@ -140,9 +140,17 @@ The choice is kept in the repository's own git config (`difftate.agent`, shared 
 
 ## Review in Neovim
 
-The Neovim viewer reviews in your own Neovim (LazyVim), on the real files, with your own keys, pickers and LSP ([ADR 0007](docs/adr/0007-reviews-happen-in-the-reviewers-own-editor.md)). It is a Lua plugin at the top of this repository (`lua/difftate/`, `plugin/difftate.lua`), a client of the [review API](#review-api) like the browser.
+The Neovim viewer reviews in your own Neovim (LazyVim or any other config with gitsigns), on the real files, with your own keys, pickers and LSP ([ADR 0007](docs/adr/0007-reviews-happen-in-the-reviewers-own-editor.md)). It is a Lua plugin at the top of this repository (`lua/difftate/`, `plugin/difftate.lua`), a client of the [review API](#review-api) like the browser.
 
-**Install** with lazy.nvim, in `~/.config/nvim/lua/plugins/difftate.lua`:
+**Install** from your clone, so one `git pull` updates the plugin and the watcher together. Without lazy.nvim (vim-plug, packer, a plain `init.lua`), link it as a Neovim package and call `setup` in `init.lua`:
+
+```bash
+mkdir -p ~/.local/share/nvim/site/pack/difftate/start
+ln -s ~/difftate ~/.local/share/nvim/site/pack/difftate/start/difftate
+echo 'require("difftate").setup({})' >> ~/.config/nvim/init.lua
+```
+
+The keys are under `<leader>r` of your own config (Space in LazyVim, `\` in plain Neovim); `setup({ keys = { ... } })` renames them. With lazy.nvim, in `~/.config/nvim/lua/plugins/difftate.lua`:
 
 ```lua
 return {

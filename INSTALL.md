@@ -35,8 +35,10 @@ Only if the user chose **Browser + Neovim** (question 2), also check:
 | Need | Check | If missing |
 |---|---|---|
 | Neovim 0.10 or later (required for the Neovim viewer) | `nvim --version \| head -1` | macOS: `brew install neovim` |
-| lazy.nvim (required for step 4.2) | `ls ~/.local/share/nvim/lazy/lazy.nvim` | Without it, step 4 shows the plugin spec for the user to add by hand |
-| gitsigns.nvim (required: the viewer moves through the changes with it) | `ls ~/.local/share/nvim/lazy/gitsigns.nvim` | LazyVim has it. Otherwise tell the user to add `lewis6991/gitsigns.nvim` to their plugins |
+| gitsigns.nvim (required: the viewer moves through the changes with it) | `nvim --headless "+lua io.write(pcall(require, 'gitsigns') and 'ok' or 'missing')" +qa` prints `ok` | LazyVim has it. Otherwise tell the user to add `lewis6991/gitsigns.nvim` with their plugin manager, and stop the Neovim part until it is there |
+| Which plugin manager (for section 4; not required) | `nvim --headless "+lua io.write(pcall(require, 'lazy') and 'lazy' or 'other')" +qa` | `other` is fine: section 4 installs it as a Neovim package |
+
+LazyVim is not needed: any Neovim 0.10 with gitsigns works. LazyVim, which-key, Snacks and lualine only add to it (a key list, the pickers' previews and files sidebar, the statusline note).
 
 If Neovim is missing or too old, say so and go on with **Browser only**: the browser viewer still works.
 
@@ -83,8 +85,8 @@ Skip this section if the user chose **Browser only**. The browser viewer needs n
 
 The plugin is loaded from the clone (`dir = "DT_HOME"`), so one `git pull` updates the plugin and the watcher together. Never install it a second time from GitHub (`"TripathyM/difftate"`): two copies can be at different versions.
 
-1. Check for an existing install: `grep -rln 'difftate' ~/.config/nvim/lua 2>/dev/null`. If it finds a file, say so and skip to step 3.
-2. If `~/.config/nvim/lua/plugins/` exists (LazyVim, or any lazy.nvim setup that imports `plugins`): show the user this file, with `DT_HOME` filled in, wait for a yes, then write it to `~/.config/nvim/lua/plugins/difftate.lua`. Otherwise show it and tell the user to add the spec to their own lazy.nvim setup.
+1. Check for an existing install: `grep -rln 'difftate' ~/.config/nvim 2>/dev/null` and `ls ~/.local/share/nvim/site/pack/difftate/start/difftate 2>/dev/null`. If either finds something, say so and skip to step 4.
+2. **With lazy.nvim** (the check in section 1 printed `lazy`) and a `~/.config/nvim/lua/plugins/` folder (LazyVim, or any lazy.nvim setup that imports `plugins`): show the user this file, with `DT_HOME` filled in, wait for a yes, then write it to `~/.config/nvim/lua/plugins/difftate.lua`. With lazy.nvim but no such folder: show it and tell the user to add the spec to their own lazy.nvim setup. Then go to step 4.
 
    ```lua
    return {
@@ -105,8 +107,15 @@ The plugin is loaded from the clone (`dir = "DT_HOME"`), so one `git pull` updat
    }
    ```
 
-3. Check it loads: `nvim --headless "+DifftateStatus" +qa` prints no error.
-4. Tell the user: the keys are under `<leader>r` (`<leader>rr` opens the review). With LazyVim's refactoring extra, `<leader>rs` and `<leader>rf` are already taken: change them in `opts.keys` (see the README's "Review in Neovim").
+3. **With any other plugin manager, or none** (vim-plug, packer, mini.deps, a plain `init.lua`): install it as a Neovim package, which Neovim loads by itself at start-up:
+   1. `mkdir -p ~/.local/share/nvim/site/pack/difftate/start && ln -s DT_HOME ~/.local/share/nvim/site/pack/difftate/start/difftate`
+   2. Show the user this line, wait for a yes, then append it to the end of `~/.config/nvim/init.lua` (back it up first, as for `~/.zshrc`). It maps the keys; without it only the `:Difftate…` commands work. If they have `init.vim` instead, append it as `lua require("difftate").setup({})`.
+
+      ```lua
+      require("difftate").setup({}) -- difftate's Neovim viewer: keys under <leader>r
+      ```
+4. Check it loads: `nvim --headless "+DifftateStatus" +qa` prints no error.
+5. Tell the user: the keys are under `<leader>r`, the leader key of their own config (Space in LazyVim, `\` in plain Neovim), so `<leader>rr` opens the review; `:DifftateOpen` does too. Any key can be renamed in `keys` (`setup({ keys = { toggle = "<F5>" } })`, or `opts.keys` with lazy.nvim). With LazyVim's refactoring extra, `<leader>rs` and `<leader>rf` are already taken: rename those two.
 
 ## 5. The agent list (optional)
 
@@ -174,12 +183,12 @@ Ask these, together, before section 2. If `~/.zshrc` already has the `PATH` line
 1. **Where should difftate be cloned?** Default: `~/difftate`.
 2. **Which viewer do you want?**
    - **Browser only** (default): reviews open in a browser tab. Nothing more to install.
-   - **Browser + Neovim**: also adds the Neovim viewer, a lazy.nvim plugin, to review in your own Neovim (LazyVim). The browser still works.
+   - **Browser + Neovim**: also adds the Neovim viewer, to review in your own Neovim (any Neovim 0.10 with gitsigns; LazyVim not needed). The browser still works.
 3. Only for **Browser + Neovim**: **Should `difftate` open Neovim instead of the browser by default?** Default: no (`difftate --open nvim` opens it each time).
 
 ## Uninstall
 
 1. Run `difftate stop`. Remove the difftate lines (the `PATH` line, or an old `source` line and shortcuts, and `DT_OPEN`) from `~/.zshrc`.
-2. Remove `~/.config/nvim/lua/plugins/difftate.lua` if the install wrote it.
+2. Remove the Neovim viewer: `~/.config/nvim/lua/plugins/difftate.lua` (lazy.nvim), or the link `~/.local/share/nvim/site/pack/difftate` and the `require("difftate").setup` line in `init.lua` (other plugin managers).
 3. If an older install linked the removed Herdr viewer: `rm ~/.config/herdr-app/mods/difftate` (the link only), and the `cmd-shift-r` line from `~/.config/herdr-app/keys.json` if you added it.
 4. `rm -rf ~/difftate` (or your `DT_HOME`). `~/.difftate` holds the review history: keep it, or remove it too.
