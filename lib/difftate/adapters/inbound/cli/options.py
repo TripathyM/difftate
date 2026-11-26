@@ -5,7 +5,7 @@ import os
 USAGE = """difftate — Open the review of this folder, starting the watcher (once for the machine) if none runs.
 
 Usage:
-  difftate [<view>] [--base <branch>] [--open browser|nvim|both]
+  difftate [<view>] [--base <branch>] [--open browser|nvim|both|none]
   difftate browser [<view>] [--base <branch>]   the same, opening the review in the browser
   difftate stop
   difftate restart
@@ -25,12 +25,14 @@ Options:
                          HEAD: uncommitted; staged; unstaged. Viewers switch views
   --base <branch>        The branch the review compares against (default: the repository's
                          default branch, origin/HEAD; else main or master)
-  --open <where>         browser, nvim or both (default: $DT_OPEN, else browser).
+  --open <where>         browser, nvim, both or none (default: $DT_OPEN, else browser).
                          The viewer to open, not the host. nvim: the Neovim viewer: with a terminal,
                          nvim runs right there, in the repository (difftate ends and nvim takes its
                          place); without one, the command to run is printed (difftate opens no
                          host).
                          both: the browser first, then nvim.
+                         none: opens nothing, for your own viewer, which you open yourself and
+                         which finds the watcher.
   --cwd <path>           A folder of the repository (default: current directory)
   --help                 Show this help
 

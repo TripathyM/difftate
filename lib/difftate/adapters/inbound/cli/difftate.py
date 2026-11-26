@@ -2,7 +2,7 @@
 for the machine when none runs, and ends. It is the only thing that starts the
 watcher (ADR 0008): viewers and scripts only find the one that runs.
 
-  difftate [<view>] [--base <branch>] [--open browser|nvim|both]
+  difftate [<view>] [--base <branch>] [--open browser|nvim|both|none]
   difftate browser [<view>] [--base <branch>]
   difftate stop
   difftate restart
@@ -10,8 +10,8 @@ watcher (ADR 0008): viewers and scripts only find the one that runs.
 
 `difftate browser` is the same with --open browser: the review opens in the browser, at its link.
 It adds the folder (the watcher serves a folder from the first request that
-names it), shows the view when one is given, and opens the viewer itself: the
-watcher never opens one. When no coding agent can reply (no agent list, or a
+names it), shows the view when one is given, and opens the viewer itself (none
+with --open none): the watcher never opens one. When no coding agent can reply (no agent list, or a
 wrong one), it says why and opens the review all the same. `difftate stop` stops the watcher through the review
 API; a run in flight ends failed "(the watcher stopped)". `difftate restart` stops it
 (if it runs) and starts it again: it serves again the folders it served.
@@ -107,7 +107,7 @@ def _open(argv, wiring):
     print(f"difftate is running (pid {pid}): the review of {review['branch']} against {review['base']} "
           f"in {root}, showing {View((shown or {}).get('view') or '').name}")
     url = ""
-    if opts["open"] != "nvim":  # the Neovim viewer needs no link
+    if opts["open"] in (viewers.BROWSER, viewers.BOTH):  # only the browser needs a link
         status, launch = _ask(wiring, "POST", with_folder("/api/launch", root))
         if status != 200:
             raise Exit(1, f"Error: {_said(launch, status)}")

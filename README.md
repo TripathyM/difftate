@@ -47,7 +47,7 @@ difftate HEAD~3             # the last 3 commits
 difftate HEAD               # only uncommitted changes (capital HEAD: `head` breaks in worktrees on macOS)
 difftate unstaged           # only unstaged changes
 difftate staged             # only staged changes
-difftate --open nvim        # review in Neovim (see "Review in Neovim"); --open takes browser, nvim or both
+difftate --open nvim        # review in Neovim (see "Review in Neovim"); --open takes browser, nvim, both or none
 difftate stop               # stop the watcher
 difftate log                # the watcher's log, then new lines until Ctrl+C
 ```
@@ -267,7 +267,7 @@ The watcher prints `Model: <name> (from the agent list)` (or `Model: CLI default
 
 | Variable | Default | Effect |
 |---|---|---|
-| `DT_OPEN` | `browser` | The viewer the review opens in: `browser`, `nvim` (the [Neovim viewer](#review-in-neovim)) or `both`. `--open` overrides it for one run |
+| `DT_OPEN` | `browser` | The viewer the review opens in: `browser`, `nvim` (the [Neovim viewer](#review-in-neovim)), `both` or `none` (opens nothing: your own viewer opens itself and finds the watcher). `--open` overrides it for one run |
 | `DIFFTATE_HOME` | `~/.difftate` | The difftate folder of the machine: the watcher's port, pid and token, lock and log, and the review history. Tests and trials point it elsewhere |
 | `DT_INTERVAL` | `1` | Seconds between polls, read by the `difftate` that starts the watcher. The tests set it small |
 
@@ -282,7 +282,7 @@ The watcher prints `Model: <name> (from the agent list)` (or `Model: CLI default
 
 ### Command line (`difftate --help`)
 
-`difftate [<view>] [--base <branch>] [--open browser|nvim|both]` and `--cwd` (a folder of the repository); `difftate agent [<name>]`; `difftate stop`; `difftate status`. Who replies is the agent list's, not an option. `difftate-watch.py --help` lists the watcher process's own flag, which `difftate` passes it.
+`difftate [<view>] [--base <branch>] [--open browser|nvim|both|none]` and `--cwd` (a folder of the repository); `difftate agent [<name>]`; `difftate stop`; `difftate status`. Who replies is the agent list's, not an option. `difftate-watch.py --help` lists the watcher process's own flag, which `difftate` passes it.
 
 ### Internal env vars (set by the watcher, don't set yourself)
 

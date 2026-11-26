@@ -54,7 +54,7 @@ class StartingAndStopping(Harness, unittest.TestCase):
         run = subprocess.run(["difftate", "--help"], cwd=self.repo, env=self.env, capture_output=True, text=True,
                              timeout=60)
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertIn("difftate [<view>] [--base <branch>] [--open browser|nvim|both]", run.stdout)
+        self.assertIn("difftate [<view>] [--base <branch>] [--open browser|nvim|both|none]", run.stdout)
 
     def test_difftate_starts_the_watcher_in_the_background_opens_the_review_and_ends(self):
         started = time.time()

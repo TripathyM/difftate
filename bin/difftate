@@ -2,7 +2,7 @@
 """difftate: open the review of this folder, starting the watcher if none runs.
 
 Usage:
-  difftate [<view>] [--base <branch>] [--open browser|nvim|both]
+  difftate [<view>] [--base <branch>] [--open browser|nvim|both|none]
   difftate stop
   difftate status [--json] [--branch <branch>] [--base <branch>]
 
