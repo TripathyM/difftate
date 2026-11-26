@@ -1,7 +1,7 @@
 # Test fixtures
 
-Recorded from difftate before the review API ran on the new core (#66), so
-the tests can still compare with what it did once the old code was deleted.
+First recorded from difftate before the review API ran on the new core (#66),
+so the tests could still compare with what it did once the old code was deleted.
 Only regenerate one when the published language or the stored format
 changes on purpose.
 
@@ -13,7 +13,12 @@ changes on purpose.
 - `review_api_released.json`, the released transcript: what the review API has
   published. The API only grows (ADR 0010): a test fails when a route, status,
   field or value kind in it is gone from the current transcript, and names it.
-  Extra ones pass, but nothing protects them until they are released.
+  So does a value of a field with a closed set (`status`, `state`, `mode`,
+  `side`, `author`, `kind`, `source`); other strings may change. Extra ones
+  pass, but nothing protects them until they are released.
+  It adds up all answers of one route and status, so a field dropped from only
+  some of them passes; it doesn't look at what a request sends; and it protects
+  only what some answer in the script shows.
   `DT_RECORD=1` never writes this file. To release an addition, in the same
   pull request, on purpose:
 
