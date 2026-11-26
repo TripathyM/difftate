@@ -57,11 +57,11 @@ A thread, as every call returns it:
               {"id": "…", "author": "agent", "by": null, "kind": "reply", "body": "It reads better.", "time": "…"}]}
 ```
 
-`author` is `reviewer`, `agent` or `difftate`; `kind` is `comment`, `reply`, `queued` or `progress`; `by` is the **reviewer name** (null for a reply or a note). `statusBy` is the reviewer name of the last thread status change. A thread listed in a view whose code the view doesn't show has `"inView": false` (its lines are then those of the view it was written in, `anchor.view`).
+`author` is `reviewer`, `agent` or `difftate`; `kind` is `comment`, `reply`, `queued` or `progress`; `by` is the **reviewer name** (null for a reply or a note). `statusBy` is the reviewer name of the last thread status change. In a view, `"inView": false` means the view's version of that file and side doesn't have the thread's code (most often: a thread on a deleted line); its lines are then those of the view it was written in, `anchor.view`. A thread without `inView` may still be on a file the view doesn't show, or on lines outside every hunk.
 
 **Calls.**
 
-- `GET /api/threads` sends nothing; optional `&status=open` (or `resolved`, `dismissed`) and `&view=<view>`. Returns a list of threads. With a view, each anchor's lines are where its code is in that view.
+- `GET /api/threads` sends nothing; optional `&status=open` (or `resolved`, `dismissed`) and `&view=<view>`. Returns a list of threads. With a view, each anchor's lines are where its code is in that view. Without `&view=`, the lines are those of all changes, not of the view viewers show (unlike the changeset and the review path): always pass the view you display.
 - `POST /api/threads` sends `{"anchor": {"file", "side", "startLine", "endLine", "code", "version"}, "body", "view"}`. Returns the new thread. Send `anchor: null` for a general thread.
   - `startLine` and `endLine` are 1-based line numbers of that side, as the changeset's diff numbers them (1 ≤ start ≤ end). One line: both the same.
   - `code`: the exact text of those lines as the viewer showed them, joined with `\n`, with no newline at the end. A thread whose `code` isn't on those lines is outdated at once.
@@ -74,7 +74,7 @@ A thread, as every call returns it:
 
 **Rules.**
 
-- Place a thread on its anchor's side and lines in the view you show. Show an `inView: false` thread in a list, not on a line. Show an outdated thread with its own `code`, marked outdated.
+- Place a thread on its anchor's side and lines in the view you show. Place it on a line only when your view shows that file (it is in the changeset's `versions`) and that line; show every other thread, and each `inView: false` one, in a list. Show an outdated thread with its own `code`, marked outdated.
 - A viewer writes comments only (`kind` left out): the reviewer answers a thread, or a reply in it, by adding a comment. Replies come from the coding agent, notes from difftate.
 - Show the thread state: it tells the reviewer whether the coding agent has the thread (`queued`, `working`), answered (`replied`) or failed (`failed`: its run ended with no reply; a new comment sends it again).
 - Resolving or dismissing a thread is the reviewer's. Offer reopening (`open`) too.
@@ -110,17 +110,18 @@ A thread, as every call returns it:
 
 ### 3.3 Views
 
-**What it is.** A **view** is the part of the review's changes that the reviewer looks at: `""` (all changes), a commit such as `HEAD~2` (the commits after it), `HEAD` (the uncommitted changes), `staged` or `unstaged`. Every view shows the same review: a thread written in any view belongs to it. The **changeset** is the changes from the base to the files on disk.
+**What it is.** A **view** is the part of the review's changes that the reviewer looks at: `""` (all changes), a commit such as `HEAD~2` (the commits after it, plus the uncommitted changes), `HEAD` (the uncommitted changes), `staged` or `unstaged`. Every view shows the same review: a thread written in any view belongs to it. The **changeset** is the changes from the base to the files on disk.
 
 **Calls.**
 
 - `GET /api/view` sends nothing. Returns `{"view"}`: the view viewers show.
 - `PUT /api/view` sends `{"view"}`. Returns `{"view"}`. It changes the view that viewers show.
-- `GET /api/changeset` sends nothing; optional `&view=<view>` (default: the view viewers show). Returns `{"view", "base", "commit", "diff", "versions", "waitingForRun", "checkedOut"}`: `diff` is a unified diff (`git diff`, new untracked files included); `commit` is where the branch left the base; `versions` is `{file: {"old", "new"}}`, the version of each side the diff shows (null for none), to send back as an anchor's `version`.
+- `GET /api/changeset` sends nothing; optional `&view=<view>` (default: the view viewers show). Returns `{"view", "base", "commit", "diff", "versions", "waitingForRun", "checkedOut"}`: `diff` is a unified diff (`git diff`, new untracked files included); `commit` is where the branch left the base; `versions` is `{file: {"old", "new"}}`, the version of each side the diff shows (null for none), to send back as an anchor's `version`. A version is a git blob id in the folder's repository: `git cat-file blob <version>`, run in the folder, gives that side's whole file (for a side-by-side diff editor), in every view, new untracked files included. `versions` has one entry per file whose content the diff shows, in the diff's order: use its keys as the view's file list. A pure rename (no content change) has no entry today; it shows only as `rename from`/`rename to` lines in `diff`.
 
 **Rules.**
 
 - A view that isn't one gets 400, naming the views there are.
+- No call lists the views. A view picker offers: all changes (`""`), `HEAD`, `staged`, `unstaged`, and `HEAD~N` for N from 1 up to the number of commits after `commit` (`git rev-list --count <commit>..HEAD` in the folder), where `commit` comes from `GET /api/changeset`.
 - Pass the same `&view=` to threads, the changeset and the review path, so lines agree.
 - To show your own view without changing the other viewers', pass `&view=` and leave `PUT /api/view` alone. `difftate <view>` sends `PUT /api/view`.
 
@@ -202,7 +203,7 @@ A thread, as every call returns it:
 
 ## 4. Start here
 
-Threads and the review path make a useful first viewer. Build `GET /api/review`, then threads (list, place, start one on a line, comment, resolve), then the review path, and check them against the demo review (section 5) before you add more.
+Threads and the review path make a useful first viewer. Build `GET /api/review`, then the changeset (`GET /api/changeset`, 3.3: the diff your viewer shows, and each anchor's `version`), then threads (list, place, start one on a line, comment, resolve), then the review path, and check them against the demo review (section 5) before you add more.
 
 ## 5. Checking your viewer
 
