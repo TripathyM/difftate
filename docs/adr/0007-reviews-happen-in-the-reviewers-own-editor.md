@@ -23,4 +23,4 @@ The Herdr viewer imitates Vim inside a Herdr mod, so every motion, picker and ju
 - The staged-only view doesn't fit: gitsigns always compares the file on disk. It stays in the browser.
 - A deleted line is not in any buffer, so the Neovim viewer shows threads on the old side but can't start one there.
 - A comment is anchored to the file on disk, so commenting on a buffer with unsaved changes is refused until it is saved.
-- The plugin sits at the top level of the repository (`lua/`, `plugin/`) so lazy.nvim can load it from GitHub; one pull request changes the review API and the plugin together.
+- The plugin sits at the top level of the repository (`lua/`, `plugin/`) so lazy.nvim can load it from GitHub; one pull request changes the review API and the plugin together. (Amended 2026-11-25 by ADR 0010: the Neovim viewer is a bundled viewer, and the review API only grows, so a pull request may add to the API and use it in the plugin, but never rename or remove a call or field.)
