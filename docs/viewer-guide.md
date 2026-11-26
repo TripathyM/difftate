@@ -25,13 +25,14 @@ No `api.json`, or no answer on its port, means no watcher runs. Then show the re
 
 - `GET /api/review` sends nothing. Returns `{"id", "branch", "base", "waitingForRun", "checkedOut", "mode", "held", "folder", "warnings"}`. The first request that names a folder adds it to what the watcher serves.
   - `id` names the review. The watcher follows the checked-out branch: when `id` changes, the reviewer checked out another branch, and every list you show must be read again.
-  - `waitingForRun` is true while another branch is checked out and a run still holds this review; `checkedOut` names that branch. Show it in one line: the review takes no new thread or viewed mark until the run ends (409).
+  - `waitingForRun` is true while another branch is checked out and a run still holds this review; `checkedOut` names that branch. With the base branch checked out, or a detached HEAD, there is no branch to review: the review is of the current commit, and `branch` (and `checkedOut`) are that commit's full id; shorten it for display. Show it in one line: the review takes no new thread or viewed mark until the run ends (409).
   - `folder` is the checked-out folder's top. `mode` and `held` are the review mode (see 3.5).
   - `warnings`: `[{"id", "time", "text"}]` about the review (such as a `review-path.md` that can't be read). Show each `id` once.
 
 **Rules for every call:**
 
 - Bodies are JSON objects (`Content-Type: application/json`). Answers are JSON, except the export (text).
+- Text that people and agents write is Markdown: every comment, reply and note `body`, and the review path's questions, answers, section text and side file text. Render it as untrusted: no raw HTML, no scripts, no links that run commands.
 - An error is `{"error": "<message>"}` with 400 (a bad request), 401 (the token), 403 (a role that may not do this), 404 (no such thread, note or file), 409 (another branch is checked out) or 502 (git could not be read). Show the message to the reviewer as it is.
 - The review API only grows: difftate updates add calls and fields, and never rename or remove one. Ignore fields you don't know, and keep working when a list has a value you don't know.
 - Nothing is pushed to a viewer. Poll: the bundled viewers ask again every second or two (`GET /api/review`, `GET /api/threads`, and whatever else they show).
@@ -225,7 +226,7 @@ Open your editor in the demo's repository with that `DIFFTATE_HOME`, and check e
 - **The coding agent that replies**: the agent list names one agent, `demo`, whose command does nothing. A submitted run starts and ends with no reply, so its threads become `failed` with a progress note.
 - **Export**: the export lists the five threads and the two commit messages.
 
-What the demo doesn't show: no file is **not on the path** (the review path names every changed file), no general thread, no dismissed thread, no `waitingForRun`, and no agent override. Make them yourself if your viewer shows them: a general thread or a dismissed one through the API; a new file in the demo's repository that the review path doesn't name.
+What the demo doesn't show: no file is **not on the path** (the review path names every changed file), no general thread, no dismissed thread, no `waitingForRun`, and no agent override. Make them yourself if your viewer shows them: for `waitingForRun`, set the mode to live (`PUT /api/mode`), post a comment, and at once `git checkout main` in the demo repository; it lasts until the demo's run ends, about 2 seconds; a general thread or a dismissed one through the API; a new file in the demo's repository that the review path doesn't name.
 
 ## 6. Working examples
 
