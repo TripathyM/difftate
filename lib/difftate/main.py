@@ -338,7 +338,8 @@ def main(argv):
 
 
 def difftate_main(argv):
-    """bin/difftate: `status` reads a review's Done state; `agent` says or sets who replies; anything else opens
+    """bin/difftate: `status` reads a review's Done state; `agent` says or sets who replies; `demo` makes the
+    demo review; `--guide` prints the viewer guide; anything else opens
     the folder's review (starting the watcher if none runs) or stops the watcher."""
     if argv[:1] == ["status"]:
         return cli.run_status(argv[1:], wiring())
@@ -346,6 +347,8 @@ def difftate_main(argv):
         return cli.run_agent(argv[1:], wiring())
     if argv[:1] == ["demo"]:
         return cli.run_demo(argv[1:], wiring())
+    if argv[:1] == ["--guide"]:
+        return cli.run_guide(argv[1:], os.path.join(ROOT, "docs", "viewer-guide.md"))
     return cli.run_difftate(argv, wiring())
 
 
