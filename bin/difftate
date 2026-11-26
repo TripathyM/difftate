@@ -5,6 +5,7 @@ Usage:
   difftate [<view>] [--base <branch>] [--open browser|nvim|both|none]
   difftate stop
   difftate status [--json] [--branch <branch>] [--base <branch>]
+  difftate --guide
 
 Run `difftate --help` for the options.
 """

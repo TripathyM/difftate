@@ -18,7 +18,8 @@ watcher serves. Naming another base switches the folder's review to it.
 
   GET   /api/review                     start or reuse the review of the folder's checked-out
                                         branch: {"id", "branch", "base", "waitingForRun",
-                                        "checkedOut", "folder" (the checked-out folder
+                                        "checkedOut", "mode", "held" (as /api/mode),
+                                        "folder" (the checked-out folder
                                         the watcher runs in), "warnings": [{"id", "time",
                                         "text"}] about the review (a store changed outside
                                         difftate, restored; review-path.md that can't be read as a review path)}. The watcher follows the branch, so
