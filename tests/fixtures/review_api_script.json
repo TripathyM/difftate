@@ -5892,5 +5892,414 @@
   "answer": {
    "error": "bad JSON"
   }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review-path",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "path": null
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review-path",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "path": {
+    "stops": [
+     {
+      "number": "1",
+      "file": "app.py",
+      "key": true,
+      "viewed": false,
+      "questions": [
+       {
+        "question": "What is new?",
+        "answer": "See \"Greeting\"."
+       }
+      ],
+      "ranges": [
+       [
+        1,
+        2
+       ],
+       [
+        4,
+        4
+       ]
+      ],
+      "specs": [
+       {
+        "file": "app.test.py",
+        "name": "greets"
+       }
+      ],
+      "see": [
+       "Greeting"
+      ],
+      "side_files": [
+       {
+        "file": "README.md",
+        "viewed": false,
+        "ranges": [
+         [
+          1,
+          2
+         ]
+        ],
+        "text": "What it says."
+       }
+      ],
+      "children": [
+       {
+        "number": "1.1",
+        "file": "lib.py",
+        "key": false,
+        "viewed": false,
+        "questions": [
+         {
+          "question": "Why?",
+          "answer": "Because."
+         }
+        ],
+        "ranges": [],
+        "specs": [],
+        "see": [],
+        "side_files": [],
+        "children": []
+       }
+      ]
+     }
+    ],
+    "skipped": [
+     {
+      "file": "long.py",
+      "reason": "numbers only"
+     }
+    ],
+    "not_on_the_path": [
+     "notes.md",
+     "review-path.md"
+    ],
+    "sections": [
+     {
+      "name": "Greeting",
+      "text": "It is an f-string."
+     }
+    ]
+   }
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review-path?view=staged",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "path": {
+    "stops": [],
+    "skipped": [],
+    "not_on_the_path": [
+     "README.md"
+    ],
+    "sections": [
+     {
+      "name": "Greeting",
+      "text": "It is an f-string."
+     }
+    ]
+   }
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review-path?view=nope",
+   null
+  ],
+  "status": 400,
+  "answer": {
+   "error": "no view 'nope': give a commit (HEAD~2, HEAD), staged or unstaged, or nothing for all changes"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "id": "feature-d4a69912",
+   "branch": "feature",
+   "base": "main",
+   "waitingForRun": false,
+   "checkedOut": "feature",
+   "mode": "live",
+   "held": [],
+   "folder": "<repo>",
+   "warnings": [
+    {
+     "id": "review-path-ab0e4808",
+     "text": "review-path.md is not used, files are in the changeset's order: line 1: \"## Oops\" is not a stop, a \"## Section:\" or \"## Skipped\"",
+     "time": "<time>"
+    }
+   ]
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review-path",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "path": null
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/done",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "done": false,
+   "time": null,
+   "commit": null,
+   "lastMark": null,
+   "head": "<hash-8>",
+   "openThreads": 10,
+   "runsInFlight": 0
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/done",
+   {
+    "done": true
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "done": true,
+   "time": "<time>",
+   "commit": "<hash-8>",
+   "lastMark": {
+    "kind": "done",
+    "time": "<time>",
+    "commit": "<hash-8>"
+   },
+   "head": "<hash-8>",
+   "openThreads": 10,
+   "runsInFlight": 0
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/done",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "done": true,
+   "time": "<time>",
+   "commit": "<hash-8>",
+   "lastMark": {
+    "kind": "done",
+    "time": "<time>",
+    "commit": "<hash-8>"
+   },
+   "head": "<hash-8>",
+   "openThreads": 10,
+   "runsInFlight": 0
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/done",
+   {
+    "done": false,
+    "author": "reviewer"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "done": false,
+   "time": null,
+   "commit": null,
+   "lastMark": {
+    "kind": "undone",
+    "time": "<time>",
+    "commit": "<hash-8>"
+   },
+   "head": "<hash-8>",
+   "openThreads": 10,
+   "runsInFlight": 0
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/done",
+   {
+    "done": true,
+    "author": "agent"
+   }
+  ],
+  "status": 403,
+  "answer": {
+   "error": "only a reviewer marks a review Done"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/done",
+   {}
+  ],
+  "status": 400,
+  "answer": {
+   "error": "missing done"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/done",
+   {
+    "done": true
+   }
+  ],
+  "status": 409,
+  "answer": {
+   "error": "another branch is checked out: the watcher moves to its review once the run in progress ends"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/agent",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "agent": "personal",
+   "source": "machine",
+   "names": [
+    "personal",
+    "work"
+   ]
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/agent",
+   {
+    "agent": "work"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "agent": "work",
+   "source": "review",
+   "names": [
+    "personal",
+    "work"
+   ]
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/agent",
+   {
+    "agent": null
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "agent": "personal",
+   "source": "machine",
+   "names": [
+    "personal",
+    "work"
+   ]
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/agent",
+   {
+    "agent": "nope"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "no agent 'nope' in the agent list: personal, work"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/agent",
+   {}
+  ],
+  "status": 400,
+  "answer": {
+   "error": "missing agent"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/agent",
+   {
+    "agent": "work",
+    "author": "agent"
+   }
+  ],
+  "status": 403,
+  "answer": {
+   "error": "only a reviewer chooses the agent of a review"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/launch",
+   {}
+  ],
+  "status": 200,
+  "answer": {
+   "url": "http://127.0.0.1:<port>/?launch=<code>&folder=<repo>"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/stop",
+   {}
+  ],
+  "status": 200,
+  "answer": {
+   "stopping": true
+  }
  }
 ]

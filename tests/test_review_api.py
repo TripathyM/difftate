@@ -4,15 +4,20 @@ A scripted review goes through every route: the review, the view, the
 changeset in each view, threads (opened, listed by status and in each view,
 moved with their code and outdated), comments, replies and notes, thread
 status, viewed files, the thread states a run gives, the review while another
-branch is checked out, the review mode and submit, and the errors each route
-answers. Each answer (status
-and JSON) is compared with tests/fixtures/review_api_script.json, recorded
-from the review API before it ran on the new core (#66). Ids, times and
-hashes are named by where they first appear, so the same review gives the
-same transcript.
+branch is checked out, the review mode and submit, the review path, Done, the
+coding agent that replies, launch and stop, and the errors the routes answer.
+Each answer (status and JSON) is compared with
+tests/fixtures/review_api_script.json, the current transcript (first recorded
+from the review API before it ran on the new core, #66). Ids, times and hashes
+are named by where they first appear, so the same review gives the same
+transcript.
 
-DT_RECORD=1 writes the fixture again instead of comparing: only when the
-published language changes on purpose.
+DT_RECORD=1 writes the current transcript again instead of comparing: only
+when the published language changes on purpose. It never writes the released
+one, tests/fixtures/review_api_released.json: the review API only grows (ADR
+0010), so every route, status, field and value kind there, and each value of a
+field with a closed set (CLOSED_SETS), must still be in the current transcript. To release an addition, copy the current transcript over
+the released one in the same pull request (tests/fixtures/README.md).
 
 The repository, the review's folder and HOME are temporary; git reads no
 config but the test's own.
@@ -33,6 +38,7 @@ import unittest
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import namedtuple
 from types import SimpleNamespace
 from unittest import mock
 
@@ -51,7 +57,26 @@ from difftate.core.review.model import CouldNotRead, NotFound  # noqa: E402
 from difftate.main import bind_review  # noqa: E402
 
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "review_api_script.json")
+RELEASED = os.path.join(ROOT, "tests", "fixtures", "review_api_released.json")
 LONG = "".join(f"line_{n} = {n}\n" for n in range(1, 21))
+REVIEW_PATH = ("## 1 `app.py:1-2,4` ★\nSpec: `app.test.py` \"greets\"\n\n### What is new?\nSee \"Greeting\".\n\n"
+               "### Side file: `README.md:1-2`\nWhat it says.\n\n## 1.1 `lib.py`\n\n### Why?\nBecause.\n\n"
+               "## Section: Greeting\nIt is an f-string.\n\n## Skipped\n- `long.py` — numbers only\n")
+
+
+def agent_list_functions(review, names, repository=lambda: ""):
+    """The API's entry functions for a machine's agent list <names>, whose
+    default is the first: who_replies and check_agent."""
+    def who_replies():
+        chosen = review.read_agent_override()
+        return SimpleNamespace(name=chosen or repository() or names[0], names=names,
+                               source="review" if chosen else "repository" if repository() else "machine")
+
+    def check_agent(name):
+        if name not in names:
+            raise NotFound(f"no agent '{name}' in the agent list: {', '.join(names)}")
+
+    return {"who_replies": who_replies, "check_agent": check_agent}
 
 
 def serve(repo, folder, history):
@@ -64,7 +89,8 @@ def serve(repo, folder, history):
     review = bind_review(store, git.GitCodeReader(repo, "main", "feature", about["id"]),
                          HistoryFiles({"review": about["id"]}, history), about)
     shown = ShownView("", lambda view: git.need_view(repo, view))
-    entry = SimpleNamespace(review=review, shown=shown, root=repo, shown_warnings=lambda: [])
+    entry = SimpleNamespace(review=review, shown=shown, root=repo, shown_warnings=lambda: [],
+                            **agent_list_functions(review, ["personal", "work"]))
     api = ReviewApi(lambda given, base: entry, os.path.join(os.path.dirname(history), "watcher-home"),
                     default_reviewer=git.user_name)
     api.test_folder = repo
@@ -126,7 +152,8 @@ def ask(api, method, path, payload=None, token=True, body=None, folder=True):
 # ── Naming what differs from run to run ──────────────────────────────────────
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 HASH = re.compile(r"\b[0-9a-f]{40}\b")
-TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z")
+TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3}Z|\+00:00)")  # +00:00: a warning's
+LAUNCH = re.compile(r"127\.0\.0\.1:\d+/\?launch=[\w-]+")
 INDEX = re.compile(r"^index [0-9a-f]+\.\.[0-9a-f]+", re.M)
 
 
@@ -150,6 +177,7 @@ class Names:
                 s = s.replace(found[:8], name[:-1] + ":8>")
         for path, name in self.paths.items():
             s = s.replace(path, name)
+        s = LAUNCH.sub("127.0.0.1:<port>/?launch=<code>", s)
         return TIME.sub("<time>", s)
 
     def json(self, value):
@@ -160,6 +188,81 @@ class Names:
         if isinstance(value, dict):
             return {self.text(k): self.json(v) for k, v in value.items()}
         return value
+
+
+# ── What a transcript shows the API publishes ────────────────────────────────
+# A value's kind, as JSON has them: what the failure calls it
+KINDS = {dict: "an object", list: "a list", str: "a string", int: "a number", float: "a number",
+         bool: "a boolean", type(None): "null"}
+Kind = namedtuple("Kind", "name")
+# The fields whose value is one of a closed set a viewer acts on: renaming a
+# value breaks it. Every other string is free to change (a body, an error, an id)
+CLOSED_SETS = {"status", "state", "mode", "side", "author", "kind", "source"}
+Value = namedtuple("Value", "text")
+ID_IN_PATH = re.compile(r"^(/api/(?:threads|notes))/[^/]+")
+
+
+def route_of(method, path):
+    """The route a request asked: no query, and any id (or one that names
+    nothing) as <id>."""
+    return method + " " + ID_IN_PATH.sub(r"\1/<id>", path.split("?")[0])
+
+
+def no_such_call(s):
+    """A step that asked for a call the API doesn't have: it publishes nothing,
+    and adding that call later breaks no viewer."""
+    return s["status"] == 405 or (s["status"], s["answer"]) == (404, {"error": "not found"})
+
+
+def facts_of(transcript):
+    """Each thing a transcript shows, as a path from its route: the route, a
+    status, then down an answer each value's kind and, below it, an object's
+    fields, a list's items ("[]"), or a closed set's value. The same route's
+    steps add up."""
+    facts = set()
+
+    def walk(value, at):
+        facts.add(at)
+        at += (Kind(KINDS[type(value)]),)
+        facts.add(at)
+        if isinstance(value, str) and at[-2] in CLOSED_SETS:
+            facts.add(at + (Value(value),))
+        if isinstance(value, dict):
+            for field, inner in value.items():
+                walk(inner, at + (field,))
+        if isinstance(value, list):
+            for item in value:
+                walk(item, at + ("[]",))
+
+    for s in transcript:
+        if no_such_call(s):
+            continue
+        route = (route_of(*s["request"][:2]),)
+        facts.add(route)
+        walk(s["answer"], route + (s["status"],))
+    return facts
+
+
+def gone_since(released, current):
+    """What <released> shows and <current> doesn't, one line each; only the
+    outermost of what is gone (a route, not also its statuses)."""
+    gone = facts_of(released) - facts_of(current)
+    return sorted(gone_line(fact) for fact in gone if fact[:-1] not in gone)
+
+
+def gone_line(fact):
+    route, rest = fact[0], fact[1:]
+    if not rest:
+        return f"{route}: the route is gone"
+    status, down = rest[0], rest[1:]
+    if not down:
+        return f"{route}: status {status} is gone"
+    where = ".".join(part for part in down if isinstance(part, str)).replace(".[]", "[]")
+    if isinstance(down[-1], Value):
+        return f'{route} {status}: {where} is never "{down[-1].text}" now'
+    if isinstance(down[-1], Kind):
+        return f"{route} {status}: {where or 'the answer'} is no longer {down[-1].name}"
+    return f"{route} {status}: {where} is gone"
 
 
 class TheReviewApi(unittest.TestCase):
@@ -198,7 +301,8 @@ class TheReviewApi(unittest.TestCase):
                             os.path.join(self.tmp, "history"))
         self.served.api.start()
         self.addCleanup(self.served.api.stop)
-        self.names = Names({DT_REPLY: "<dt-reply>", self.repo: "<repo>"})
+        self.names = Names({DT_REPLY: "<dt-reply>", self.repo: "<repo>",
+                            urllib.parse.quote(self.repo, safe=""): "<repo>"})
         self.transcript = []
 
     def git(self, *args):
@@ -208,9 +312,9 @@ class TheReviewApi(unittest.TestCase):
         with open(os.path.join(self.repo, path), "w") as f:
             f.write(text)
 
-    def call(self, method, path, payload=None, token=True, body=None):
+    def call(self, method, path, payload=None, token=True, body=None, folder=True):
         """Ask the API, and keep the answer in the transcript: the JSON."""
-        status, answer = ask(self.served.api, method, path, payload, token, body)
+        status, answer = ask(self.served.api, method, path, payload, token, body, folder)
         self.transcript.append({"request": self.names.json([method, path, payload]),
                                 "status": status, "answer": self.names.json(answer)})
         return answer
@@ -378,6 +482,51 @@ class TheReviewApi(unittest.TestCase):
         call("GET", "/api/threads", token=False)
         call("POST", "/api/threads", body=b"{not json")
 
+        # The review path: none, one with all it can say, in a view, and a broken one (a warning)
+        call("GET", "/api/review-path")
+        self.write("lib.py", "x = 1\n")
+        self.write("notes.md", "# notes\n")
+        self.write("review-path.md", REVIEW_PATH)
+        call("GET", "/api/review-path")
+        call("GET", "/api/review-path?view=staged")
+        call("GET", "/api/review-path?view=nope")
+        self.write("review-path.md", "## Oops\n")
+        call("GET", "/api/review")
+        call("GET", "/api/review-path")
+        os.remove(os.path.join(self.repo, "review-path.md"))
+
+        # Done
+        call("GET", "/api/done")
+        call("PUT", "/api/done", {"done": True})
+        call("GET", "/api/done")
+        call("PUT", "/api/done", {"done": False, "author": "reviewer"})
+        call("PUT", "/api/done", {"done": True, "author": "agent"})
+        call("PUT", "/api/done", {})
+        self.git("checkout", "-q", "other")
+        call("PUT", "/api/done", {"done": True})
+        self.git("checkout", "-q", "feature")
+
+        # The coding agent that replies
+        call("GET", "/api/agent")
+        call("PUT", "/api/agent", {"agent": "work"})
+        call("PUT", "/api/agent", {"agent": None})
+        for refused in ({"agent": "nope"}, {}, {"agent": "work", "author": "agent"}):
+            call("PUT", "/api/agent", refused)
+
+        # The launch link, and last, stop
+        call("POST", "/api/launch", {})
+        call("POST", "/api/stop", {}, folder=False)
+
+    def test_the_scripted_review_gets_a_200_from_every_route_the_api_has(self):
+        """A route the transcript lacks could be removed once released, and no check would see it."""
+        with open(FIXTURE, encoding="utf-8") as f:
+            answered = [(s["request"][0], s["request"][1].split("?")[0]) for s in json.load(f) if s["status"] == 200]
+
+        lacking = [f"{method} {path.pattern}" for method, path in self.served.api.routes()
+                   if not any(m == method and path.match(p) for m, p in answered)]
+
+        self.assertEqual(lacking, [])
+
     def served_thread(self, tid):
         """A thread as the API lists it, outside the transcript."""
         return next(t for t in ask(self.served.api, "GET", "/api/threads")[1] if t["id"] == tid)
@@ -397,6 +546,106 @@ class TheReviewApi(unittest.TestCase):
                 self.assertEqual(now, before)
         self.assertEqual(len(self.transcript), len(recorded))
 
+
+def step(method, path, status, answer):
+    """One step of a transcript."""
+    return {"request": [method, path, None], "status": status, "answer": answer}
+
+
+class TheReviewApiOnlyGrows(unittest.TestCase):
+    """What the released transcript shows must still be in the current one."""
+
+    def test_todays_transcript_still_shows_everything_released(self):
+        with open(FIXTURE, encoding="utf-8") as f, open(RELEASED, encoding="utf-8") as g:
+            current, released = json.load(f), json.load(g)
+
+        self.assertEqual(gone_since(released, current), [], "the review API only grows (ADR 0010)")
+
+    def test_a_route_that_is_gone_is_named(self):
+        review = step("GET", "/api/review", 200, {})
+        done = step("GET", "/api/done", 200, {})
+
+        self.assertEqual(gone_since([review, done], [review]), ["GET /api/done: the route is gone"])
+
+    def test_a_status_that_is_gone_is_named(self):
+        listed = step("GET", "/api/threads", 200, [])
+        refused = step("GET", "/api/threads", 401, [])
+
+        self.assertEqual(gone_since([listed, refused], [listed]), ["GET /api/threads: status 401 is gone"])
+
+    def test_a_field_that_is_removed_or_renamed_is_named_down_to_where_it_is(self):
+        released = [step("GET", "/api/threads", 200, [{"state": "waiting", "anchor": {"file": "app.py"}}])]
+
+        for what, now in (("removed", [{"anchor": {"file": "app.py"}}]),
+                          ("renamed", [{"phase": "waiting", "anchor": {"file": "app.py"}}])):
+            with self.subTest(what):
+                self.assertEqual(gone_since(released, [step("GET", "/api/threads", 200, now)]),
+                                 ["GET /api/threads 200: [].state is gone"])
+        self.assertEqual(gone_since(released, [step("GET", "/api/threads", 200, [{"state": "waiting", "anchor": {}}])]),
+                         ["GET /api/threads 200: [].anchor.file is gone"])
+
+    def test_a_value_of_another_kind_is_named_with_the_kind_that_is_gone(self):
+        released = [step("GET", "/api/done", 200, {"openThreads": 2, "commit": None, "done": True})]
+
+        for field, now, expected in (("openThreads", "2", "openThreads is no longer a number"),
+                                     ("commit", "abc", "commit is no longer null"),
+                                     ("done", 1, "done is no longer a boolean")):
+            with self.subTest(field):
+                answer = dict(released[0]["answer"], **{field: now})
+                self.assertEqual(gone_since(released, [step("GET", "/api/done", 200, answer)]),
+                                 [f"GET /api/done 200: {expected}"])
+        self.assertEqual(gone_since(released, [step("GET", "/api/done", 200, ["no", "object"])]),
+                         ["GET /api/done 200: the answer is no longer an object"])
+
+    def test_a_renamed_value_of_a_field_with_a_closed_set_is_named(self):
+        released = [step("GET", "/api/threads", 200, [{field: "old"}])
+                    for field in ("status", "state", "mode", "side", "author", "kind", "source")]
+
+        for was in released:
+            [field] = was["answer"][0]
+            with self.subTest(field):
+                self.assertEqual(gone_since([was], [step("GET", "/api/threads", 200, [{field: "new"}])]),
+                                 [f'GET /api/threads 200: [].{field} is never "old" now'])
+
+    def test_free_text_may_change_and_a_closed_set_may_get_a_new_value(self):
+        released = [step("GET", "/api/threads", 200, [{"status": "open", "body": "Why?", "id": "<id-1>"}])]
+        now = [step("GET", "/api/threads", 200, [{"status": "open", "body": "How?", "id": "<id-2>"}]),
+               step("GET", "/api/threads", 200, [{"status": "archived", "body": "", "id": "<id-3>"}])]
+
+        self.assertEqual(gone_since(released, now), [])
+
+    def test_what_is_extra_passes_a_route_a_status_a_field_a_kind_and_a_step(self):
+        released = [step("GET", "/api/threads", 200, [{"state": "waiting"}])]
+        now = [step("GET", "/api/threads", 200, [{"state": "waiting", "label": "new"}]),
+               step("GET", "/api/threads", 200, [{"state": None}]),
+               step("GET", "/api/threads", 400, {"error": "no"}),
+               step("GET", "/api/new", 200, {})]
+
+        self.assertEqual(gone_since(released, now), [])
+
+    def test_an_answer_that_there_is_no_such_call_publishes_nothing_so_the_call_can_be_added(self):
+        released = [step("GET", "/api/nope", 404, {"error": "not found"}),
+                    step("POST", "/api/review", 405, {"error": "method not allowed"})]
+        now = [step("GET", "/api/nope", 200, {}), step("POST", "/api/review", 200, {})]
+
+        self.assertEqual(gone_since(released, now), [])
+        thread = step("PATCH", "/api/threads/no-such-thread/status", 404, {"error": "no thread"})
+        self.assertEqual(gone_since([thread], []), ["PATCH /api/threads/<id>/status: the route is gone"],
+                         "a route's own 404, for what it doesn't find, is published")
+
+    def test_a_route_is_the_same_whatever_id_or_query_its_steps_ask_with(self):
+        released = [step("GET", "/api/threads?view=staged", 200, []),
+                    step("PATCH", "/api/notes/<id-17>", 200, {}),
+                    step("POST", "/api/threads/<id-1>/comments", 200, {}),
+                    step("PATCH", "/api/threads/no-such-thread/status", 404, {})]
+        now = [step("GET", "/api/threads", 200, []),
+               step("PATCH", "/api/notes/<id-30>", 200, {}),
+               step("POST", "/api/threads/<id-2>/comments", 200, {}),
+               step("PATCH", "/api/threads/<id-9>/status", 404, {})]
+
+        self.assertEqual(gone_since(released, now), [])
+        self.assertEqual(gone_since(released, now[:2]), ["PATCH /api/threads/<id>/status: the route is gone",
+                                                         "POST /api/threads/<id>/comments: the route is gone"])
 
 
 VIEWS = ("", "HEAD", "staged", "unstaged")
@@ -421,19 +670,10 @@ class ServedOnFakes:
         self.agents = ["personal", "work"]  # the machine's agent list; its default is the first
         self.repository_agent = ""
 
-        def agent():
-            chosen = self.review.read_agent_override()
-            return SimpleNamespace(name=chosen or self.repository_agent or self.agents[0], names=self.agents,
-                                   source="review" if chosen else "repository" if self.repository_agent else "machine")
-
-        def check_agent(name):
-            if name not in self.agents:
-                raise NotFound(f"no agent '{name}' in the agent list: {', '.join(self.agents)}")
-
         self.warnings = []
         entry = SimpleNamespace(review=self.review, shown=ShownView(view, a_fake_view), root=tmp,
-                                who_replies=agent, check_agent=check_agent,
-                                shown_warnings=lambda: list(self.warnings))
+                                shown_warnings=lambda: list(self.warnings),
+                                **agent_list_functions(self.review, self.agents, lambda: self.repository_agent))
 
         def folders(folder, base):
             if folder != tmp:

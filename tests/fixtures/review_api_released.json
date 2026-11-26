@@ -1,0 +1,6305 @@
+[
+ {
+  "request": [
+   "GET",
+   "/api/review",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "id": "feature-d4a69912",
+   "branch": "feature",
+   "base": "main",
+   "waitingForRun": false,
+   "checkedOut": "feature",
+   "mode": "live",
+   "held": [],
+   "folder": "<repo>",
+   "warnings": []
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/view",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": ""
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/changeset",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": "",
+   "base": "main",
+   "commit": "<hash-1>",
+   "diff": "diff --git a/README.md b/README.md\nindex <blob>..<blob> 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # demo\n+More.\ndiff --git a/app.py b/app.py\nindex <blob>..<blob> 100644\n--- a/app.py\n+++ b/app.py\n@@ -1,2 +1,2 @@\n def greet(name):\n-    return 'hi ' + name\n+    return f'hello {name}'\ndiff --git a/long.py b/long.py\nnew file mode 100644\nindex <blob>..<blob>\n--- /dev/null\n+++ b/long.py\n@@ -0,0 +1,20 @@\n+line_1 = 1\n+line_2 = 2\n+line_3 = 3\n+line_4 = 4\n+line_5 = 5\n+line_6 = 6\n+line_7 = 7\n+line_8 = 8\n+line_9 = 9\n+line_10 = 10\n+line_11 = 11\n+line_12 = 12\n+line_13 = 13\n+line_14 = 14\n+line_15 = 15\n+line_16 = 16\n+line_17 = 17\n+line_18 = 180\n+line_19 = 19\n+line_20 = 20\n",
+   "versions": {
+    "README.md": {
+     "old": "<hash-2>",
+     "new": "<hash-3>"
+    },
+    "app.py": {
+     "old": "<hash-4>",
+     "new": "<hash-5>"
+    },
+    "long.py": {
+     "old": null,
+     "new": "<hash-6>"
+    }
+   },
+   "waitingForRun": false,
+   "checkedOut": "feature"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/changeset?view=",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": "",
+   "base": "main",
+   "commit": "<hash-1>",
+   "diff": "diff --git a/README.md b/README.md\nindex <blob>..<blob> 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # demo\n+More.\ndiff --git a/app.py b/app.py\nindex <blob>..<blob> 100644\n--- a/app.py\n+++ b/app.py\n@@ -1,2 +1,2 @@\n def greet(name):\n-    return 'hi ' + name\n+    return f'hello {name}'\ndiff --git a/long.py b/long.py\nnew file mode 100644\nindex <blob>..<blob>\n--- /dev/null\n+++ b/long.py\n@@ -0,0 +1,20 @@\n+line_1 = 1\n+line_2 = 2\n+line_3 = 3\n+line_4 = 4\n+line_5 = 5\n+line_6 = 6\n+line_7 = 7\n+line_8 = 8\n+line_9 = 9\n+line_10 = 10\n+line_11 = 11\n+line_12 = 12\n+line_13 = 13\n+line_14 = 14\n+line_15 = 15\n+line_16 = 16\n+line_17 = 17\n+line_18 = 180\n+line_19 = 19\n+line_20 = 20\n",
+   "versions": {
+    "README.md": {
+     "old": "<hash-2>",
+     "new": "<hash-3>"
+    },
+    "app.py": {
+     "old": "<hash-4>",
+     "new": "<hash-5>"
+    },
+    "long.py": {
+     "old": null,
+     "new": "<hash-6>"
+    }
+   },
+   "waitingForRun": false,
+   "checkedOut": "feature"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/changeset?view=HEAD~1",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": "HEAD~1",
+   "base": "main",
+   "commit": "<hash-1>",
+   "diff": "diff --git a/README.md b/README.md\nindex <blob>..<blob> 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # demo\n+More.\ndiff --git a/app.py b/app.py\nindex <blob>..<blob> 100644\n--- a/app.py\n+++ b/app.py\n@@ -1,2 +1,2 @@\n def greet(name):\n-    return 'hi ' + name\n+    return f'hello {name}'\ndiff --git a/long.py b/long.py\nnew file mode 100644\nindex <blob>..<blob>\n--- /dev/null\n+++ b/long.py\n@@ -0,0 +1,20 @@\n+line_1 = 1\n+line_2 = 2\n+line_3 = 3\n+line_4 = 4\n+line_5 = 5\n+line_6 = 6\n+line_7 = 7\n+line_8 = 8\n+line_9 = 9\n+line_10 = 10\n+line_11 = 11\n+line_12 = 12\n+line_13 = 13\n+line_14 = 14\n+line_15 = 15\n+line_16 = 16\n+line_17 = 17\n+line_18 = 180\n+line_19 = 19\n+line_20 = 20\n",
+   "versions": {
+    "README.md": {
+     "old": "<hash-2>",
+     "new": "<hash-3>"
+    },
+    "app.py": {
+     "old": "<hash-4>",
+     "new": "<hash-5>"
+    },
+    "long.py": {
+     "old": null,
+     "new": "<hash-6>"
+    }
+   },
+   "waitingForRun": false,
+   "checkedOut": "feature"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/changeset?view=HEAD",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": "HEAD",
+   "base": "main",
+   "commit": "<hash-1>",
+   "diff": "diff --git a/README.md b/README.md\nindex <blob>..<blob> 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # demo\n+More.\ndiff --git a/long.py b/long.py\nindex <blob>..<blob> 100644\n--- a/long.py\n+++ b/long.py\n@@ -15,6 +15,6 @@ line_14 = 14\n line_15 = 15\n line_16 = 16\n line_17 = 17\n-line_18 = 18\n+line_18 = 180\n line_19 = 19\n line_20 = 20\n",
+   "versions": {
+    "README.md": {
+     "old": "<hash-2>",
+     "new": "<hash-3>"
+    },
+    "long.py": {
+     "old": "<hash-7>",
+     "new": "<hash-6>"
+    }
+   },
+   "waitingForRun": false,
+   "checkedOut": "feature"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/changeset?view=staged",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": "staged",
+   "base": "main",
+   "commit": "<hash-1>",
+   "diff": "diff --git a/README.md b/README.md\nindex <blob>..<blob> 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # demo\n+More.\n",
+   "versions": {
+    "README.md": {
+     "old": "<hash-2>",
+     "new": "<hash-3>"
+    }
+   },
+   "waitingForRun": false,
+   "checkedOut": "feature"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/changeset?view=unstaged",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": "unstaged",
+   "base": "main",
+   "commit": "<hash-1>",
+   "diff": "diff --git a/long.py b/long.py\nindex <blob>..<blob> 100644\n--- a/long.py\n+++ b/long.py\n@@ -15,6 +15,6 @@ line_14 = 14\n line_15 = 15\n line_16 = 16\n line_17 = 17\n-line_18 = 18\n+line_18 = 180\n line_19 = 19\n line_20 = 20\n",
+   "versions": {
+    "long.py": {
+     "old": "<hash-7>",
+     "new": "<hash-6>"
+    }
+   },
+   "waitingForRun": false,
+   "checkedOut": "feature"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/changeset?view=nope",
+   null
+  ],
+  "status": 400,
+  "answer": {
+   "error": "no view 'nope': give a commit (HEAD~2, HEAD), staged or unstaged, or nothing for all changes"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads",
+   null
+  ],
+  "status": 200,
+  "answer": []
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'"
+    },
+    "body": "Why an f-string?"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-1>",
+   "anchor": {
+    "file": "app.py",
+    "side": "new",
+    "startLine": 2,
+    "endLine": 2,
+    "code": "    return f'hello {name}'",
+    "snapshot": "<hash-5>",
+    "view": "",
+    "commit": "<hash-8>"
+   },
+   "outdated": false,
+   "status": "open",
+   "statusBy": null,
+   "comments": [
+    {
+     "id": "<id-2>",
+     "author": "reviewer",
+     "by": "Test",
+     "kind": "comment",
+     "body": "Why an f-string?",
+     "time": "<time>"
+    }
+   ],
+   "state": "waiting"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": null,
+    "body": "Is this ready?",
+    "author": "reviewer"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-3>",
+   "anchor": null,
+   "outdated": false,
+   "status": "open",
+   "statusBy": null,
+   "comments": [
+    {
+     "id": "<id-4>",
+     "author": "reviewer",
+     "by": "Test",
+     "kind": "comment",
+     "body": "Is this ready?",
+     "time": "<time>"
+    }
+   ],
+   "state": "waiting"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 18,
+     "endLine": 18,
+     "code": "line_18 = 180"
+    },
+    "body": "Why 180?",
+    "view": "unstaged"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-5>",
+   "anchor": {
+    "file": "long.py",
+    "side": "new",
+    "startLine": 18,
+    "endLine": 18,
+    "code": "line_18 = 180",
+    "snapshot": "<hash-6>",
+    "view": "unstaged",
+    "commit": "<hash-8>"
+   },
+   "outdated": false,
+   "status": "open",
+   "statusBy": null,
+   "comments": [
+    {
+     "id": "<id-6>",
+     "author": "reviewer",
+     "by": "Test",
+     "kind": "comment",
+     "body": "Why 180?",
+     "time": "<time>"
+    }
+   ],
+   "state": "waiting"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):"
+    },
+    "body": "Typo?"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-7>",
+   "anchor": {
+    "file": "app.py",
+    "side": "new",
+    "startLine": 1,
+    "endLine": 1,
+    "code": "def greet(nam):",
+    "snapshot": "<hash-5>",
+    "view": "",
+    "commit": "<hash-8>"
+   },
+   "outdated": true,
+   "status": "open",
+   "statusBy": null,
+   "comments": [
+    {
+     "id": "<id-8>",
+     "author": "reviewer",
+     "by": "Test",
+     "kind": "comment",
+     "body": "Typo?",
+     "time": "<time>"
+    }
+   ],
+   "state": "waiting"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name"
+    },
+    "body": "Why was this concatenated?"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-9>",
+   "anchor": {
+    "file": "app.py",
+    "side": "old",
+    "startLine": 2,
+    "endLine": 2,
+    "code": "    return 'hi ' + name",
+    "snapshot": "<hash-4>",
+    "view": "",
+    "commit": "<hash-8>"
+   },
+   "outdated": false,
+   "status": "open",
+   "statusBy": null,
+   "comments": [
+    {
+     "id": "<id-10>",
+     "author": "reviewer",
+     "by": "Test",
+     "kind": "comment",
+     "body": "Why was this concatenated?",
+     "time": "<time>"
+    }
+   ],
+   "state": "waiting"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6"
+    },
+    "body": "Why 5 and 6?"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-11>",
+   "anchor": {
+    "file": "long.py",
+    "side": "new",
+    "startLine": 5,
+    "endLine": 6,
+    "code": "line_5 = 5\nline_6 = 6",
+    "snapshot": "<hash-6>",
+    "view": "",
+    "commit": "<hash-8>"
+   },
+   "outdated": false,
+   "status": "open",
+   "statusBy": null,
+   "comments": [
+    {
+     "id": "<id-12>",
+     "author": "reviewer",
+     "by": "Test",
+     "kind": "comment",
+     "body": "Why 5 and 6?",
+     "time": "<time>"
+    }
+   ],
+   "state": "waiting"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2
+    },
+    "body": "No code sent"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-13>",
+   "anchor": {
+    "file": "app.py",
+    "side": "new",
+    "startLine": 2,
+    "endLine": 2,
+    "code": "    return f'hello {name}'",
+    "snapshot": "<hash-5>",
+    "view": "",
+    "commit": "<hash-8>"
+   },
+   "outdated": false,
+   "status": "open",
+   "statusBy": null,
+   "comments": [
+    {
+     "id": "<id-14>",
+     "author": "reviewer",
+     "by": "Test",
+     "kind": "comment",
+     "body": "No code sent",
+     "time": "<time>"
+    }
+   ],
+   "state": "waiting"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'"
+    },
+    "body": "Mine",
+    "author": "agent"
+   }
+  ],
+  "status": 403,
+  "answer": {
+   "error": "only a reviewer opens a thread"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": null,
+    "body": "Mine",
+    "author": "difftate"
+   }
+  ],
+  "status": 403,
+  "answer": {
+   "error": "only a reviewer opens a thread"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "app.py",
+     "side": "middle",
+     "startLine": 2,
+     "endLine": 2
+    },
+    "body": "Hi"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "anchor needs file, side (old|new), startLine and endLine (1 ≤ start ≤ end)"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 3,
+     "endLine": 2
+    },
+    "body": "Hi"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "anchor needs file, side (old|new), startLine and endLine (1 ≤ start ≤ end)"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": 5
+    },
+    "body": "Hi"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "anchor code must be text"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": null
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "missing body"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": null,
+    "body": "  "
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "need body"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": null,
+    "body": "Hi",
+    "view": "nope"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "no view 'nope': give a commit (HEAD~2, HEAD), staged or unstaged, or nothing for all changes"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   [
+    "not",
+    "an",
+    "object"
+   ]
+  ],
+  "status": 400,
+  "answer": {
+   "error": "need a JSON object"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads/<id-1>/comments",
+   {
+    "body": "And the name?"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-15>",
+   "author": "reviewer",
+   "by": "Test",
+   "kind": "comment",
+   "body": "And the name?",
+   "time": "<time>"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads/<id-3>/comments",
+   {
+    "kind": "comment",
+    "body": "Still?"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-16>",
+   "author": "reviewer",
+   "by": "Test",
+   "kind": "comment",
+   "body": "Still?",
+   "time": "<time>"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads/<id-1>/comments",
+   {
+    "kind": "progress",
+    "body": "⏳ Thinking…"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-17>",
+   "author": "difftate",
+   "by": null,
+   "kind": "progress",
+   "body": "⏳ Thinking…",
+   "time": "<time>"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads/<id-9>/comments",
+   {
+    "kind": "queued",
+    "body": "🕒 Queued"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-18>",
+   "author": "difftate",
+   "by": null,
+   "kind": "queued",
+   "body": "🕒 Queued",
+   "time": "<time>"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads/<id-1>/comments",
+   {
+    "kind": "note",
+    "body": "Hi"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "kind must be one of comment, reply, queued, progress"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads/<id-1>/comments",
+   {
+    "kind": "comment"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "missing body"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads/<id-1>/comments",
+   {
+    "body": ""
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "need body"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads/no-such-thread/comments",
+   {
+    "body": "Hello?"
+   }
+  ],
+  "status": 404,
+  "answer": {
+   "error": "no thread no-such-thread"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/notes/<id-17>",
+   {
+    "kind": "progress",
+    "body": "⏳ Read app.py"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-17>",
+   "author": "difftate",
+   "by": null,
+   "kind": "progress",
+   "body": "⏳ Read app.py",
+   "time": "<time>"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/notes/<id-18>",
+   {
+    "kind": "progress",
+    "body": "⏳ Picked up"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-18>",
+   "author": "difftate",
+   "by": null,
+   "kind": "progress",
+   "body": "⏳ Picked up",
+   "time": "<time>"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/notes/<id-2>",
+   {
+    "kind": "progress",
+    "body": "Overwritten"
+   }
+  ],
+  "status": 403,
+  "answer": {
+   "error": "<id-2> is not a note: only notes can be edited"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/notes/<id-17>",
+   {
+    "kind": "reply",
+    "body": "A reply now"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "kind must be one of queued, progress"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/notes/<id-17>",
+   {
+    "body": "No kind"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "missing kind"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/notes/<id-17>",
+   {
+    "kind": "progress",
+    "body": " "
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "need body"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/notes/no-such-note",
+   {
+    "kind": "progress",
+    "body": "Hello?"
+   }
+  ],
+  "status": 404,
+  "answer": {
+   "error": "no note no-such-note"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     }
+    ],
+    "state": "working"
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": "queued"
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 18,
+     "endLine": 18,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-6>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "queued"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "queued"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "queued"
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-6>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "queued"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "queued"
+   }
+  ]
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads/<id-1>/comments",
+   {
+    "kind": "reply",
+    "body": "It reads better."
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-19>",
+   "author": "agent",
+   "by": null,
+   "kind": "reply",
+   "body": "It reads better.",
+   "time": "<time>"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": null,
+    "body": "Opened during a run"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-20>",
+   "anchor": null,
+   "outdated": false,
+   "status": "open",
+   "statusBy": null,
+   "comments": [
+    {
+     "id": "<id-21>",
+     "author": "reviewer",
+     "by": "Test",
+     "kind": "comment",
+     "body": "Opened during a run",
+     "time": "<time>"
+    }
+   ],
+   "state": "queued"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?status=open",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 18,
+     "endLine": 18,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-6>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-6>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": "failed"
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 18,
+     "endLine": 18,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-6>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-6>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/threads/<id-3>/status",
+   {
+    "status": "resolved"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-3>",
+   "status": "resolved",
+   "statusBy": "Test"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/threads/<id-9>/status",
+   {
+    "status": "dismissed",
+    "author": "reviewer"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-9>",
+   "status": "dismissed",
+   "statusBy": "Test"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/threads/<id-1>/status",
+   {
+    "status": "resolved",
+    "author": "agent"
+   }
+  ],
+  "status": 403,
+  "answer": {
+   "error": "only a reviewer changes a thread's status"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/threads/<id-1>/status",
+   {
+    "status": "closed"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "status must be one of open, resolved, dismissed"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/threads/<id-1>/status",
+   {}
+  ],
+  "status": 400,
+  "answer": {
+   "error": "missing status"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/threads/no-such-thread/status",
+   {
+    "status": "resolved"
+   }
+  ],
+  "status": 404,
+  "answer": {
+   "error": "no thread no-such-thread"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?status=open",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 18,
+     "endLine": 18,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-6>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-6>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?status=resolved",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "resolved",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": null
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?status=dismissed",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "dismissed",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": null
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?status=closed",
+   null
+  ],
+  "status": 400,
+  "answer": {
+   "error": "status must be one of open, resolved, dismissed"
+  }
+ },
+ {
+  "request": [
+   "PATCH",
+   "/api/threads/<id-9>/status",
+   {
+    "status": "open"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-9>",
+   "status": "open",
+   "statusBy": "Test"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?view=",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "resolved",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": null
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 18,
+     "endLine": 18,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-6>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-6>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?view=HEAD~1",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "resolved",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": null
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 18,
+     "endLine": 18,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-6>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-6>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?view=HEAD",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "resolved",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": null
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 18,
+     "endLine": 18,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-6>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-6>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?view=staged",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "resolved",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": null
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 18,
+     "endLine": 18,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-6>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-6>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?view=unstaged",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "resolved",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": null
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 18,
+     "endLine": 18,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-6>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-6>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?view=staged&status=open",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 18,
+     "endLine": 18,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-6>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-6>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?view=nope",
+   null
+  ],
+  "status": 400,
+  "answer": {
+   "error": "no view 'nope': give a commit (HEAD~2, HEAD), staged or unstaged, or nothing for all changes"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/viewed",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "files": []
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/viewed",
+   {
+    "file": "long.py"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "files": [
+    "long.py"
+   ]
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/viewed",
+   {
+    "file": "app.py",
+    "viewed": true
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "files": [
+    "app.py",
+    "long.py"
+   ]
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/viewed",
+   {
+    "file": "README.md"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "files": [
+    "README.md",
+    "app.py",
+    "long.py"
+   ]
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/viewed",
+   {
+    "file": "README.md",
+    "viewed": false
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "files": [
+    "app.py",
+    "long.py"
+   ]
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/viewed",
+   {
+    "file": "nope.py"
+   }
+  ],
+  "status": 404,
+  "answer": {
+   "error": "nope.py is not in the changeset"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/viewed",
+   {}
+  ],
+  "status": 400,
+  "answer": {
+   "error": "missing file"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/viewed",
+   {
+    "file": ""
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "need file"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/viewed",
+   {
+    "file": "app.py",
+    "viewed": "yes"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "viewed must be true or false"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/viewed",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "files": [
+    "app.py",
+    "long.py"
+   ]
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "resolved",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": null
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 20,
+     "endLine": 20,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-9>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 7,
+     "endLine": 8,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-9>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?view=staged",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "resolved",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": null
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 20,
+     "endLine": 20,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-9>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 5,
+     "endLine": 6,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-9>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "GET",
+   "/api/viewed",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "files": [
+    "app.py"
+   ]
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?view=unstaged",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied"
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "resolved",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": null
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 20,
+     "endLine": 20,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-9>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 7,
+     "endLine": 8,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-9>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/view",
+   {
+    "view": "HEAD"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "view": "HEAD"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/view",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": "HEAD"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/changeset",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": "HEAD",
+   "base": "main",
+   "commit": "<hash-1>",
+   "diff": "diff --git a/README.md b/README.md\nindex <blob>..<blob> 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # demo\n+More.\ndiff --git a/long.py b/long.py\nindex <blob>..<blob> 100644\n--- a/long.py\n+++ b/long.py\n@@ -1,8 +1,10 @@\n+# top\n+# more\n line_1 = 1\n line_2 = 2\n line_3 = 3\n line_4 = 4\n-line_5 = 5\n+line_5 = 50\n line_6 = 6\n line_7 = 7\n line_8 = 8\n@@ -15,6 +17,6 @@ line_14 = 14\n line_15 = 15\n line_16 = 16\n line_17 = 17\n-line_18 = 18\n+line_18 = 180\n line_19 = 19\n line_20 = 20\n",
+   "versions": {
+    "README.md": {
+     "old": "<hash-2>",
+     "new": "<hash-3>"
+    },
+    "long.py": {
+     "old": "<hash-7>",
+     "new": "<hash-10>"
+    }
+   },
+   "waitingForRun": false,
+   "checkedOut": "feature"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/view",
+   {
+    "view": "nope"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "no view 'nope': give a commit (HEAD~2, HEAD), staged or unstaged, or nothing for all changes"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/view",
+   {
+    "view": 5
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "a view is text: \"\", a commit, staged or unstaged"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/view",
+   {}
+  ],
+  "status": 200,
+  "answer": {
+   "view": ""
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/view",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": ""
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "id": "feature-d4a69912",
+   "branch": "feature",
+   "base": "main",
+   "waitingForRun": true,
+   "checkedOut": "other",
+   "mode": "live",
+   "held": [],
+   "folder": "<repo>",
+   "warnings": []
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/changeset",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": "",
+   "base": "main",
+   "commit": "<hash-1>",
+   "diff": "diff --git a/README.md b/README.md\nindex <blob>..<blob> 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # demo\n+More.\ndiff --git a/app.py b/app.py\nindex <blob>..<blob> 100644\n--- a/app.py\n+++ b/app.py\n@@ -1,2 +1,2 @@\n def greet(name):\n-    return 'hi ' + name\n+    return f'hello {name}'\ndiff --git a/long.py b/long.py\nnew file mode 100644\nindex <blob>..<blob>\n--- /dev/null\n+++ b/long.py\n@@ -0,0 +1,22 @@\n+# top\n+# more\n+line_1 = 1\n+line_2 = 2\n+line_3 = 3\n+line_4 = 4\n+line_5 = 50\n+line_6 = 6\n+line_7 = 7\n+line_8 = 8\n+line_9 = 9\n+line_10 = 10\n+line_11 = 11\n+line_12 = 12\n+line_13 = 13\n+line_14 = 14\n+line_15 = 15\n+line_16 = 16\n+line_17 = 17\n+line_18 = 180\n+line_19 = 19\n+line_20 = 20\n",
+   "versions": {
+    "README.md": {
+     "old": "<hash-2>",
+     "new": "<hash-3>"
+    },
+    "app.py": {
+     "old": "<hash-4>",
+     "new": "<hash-5>"
+    },
+    "long.py": {
+     "old": null,
+     "new": "<hash-10>"
+    }
+   },
+   "waitingForRun": true,
+   "checkedOut": "other"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?view=",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     }
+    ],
+    "state": "replied",
+    "inView": false
+   },
+   {
+    "id": "<id-3>",
+    "anchor": null,
+    "outdated": false,
+    "status": "resolved",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-4>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Is this ready?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-16>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Still?",
+      "time": "<time>"
+     }
+    ],
+    "state": null
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 20,
+     "endLine": 20,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-9>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 7,
+     "endLine": 8,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-9>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting",
+    "inView": false
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": null,
+    "body": "On which branch?"
+   }
+  ],
+  "status": 409,
+  "answer": {
+   "error": "another branch is checked out: the watcher moves to its review once the run in progress ends"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/viewed",
+   {
+    "file": "app.py"
+   }
+  ],
+  "status": 409,
+  "answer": {
+   "error": "another branch is checked out: the watcher moves to its review once the run in progress ends"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/viewed",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "files": [
+    "app.py"
+   ]
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "id": "feature-d4a69912",
+   "branch": "feature",
+   "base": "main",
+   "waitingForRun": false,
+   "checkedOut": "feature",
+   "mode": "live",
+   "held": [],
+   "folder": "<repo>",
+   "warnings": []
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/changeset",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "view": "",
+   "base": "main",
+   "commit": "<hash-1>",
+   "diff": "diff --git a/README.md b/README.md\nindex <blob>..<blob> 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # demo\n+More.\ndiff --git a/app.py b/app.py\nindex <blob>..<blob> 100644\n--- a/app.py\n+++ b/app.py\n@@ -1,2 +1,2 @@\n def greet(name):\n-    return 'hi ' + name\n+    return f'hello {name}'\ndiff --git a/long.py b/long.py\nnew file mode 100644\nindex <blob>..<blob>\n--- /dev/null\n+++ b/long.py\n@@ -0,0 +1,22 @@\n+# top\n+# more\n+line_1 = 1\n+line_2 = 2\n+line_3 = 3\n+line_4 = 4\n+line_5 = 50\n+line_6 = 6\n+line_7 = 7\n+line_8 = 8\n+line_9 = 9\n+line_10 = 10\n+line_11 = 11\n+line_12 = 12\n+line_13 = 13\n+line_14 = 14\n+line_15 = 15\n+line_16 = 16\n+line_17 = 17\n+line_18 = 180\n+line_19 = 19\n+line_20 = 20\n",
+   "versions": {
+    "README.md": {
+     "old": "<hash-2>",
+     "new": "<hash-3>"
+    },
+    "app.py": {
+     "old": "<hash-4>",
+     "new": "<hash-5>"
+    },
+    "long.py": {
+     "old": null,
+     "new": "<hash-10>"
+    }
+   },
+   "waitingForRun": false,
+   "checkedOut": "feature"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "version": "<hash-5>"
+    },
+    "body": "Shown before the import"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-22>",
+   "anchor": {
+    "file": "app.py",
+    "side": "new",
+    "startLine": 4,
+    "endLine": 4,
+    "code": "    return f'hello {name}'",
+    "snapshot": "<hash-11>",
+    "view": "",
+    "commit": "<hash-8>"
+   },
+   "outdated": false,
+   "status": "open",
+   "statusBy": null,
+   "comments": [
+    {
+     "id": "<id-23>",
+     "author": "reviewer",
+     "by": "Test",
+     "kind": "comment",
+     "body": "Shown before the import",
+     "time": "<time>"
+    }
+   ],
+   "state": "waiting"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 4,
+     "endLine": 4,
+     "code": "    return f'hello {name}'",
+     "version": 5
+    },
+    "body": "Hi"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "anchor version must be text: a version the changeset names"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 4,
+     "endLine": 4,
+     "code": "    return f'hello {name}'",
+     "version": ""
+    },
+    "body": "Hi"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "anchor version must be text: a version the changeset names"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/mode",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "mode": "live",
+   "held": []
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/mode",
+   {
+    "mode": "batched"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "mode": "batched",
+   "held": [
+    "<id-5>",
+    "<id-7>",
+    "<id-9>",
+    "<id-11>",
+    "<id-13>",
+    "<id-20>",
+    "<id-22>"
+   ],
+   "submitted": []
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": null,
+    "body": "Held until I submit"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-24>",
+   "anchor": null,
+   "outdated": false,
+   "status": "open",
+   "statusBy": null,
+   "comments": [
+    {
+     "id": "<id-25>",
+     "author": "reviewer",
+     "by": "Test",
+     "kind": "comment",
+     "body": "Held until I submit",
+     "time": "<time>"
+    }
+   ],
+   "state": "held"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads/<id-1>/comments",
+   {
+    "body": "A follow-up, held too"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-26>",
+   "author": "reviewer",
+   "by": "Test",
+   "kind": "comment",
+   "body": "A follow-up, held too",
+   "time": "<time>"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "id": "feature-d4a69912",
+   "branch": "feature",
+   "base": "main",
+   "waitingForRun": false,
+   "checkedOut": "feature",
+   "mode": "batched",
+   "held": [
+    "<id-1>",
+    "<id-5>",
+    "<id-7>",
+    "<id-9>",
+    "<id-11>",
+    "<id-13>",
+    "<id-20>",
+    "<id-22>",
+    "<id-24>"
+   ],
+   "folder": "<repo>",
+   "warnings": []
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?status=open",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-26>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "A follow-up, held too",
+      "time": "<time>"
+     }
+    ],
+    "state": "held"
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 20,
+     "endLine": 20,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-9>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "held"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "held"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "held"
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 7,
+     "endLine": 8,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-9>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "held"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "held"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "held"
+   },
+   {
+    "id": "<id-22>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 4,
+     "endLine": 4,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-11>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-23>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Shown before the import",
+      "time": "<time>"
+     }
+    ],
+    "state": "held"
+   },
+   {
+    "id": "<id-24>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-25>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Held until I submit",
+      "time": "<time>"
+     }
+    ],
+    "state": "held"
+   }
+  ]
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/mode",
+   {
+    "mode": "pending"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "mode must be live or batched"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/mode",
+   {}
+  ],
+  "status": 400,
+  "answer": {
+   "error": "missing mode"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/mode",
+   {
+    "mode": "live",
+    "author": "agent"
+   }
+  ],
+  "status": 403,
+  "answer": {
+   "error": "only a reviewer changes the review mode"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/submit",
+   {
+    "author": "agent"
+   }
+  ],
+  "status": 403,
+  "answer": {
+   "error": "only a reviewer submits a review"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/submit",
+   {}
+  ],
+  "status": 200,
+  "answer": {
+   "mode": "batched",
+   "held": [],
+   "submitted": [
+    "<id-1>",
+    "<id-5>",
+    "<id-7>",
+    "<id-9>",
+    "<id-11>",
+    "<id-13>",
+    "<id-20>",
+    "<id-22>",
+    "<id-24>"
+   ]
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads?status=open",
+   null
+  ],
+  "status": 200,
+  "answer": [
+   {
+    "id": "<id-1>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-2>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why an f-string?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-15>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "And the name?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-17>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Read app.py",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-19>",
+      "author": "agent",
+      "by": null,
+      "kind": "reply",
+      "body": "It reads better.",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-26>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "A follow-up, held too",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-5>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 20,
+     "endLine": 20,
+     "code": "line_18 = 180",
+     "snapshot": "<hash-9>",
+     "view": "unstaged",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-6>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 180?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-7>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 1,
+     "endLine": 1,
+     "code": "def greet(nam):",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-8>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Typo?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-9>",
+    "anchor": {
+     "file": "app.py",
+     "side": "old",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return 'hi ' + name",
+     "snapshot": "<hash-4>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": "Test",
+    "comments": [
+     {
+      "id": "<id-10>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why was this concatenated?",
+      "time": "<time>"
+     },
+     {
+      "id": "<id-18>",
+      "author": "difftate",
+      "by": null,
+      "kind": "progress",
+      "body": "⏳ Picked up",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-11>",
+    "anchor": {
+     "file": "long.py",
+     "side": "new",
+     "startLine": 7,
+     "endLine": 8,
+     "code": "line_5 = 5\nline_6 = 6",
+     "snapshot": "<hash-9>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": true,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-12>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Why 5 and 6?",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-13>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 2,
+     "endLine": 2,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-5>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-14>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "No code sent",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-20>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-21>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Opened during a run",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-22>",
+    "anchor": {
+     "file": "app.py",
+     "side": "new",
+     "startLine": 4,
+     "endLine": 4,
+     "code": "    return f'hello {name}'",
+     "snapshot": "<hash-11>",
+     "view": "",
+     "commit": "<hash-8>"
+    },
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-23>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Shown before the import",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   },
+   {
+    "id": "<id-24>",
+    "anchor": null,
+    "outdated": false,
+    "status": "open",
+    "statusBy": null,
+    "comments": [
+     {
+      "id": "<id-25>",
+      "author": "reviewer",
+      "by": "Test",
+      "kind": "comment",
+      "body": "Held until I submit",
+      "time": "<time>"
+     }
+    ],
+    "state": "waiting"
+   }
+  ]
+ },
+ {
+  "request": [
+   "POST",
+   "/api/submit",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "mode": "batched",
+   "held": [],
+   "submitted": []
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/mode",
+   {
+    "mode": "batched"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "mode": "batched",
+   "held": [],
+   "submitted": []
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   {
+    "anchor": null,
+    "body": "Held, then live"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "id": "<id-27>",
+   "anchor": null,
+   "outdated": false,
+   "status": "open",
+   "statusBy": null,
+   "comments": [
+    {
+     "id": "<id-28>",
+     "author": "reviewer",
+     "by": "Test",
+     "kind": "comment",
+     "body": "Held, then live",
+     "time": "<time>"
+    }
+   ],
+   "state": "held"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/export",
+   null
+  ],
+  "status": 200,
+  "answer": "# Review export\n\nA copy of a code review as it stands now: its commit messages, then every thread in full. The reviewer tells you what to do with it.\n\nLines starting 'reviewer' are reviewers' comments, with the reviewer's name when it has one ('reviewer security-bot:'). Lines starting 'coding agent:' are replies. A thread's heading names its thread status (open, resolved or dismissed) and, for an open one, its thread state in parentheses: held, waiting, queued, working, replied or failed. A thread marked 'outdated' was written on code that changed since: its code block is the code then, not the file now.\n\n## The decisions behind the code: the review's commit messages (1), oldest first\n\nEach commit from the base to the branch. Read them to know why the code is as it is.\n\n### Commit 1\nsecond\n\n## Threads that need an answer (10)\n\n### Thread <id-1:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Why an f-string?\nreviewer Test: And the name?\ncoding agent: It reads better.\nreviewer Test: A follow-up, held too\n\n### Thread <id-5:8> — long.py:20 — open (waiting)\nCode:\n```\nline_18 = 180\n```\nreviewer Test: Why 180?\n\n### Thread <id-7:8> — app.py:1 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\ndef greet(nam):\n```\nreviewer Test: Typo?\n\n### Thread <id-9:8> — app.py:2 (old side, before the change) — open (waiting)\nCode:\n```\n    return 'hi ' + name\n```\nreviewer Test: Why was this concatenated?\n\n### Thread <id-11:8> — long.py:7-8 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\nline_5 = 5\nline_6 = 6\n```\nreviewer Test: Why 5 and 6?\n\n### Thread <id-13:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: No code sent\n\n### Thread <id-20:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Opened during a run\n\n### Thread <id-22:8> — app.py:4 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Shown before the import\n\n### Thread <id-24:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Held until I submit\n\n### Thread <id-27:8> — general thread (not tied to a line) — open (held)\nreviewer Test: Held, then live\n\n## Other threads (1)\n\n### Thread <id-3:8> — general thread (not tied to a line) — resolved\nreviewer Test: Is this ready?\nreviewer Test: Still?\n\n## How to reply\n\nReply to a thread with: <dt-reply> <thread> \"<answer>\"\n<thread> is the 8 characters after 'Thread'. Write only the answer: difftate posts it as a reply. A reply changes no thread status.\nFor an answer with quotes or several lines, pass it on stdin: <dt-reply> <thread> <<'EOF' … EOF\n"
+ },
+ {
+  "request": [
+   "GET",
+   "/api/export?reply_folder=<repo>",
+   null
+  ],
+  "status": 200,
+  "answer": "# Review export\n\nA copy of a code review as it stands now: its commit messages, then every thread in full. The reviewer tells you what to do with it.\n\nLines starting 'reviewer' are reviewers' comments, with the reviewer's name when it has one ('reviewer security-bot:'). Lines starting 'coding agent:' are replies. A thread's heading names its thread status (open, resolved or dismissed) and, for an open one, its thread state in parentheses: held, waiting, queued, working, replied or failed. A thread marked 'outdated' was written on code that changed since: its code block is the code then, not the file now.\n\n## The decisions behind the code: the review's commit messages (1), oldest first\n\nEach commit from the base to the branch. Read them to know why the code is as it is.\n\n### Commit 1\nsecond\n\n## Threads that need an answer (10)\n\n### Thread <id-1:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Why an f-string?\nreviewer Test: And the name?\ncoding agent: It reads better.\nreviewer Test: A follow-up, held too\n\n### Thread <id-5:8> — long.py:20 — open (waiting)\nCode:\n```\nline_18 = 180\n```\nreviewer Test: Why 180?\n\n### Thread <id-7:8> — app.py:1 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\ndef greet(nam):\n```\nreviewer Test: Typo?\n\n### Thread <id-9:8> — app.py:2 (old side, before the change) — open (waiting)\nCode:\n```\n    return 'hi ' + name\n```\nreviewer Test: Why was this concatenated?\n\n### Thread <id-11:8> — long.py:7-8 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\nline_5 = 5\nline_6 = 6\n```\nreviewer Test: Why 5 and 6?\n\n### Thread <id-13:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: No code sent\n\n### Thread <id-20:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Opened during a run\n\n### Thread <id-22:8> — app.py:4 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Shown before the import\n\n### Thread <id-24:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Held until I submit\n\n### Thread <id-27:8> — general thread (not tied to a line) — open (held)\nreviewer Test: Held, then live\n\n## Other threads (1)\n\n### Thread <id-3:8> — general thread (not tied to a line) — resolved\nreviewer Test: Is this ready?\nreviewer Test: Still?\n\n## How to reply\n\nReply to a thread with: <dt-reply> --folder <repo> <thread> \"<answer>\"\n<thread> is the 8 characters after 'Thread'. Write only the answer: difftate posts it as a reply. A reply changes no thread status.\nFor an answer with quotes or several lines, pass it on stdin: <dt-reply> --folder <repo> <thread> <<'EOF' … EOF\n"
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/mode",
+   {
+    "mode": "live",
+    "author": "reviewer"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "mode": "live",
+   "held": [],
+   "submitted": [
+    "<id-27>"
+   ]
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/mode",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "mode": "live",
+   "held": []
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/export",
+   null
+  ],
+  "status": 200,
+  "answer": "# Review export\n\nA copy of a code review as it stands now: its commit messages, then every thread in full. The reviewer tells you what to do with it.\n\nLines starting 'reviewer' are reviewers' comments, with the reviewer's name when it has one ('reviewer security-bot:'). Lines starting 'coding agent:' are replies. A thread's heading names its thread status (open, resolved or dismissed) and, for an open one, its thread state in parentheses: held, waiting, queued, working, replied or failed. A thread marked 'outdated' was written on code that changed since: its code block is the code then, not the file now.\n\n## The decisions behind the code: the review's commit messages (1), oldest first\n\nEach commit from the base to the branch. Read them to know why the code is as it is.\n\n### Commit 1\nsecond\n\n## Threads that need an answer (10)\n\n### Thread <id-1:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Why an f-string?\nreviewer Test: And the name?\ncoding agent: It reads better.\nreviewer Test: A follow-up, held too\n\n### Thread <id-5:8> — long.py:20 — open (waiting)\nCode:\n```\nline_18 = 180\n```\nreviewer Test: Why 180?\n\n### Thread <id-7:8> — app.py:1 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\ndef greet(nam):\n```\nreviewer Test: Typo?\n\n### Thread <id-9:8> — app.py:2 (old side, before the change) — open (waiting)\nCode:\n```\n    return 'hi ' + name\n```\nreviewer Test: Why was this concatenated?\n\n### Thread <id-11:8> — long.py:7-8 — open (waiting) — outdated: its code changed after the thread was written\nCode when the thread was written:\n```\nline_5 = 5\nline_6 = 6\n```\nreviewer Test: Why 5 and 6?\n\n### Thread <id-13:8> — app.py:2 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: No code sent\n\n### Thread <id-20:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Opened during a run\n\n### Thread <id-22:8> — app.py:4 — open (waiting)\nCode:\n```\n    return f'hello {name}'\n```\nreviewer Test: Shown before the import\n\n### Thread <id-24:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Held until I submit\n\n### Thread <id-27:8> — general thread (not tied to a line) — open (waiting)\nreviewer Test: Held, then live\n\n## Other threads (1)\n\n### Thread <id-3:8> — general thread (not tied to a line) — resolved\nreviewer Test: Is this ready?\nreviewer Test: Still?\n\n## How to reply\n\nReply to a thread with: <dt-reply> <thread> \"<answer>\"\n<thread> is the 8 characters after 'Thread'. Write only the answer: difftate posts it as a reply. A reply changes no thread status.\nFor an answer with quotes or several lines, pass it on stdin: <dt-reply> <thread> <<'EOF' … EOF\n"
+ },
+ {
+  "request": [
+   "POST",
+   "/api/export",
+   {}
+  ],
+  "status": 405,
+  "answer": {
+   "error": "method not allowed"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/nope",
+   null
+  ],
+  "status": 404,
+  "answer": {
+   "error": "not found"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/review",
+   {}
+  ],
+  "status": 405,
+  "answer": {
+   "error": "method not allowed"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/threads",
+   null
+  ],
+  "status": 401,
+  "answer": {
+   "error": "missing or wrong token"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/threads",
+   null
+  ],
+  "status": 400,
+  "answer": {
+   "error": "bad JSON"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review-path",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "path": null
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review-path",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "path": {
+    "stops": [
+     {
+      "number": "1",
+      "file": "app.py",
+      "key": true,
+      "viewed": false,
+      "questions": [
+       {
+        "question": "What is new?",
+        "answer": "See \"Greeting\"."
+       }
+      ],
+      "ranges": [
+       [
+        1,
+        2
+       ],
+       [
+        4,
+        4
+       ]
+      ],
+      "specs": [
+       {
+        "file": "app.test.py",
+        "name": "greets"
+       }
+      ],
+      "see": [
+       "Greeting"
+      ],
+      "side_files": [
+       {
+        "file": "README.md",
+        "viewed": false,
+        "ranges": [
+         [
+          1,
+          2
+         ]
+        ],
+        "text": "What it says."
+       }
+      ],
+      "children": [
+       {
+        "number": "1.1",
+        "file": "lib.py",
+        "key": false,
+        "viewed": false,
+        "questions": [
+         {
+          "question": "Why?",
+          "answer": "Because."
+         }
+        ],
+        "ranges": [],
+        "specs": [],
+        "see": [],
+        "side_files": [],
+        "children": []
+       }
+      ]
+     }
+    ],
+    "skipped": [
+     {
+      "file": "long.py",
+      "reason": "numbers only"
+     }
+    ],
+    "not_on_the_path": [
+     "notes.md",
+     "review-path.md"
+    ],
+    "sections": [
+     {
+      "name": "Greeting",
+      "text": "It is an f-string."
+     }
+    ]
+   }
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review-path?view=staged",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "path": {
+    "stops": [],
+    "skipped": [],
+    "not_on_the_path": [
+     "README.md"
+    ],
+    "sections": [
+     {
+      "name": "Greeting",
+      "text": "It is an f-string."
+     }
+    ]
+   }
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review-path?view=nope",
+   null
+  ],
+  "status": 400,
+  "answer": {
+   "error": "no view 'nope': give a commit (HEAD~2, HEAD), staged or unstaged, or nothing for all changes"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "id": "feature-d4a69912",
+   "branch": "feature",
+   "base": "main",
+   "waitingForRun": false,
+   "checkedOut": "feature",
+   "mode": "live",
+   "held": [],
+   "folder": "<repo>",
+   "warnings": [
+    {
+     "id": "review-path-ab0e4808",
+     "text": "review-path.md is not used, files are in the changeset's order: line 1: \"## Oops\" is not a stop, a \"## Section:\" or \"## Skipped\"",
+     "time": "<time>"
+    }
+   ]
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/review-path",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "path": null
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/done",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "done": false,
+   "time": null,
+   "commit": null,
+   "lastMark": null,
+   "head": "<hash-8>",
+   "openThreads": 10,
+   "runsInFlight": 0
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/done",
+   {
+    "done": true
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "done": true,
+   "time": "<time>",
+   "commit": "<hash-8>",
+   "lastMark": {
+    "kind": "done",
+    "time": "<time>",
+    "commit": "<hash-8>"
+   },
+   "head": "<hash-8>",
+   "openThreads": 10,
+   "runsInFlight": 0
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/done",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "done": true,
+   "time": "<time>",
+   "commit": "<hash-8>",
+   "lastMark": {
+    "kind": "done",
+    "time": "<time>",
+    "commit": "<hash-8>"
+   },
+   "head": "<hash-8>",
+   "openThreads": 10,
+   "runsInFlight": 0
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/done",
+   {
+    "done": false,
+    "author": "reviewer"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "done": false,
+   "time": null,
+   "commit": null,
+   "lastMark": {
+    "kind": "undone",
+    "time": "<time>",
+    "commit": "<hash-8>"
+   },
+   "head": "<hash-8>",
+   "openThreads": 10,
+   "runsInFlight": 0
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/done",
+   {
+    "done": true,
+    "author": "agent"
+   }
+  ],
+  "status": 403,
+  "answer": {
+   "error": "only a reviewer marks a review Done"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/done",
+   {}
+  ],
+  "status": 400,
+  "answer": {
+   "error": "missing done"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/done",
+   {
+    "done": true
+   }
+  ],
+  "status": 409,
+  "answer": {
+   "error": "another branch is checked out: the watcher moves to its review once the run in progress ends"
+  }
+ },
+ {
+  "request": [
+   "GET",
+   "/api/agent",
+   null
+  ],
+  "status": 200,
+  "answer": {
+   "agent": "personal",
+   "source": "machine",
+   "names": [
+    "personal",
+    "work"
+   ]
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/agent",
+   {
+    "agent": "work"
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "agent": "work",
+   "source": "review",
+   "names": [
+    "personal",
+    "work"
+   ]
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/agent",
+   {
+    "agent": null
+   }
+  ],
+  "status": 200,
+  "answer": {
+   "agent": "personal",
+   "source": "machine",
+   "names": [
+    "personal",
+    "work"
+   ]
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/agent",
+   {
+    "agent": "nope"
+   }
+  ],
+  "status": 400,
+  "answer": {
+   "error": "no agent 'nope' in the agent list: personal, work"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/agent",
+   {}
+  ],
+  "status": 400,
+  "answer": {
+   "error": "missing agent"
+  }
+ },
+ {
+  "request": [
+   "PUT",
+   "/api/agent",
+   {
+    "agent": "work",
+    "author": "agent"
+   }
+  ],
+  "status": 403,
+  "answer": {
+   "error": "only a reviewer chooses the agent of a review"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/launch",
+   {}
+  ],
+  "status": 200,
+  "answer": {
+   "url": "http://127.0.0.1:<port>/?launch=<code>&folder=<repo>"
+  }
+ },
+ {
+  "request": [
+   "POST",
+   "/api/stop",
+   {}
+  ],
+  "status": 200,
+  "answer": {
+   "stopping": true
+  }
+ }
+]
