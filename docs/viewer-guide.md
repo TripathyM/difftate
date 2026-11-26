@@ -17,7 +17,7 @@ No `api.json`, or no answer on its port, means no watcher runs. Then show the re
 
 **The token goes in a header**: `Authorization: Bearer <token>`, set by your HTTP client inside your viewer's process. Keep it out of every URL and every command line, where other processes and logs can read it. If your viewer shells out to `curl`, give the header in a config on stdin (`curl -K -`, then `header = "Authorization: Bearer <token>"`), as the Neovim viewer does. A request without the right token gets 401.
 
-**Every request names its folder**: the query parameter `?folder=<path>`, an absolute path in the checked-out folder (a repository or one of its worktrees) the editor has open, URL-encoded. The watcher answers about the review of the branch checked out there. File paths in answers and requests are relative to that folder's top (as in `git diff`). A request may also name a base, `&base=<branch>`; without one, the folder keeps its own base (the repository's default branch the first time). A request without a folder, or with a path in no checked-out folder of a git repository, gets 400. The one request that names no folder is `POST /api/stop`.
+**Every request names its folder**: the query parameter `?folder=<path>`, on every method (GET, POST, PUT, PATCH), an absolute path in the checked-out folder (a repository or one of its worktrees) the editor has open, URL-encoded. A path below the folder's top names the same folder. The watcher answers about the review of the branch checked out there. File paths in answers and requests are relative to that folder's top (as in `git diff`). A request may also name a base, `&base=<branch>`; without one, the folder keeps its own base (the repository's default branch the first time). A request without a folder, or with a path in no checked-out folder of a git repository, gets 400. The one request that names no folder is `POST /api/stop`.
 
 **A viewer never starts the watcher.** `difftate` starts it. The reviewer runs `difftate --open none` in the folder: it starts the watcher if none runs, adds the folder's review, and opens no bundled viewer. Then they open your viewer, which finds the watcher as above. (`DT_OPEN=none` makes that the default for plain `difftate`.)
 
@@ -64,18 +64,18 @@ A thread, as every call returns it:
 - `GET /api/threads` sends nothing; optional `&status=open` (or `resolved`, `dismissed`) and `&view=<view>`. Returns a list of threads. With a view, each anchor's lines are where its code is in that view.
 - `POST /api/threads` sends `{"anchor": {"file", "side", "startLine", "endLine", "code", "version"}, "body", "view"}`. Returns the new thread. Send `anchor: null` for a general thread.
   - `startLine` and `endLine` are 1-based line numbers of that side, as the changeset's diff numbers them (1 ≤ start ≤ end). One line: both the same.
-  - `code`: the text of those lines, joined with `\n`, as the viewer showed them.
-  - `version`: the changeset's `versions[file][side]` (see 3.3). With it, a file that changed since the viewer showed it still gets the thread on the right code.
+  - `code`: the exact text of those lines as the viewer showed them, joined with `\n`, with no newline at the end. A thread whose `code` isn't on those lines is outdated at once.
+  - `version`: the changeset's `versions[file][side]` (see 3.3), a string to send back as it is; leave `version` out when that is null. With it, a file that changed since the viewer showed it still gets the thread on the right code.
   - `view`: the view the lines are in (default `""`, all changes).
   - Optional `reviewer`: a reviewer name (one line, at most 100 characters). Without one it is the repository's git `user.name`.
-- `POST /api/threads/<id>/comments` sends `{"body"}` (optional `reviewer`). Returns the new comment.
+- `POST /api/threads/<id>/comments` sends `{"body"}` (optional `reviewer`). Returns the new comment: `{"id", "author", "by", "kind", "body", "time"}`.
 - `PATCH /api/threads/<id>/status` sends `{"status": "open"|"resolved"|"dismissed"}` (optional `reviewer`). Returns `{"id", "status", "statusBy"}`.
 - `PATCH /api/notes/<id>` sends `{"kind": "queued"|"progress", "body"}`. Returns the note. It is difftate's own call for its notes: a viewer shows notes and never edits them (anything that isn't a note gets 403).
 
 **Rules.**
 
 - Place a thread on its anchor's side and lines in the view you show. Show an `inView: false` thread in a list, not on a line. Show an outdated thread with its own `code`, marked outdated.
-- A viewer writes comments only (`kind` left out). Replies come from the coding agent, notes from difftate.
+- A viewer writes comments only (`kind` left out): the reviewer answers a thread, or a reply in it, by adding a comment. Replies come from the coding agent, notes from difftate.
 - Show the thread state: it tells the reviewer whether the coding agent has the thread (`queued`, `working`), answered (`replied`) or failed (`failed`: its run ended with no reply; a new comment sends it again).
 - Resolving or dismissing a thread is the reviewer's. Offer reopening (`open`) too.
 - 409 while another branch is checked out: show the message, keep the reviewer's text.
