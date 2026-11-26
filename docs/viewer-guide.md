@@ -102,7 +102,7 @@ A thread, as every call returns it:
 
 **Rules.**
 
-- Read it again when you poll: the coding agent may rewrite it at any time. With `"path": null`, show the changed files in the changeset's order.
+- Read it again when you poll: the coding agent may rewrite it at any time. Its file lists (`not_on_the_path`, and the files a view keeps) may lag a file that was just added by up to one second, while the changeset already has it: the next poll has it. No call order is needed. With `"path": null`, show the changed files in the changeset's order.
 - `ranges` are `[first, last]` new-side lines; `[]` is the whole file. `viewed` is the file's viewed mark (3.4).
 - Show stops in their order and with their numbers, ★ on key stops, side files under their stop, then the skipped files with their reasons, then the files not on the path.
 - In a view, the path is cut down to the view's files, numbers kept. Without `&view=` it is the view viewers show (3.3); `&view=` (empty) is all changes. Ask for the view you display.
