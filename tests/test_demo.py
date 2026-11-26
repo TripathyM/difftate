@@ -18,7 +18,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from test_watcher import DIFFTATE, alive, wait_for, with_folder  # noqa: E402
+from test_watcher import DIFFTATE, ROOT, alive, wait_for, with_folder  # noqa: E402
 
 
 class DemoHarness:
@@ -68,7 +68,33 @@ class DemoHarness:
         return run
 
 
+# `difftate demo` on wiring whose watcher refuses every new thread
+REFUSING_A_THREAD = """
+import dataclasses, sys
+sys.path.insert(0, sys.argv[1])
+from difftate import main
+real = main.wiring()
+def ask(home, method, path, payload=None):
+    if method == "POST" and path.startswith("/api/threads?"):
+        return 500, {"error": "no thread today"}
+    return real.ask_running_watcher(home, method, path, payload)
+sys.exit(main.cli.run_demo([], dataclasses.replace(real, ask_running_watcher=ask)))
+"""
+
+
 class TheDemoCommand(DemoHarness, unittest.TestCase):
+    def test_a_demo_it_cant_build_says_where_it_is_and_how_to_remove_it(self):
+        run = subprocess.run([sys.executable, "-c", REFUSING_A_THREAD, os.path.join(ROOT, "lib")], cwd=self.home,
+                             env=self.env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=90)
+        self.watcher_pid()
+
+        self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+        self.assertIn("POST /api/threads: no thread today", run.stdout)
+        self.assertIn(f"The demo in {self.demo} is not complete", run.stdout)
+        self.assertIn(f"{self.demo_home}/log", run.stdout)
+        self.assertIn(f"DIFFTATE_HOME={self.demo_home} difftate stop && rm -rf {self.demo}", run.stdout)
+        self.assertNotIn("nvim", run.stdout)
+
     def test_help_says_what_the_demo_is_for_and_makes_none(self):
         run = self.difftate("demo", "--help")
 
@@ -258,8 +284,17 @@ class TheDemoReview(DemoHarness, unittest.TestCase):
         with open(os.path.join(self.demo_home, "agents.toml"), "rb") as f:
             agents = tomllib.load(f)
 
-        self.assertEqual(agents, {"agents": {"demo": {"tool": "claude", "cmd": "/usr/bin/true"}}})
+        self.assertEqual(agents, {"agents": {"demo": {"tool": "claude", "cmd": "true"}}})
         self.assertEqual(self.api("GET", "/api/agent"), {"agent": "demo", "source": "machine", "names": ["demo"]})
+
+    def test_a_submitted_run_ends_with_no_reply_so_nothing_real_replies(self):
+        held = self.thread("One line")["id"]
+
+        self.api("POST", "/api/submit", {})
+
+        wait_for("the run to end", lambda: self.thread("One line")["state"] == "failed")
+        self.assertEqual([c["kind"] for c in self.thread("One line")["comments"]], ["comment", "progress"])
+        self.assertEqual(self.thread("One line")["id"], held)
 
 
 class AReviewersGitConfig(DemoHarness, unittest.TestCase):

@@ -196,7 +196,7 @@ What a coding agent reads to build a viewer: the review API, difftate's capabili
 _Avoid_: recipe, SDK, docs
 
 **Demo review**:
-A throwaway review with one example of each capability, to check a viewer against.
+A throwaway review with one example of each capability, to check a viewer against. It has a difftate folder and a watcher of its own, beside the machine's: none of it joins the review history, and it goes when the demo is removed.
 _Avoid_: sample, fixture, test review
 
 **Neovim viewer**:

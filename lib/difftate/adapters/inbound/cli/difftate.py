@@ -38,11 +38,11 @@ def with_folder(path, folder, base=""):
     return path + ("&" if "?" in path else "?") + urllib.parse.urlencode(query)
 
 
-def _said(answer, status):
+def said(answer, status):
     return (answer.get("error") if isinstance(answer, dict) else None) or status
 
 
-def _ask(wiring, method, path, payload=None):
+def ask(wiring, method, path, payload=None):
     """The review API's answer: (status, JSON); raises Exit when it can't be asked."""
     try:
         return wiring.ask_running_watcher(wiring.difftate_home, method, path, payload)
@@ -94,23 +94,23 @@ def _open(argv, wiring):
     pid = one_watcher.ensure(wiring.difftate_home, wiring.running_watcher, lambda: wiring.start_watcher(
         ["--interval", str(opts["interval"])]))
     # The first request that names the folder adds it (and switches to the base, when one is named)
-    status, review = _ask(wiring, "GET", with_folder("/api/review", root, opts["base"]))
+    status, review = ask(wiring, "GET", with_folder("/api/review", root, opts["base"]))
     if status != 200:
-        raise Exit(1, f"Error: {_said(review, status)}")
+        raise Exit(1, f"Error: {said(review, status)}")
     shown = {}
     if opts["view"]:
-        status, shown = _ask(wiring, "PUT", with_folder("/api/view", root), {"view": opts["view"]})
+        status, shown = ask(wiring, "PUT", with_folder("/api/view", root), {"view": opts["view"]})
         if status != 200:
-            raise Exit(1, f"Error: {_said(shown, status)}")
+            raise Exit(1, f"Error: {said(shown, status)}")
     else:
-        status, shown = _ask(wiring, "GET", with_folder("/api/view", root))
+        status, shown = ask(wiring, "GET", with_folder("/api/view", root))
     print(f"difftate is running (pid {pid}): the review of {review['branch']} against {review['base']} "
           f"in {root}, showing {View((shown or {}).get('view') or '').name}")
     url = ""
     if opts["open"] in (viewers.BROWSER, viewers.BOTH):  # only the browser needs a link
-        status, launch = _ask(wiring, "POST", with_folder("/api/launch", root))
+        status, launch = ask(wiring, "POST", with_folder("/api/launch", root))
         if status != 200:
-            raise Exit(1, f"Error: {_said(launch, status)}")
+            raise Exit(1, f"Error: {said(launch, status)}")
         url = launch["url"]
         print(f"  → {url}")
     try:
@@ -143,7 +143,7 @@ def _log(wiring):
 def _restart(wiring):
     """Stop the watcher if one runs, and start one: it serves again the folders
     the stopped one served."""
-    _stop_running(wiring, wiring.running_watcher(wiring.difftate_home))
+    stop_running(wiring, wiring.running_watcher(wiring.difftate_home))
     interval = opts_interval()
     pid = one_watcher.ensure(wiring.difftate_home, wiring.running_watcher,
                              lambda: wiring.start_watcher(["--interval", str(interval)]))
@@ -161,18 +161,18 @@ def _stop(wiring):
     if not pid:
         print("difftate is not running")
         return 0
-    _stop_running(wiring, pid)
+    stop_running(wiring, pid)
     print(f"difftate stopped (pid {pid})")
     return 0
 
 
-def _stop_running(wiring, pid):
+def stop_running(wiring, pid):
     """Ask the watcher <pid> (None: none runs) to stop, and wait until it has."""
     if not pid:
         return
-    status, answer = _ask(wiring, "POST", "/api/stop", {})
+    status, answer = ask(wiring, "POST", "/api/stop", {})
     if status != 200:
-        raise Exit(1, f"Error: difftate refused to stop: {_said(answer, status)}")
+        raise Exit(1, f"Error: difftate refused to stop: {said(answer, status)}")
     deadline = time.time() + STOPPING_S
     while _alive(pid):
         if time.time() > deadline:

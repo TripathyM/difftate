@@ -14,7 +14,7 @@ import tempfile
 import time
 
 from . import one_watcher
-from .difftate import _ask, _said, _stop_running, with_folder
+from .difftate import ask, said, stop_running, with_folder
 from .options import Exit
 
 USAGE = """difftate demo — Make a throwaway demo review, to check a viewer against.
@@ -36,7 +36,7 @@ BRANCH = "demo-languages"
 # How long the demo waits for its watcher to find the outdated thread
 OUTDATING_S = 30
 # The demo's whole agent list: its command does nothing, so nothing real ever replies
-AGENT_LIST = '[agents.demo]\ntool = "claude"\ncmd = "/usr/bin/true"\n'
+AGENT_LIST = '[agents.demo]\ntool = "claude"\ncmd = "true"\n'
 
 # The files on the base, then what each commit of the branch writes
 ON_BASE = {
@@ -117,11 +117,21 @@ def _make(wiring):
     os.mkdir(demo, 0o700)
     os.mkdir(home, 0o700)
     _write(home, "agents.toml", AGENT_LIST)
-    _make_repository(repo)
-    pid = one_watcher.ensure(home, wiring.running_watcher, lambda: wiring.start_watcher(["--interval", "1"]))
-    _build_review(wiring, repo)
+    try:
+        _make_repository(repo)
+        pid = one_watcher.ensure(home, wiring.running_watcher, lambda: wiring.start_watcher(["--interval", "1"]))
+        _build_review(wiring, repo)
+    except BaseException:  # Ctrl+C too: its watcher may be running
+        print(f"The demo in {demo} is not complete. Its watcher's log is {os.path.join(home, 'log')}.\n"
+              f"Remove it: {_removal(demo, home)}")
+        raise
     _print_where(demo, home, repo, pid)
     return 0
+
+
+def _removal(demo, home):
+    """The line that stops the demo's watcher, then removes the demo."""
+    return f"DIFFTATE_HOME={shlex.quote(home)} difftate stop && rm -rf {shlex.quote(demo)}"
 
 
 def _remove_earlier(wiring, demo):
@@ -130,7 +140,7 @@ def _remove_earlier(wiring, demo):
         return
     if os.path.islink(demo) or not os.path.isdir(demo) or os.lstat(demo).st_uid != os.getuid():
         raise Exit(1, f"Error: {demo} is not a folder of yours: remove it, then run difftate demo again")
-    _stop_running(wiring, wiring.running_watcher(wiring.difftate_home))
+    stop_running(wiring, wiring.running_watcher(wiring.difftate_home))
     shutil.rmtree(demo)
 
 
@@ -158,8 +168,12 @@ def _git(repo, *args):
 
 
 def _write(folder, path, text):
-    with open(os.path.join(folder, path), "w", encoding="utf-8") as f:
+    """In one step: the watcher, polling meanwhile, must not see half a file, or the
+    threads on it would become outdated."""
+    target = os.path.join(folder, path)
+    with open(target + ".new", "w", encoding="utf-8") as f:
         f.write(text)
+    os.replace(target + ".new", target)
 
 
 def _commit(repo, message, files):
@@ -171,9 +185,9 @@ def _commit(repo, message, files):
 
 def _build_review(wiring, repo):
     def call(method, path, payload=None):
-        status, answer = _ask(wiring, method, with_folder(path, repo), payload)
+        status, answer = ask(wiring, method, with_folder(path, repo), payload)
         if status != 200:
-            raise Exit(1, f"Error: the demo review: {method} {path}: {_said(answer, status)}")
+            raise Exit(1, f"Error: the demo review: {method} {path}: {said(answer, status)}")
         return answer
 
     def open_thread(body, file, first, last=None):
@@ -206,7 +220,7 @@ def _wait_until_outdated(call, thread_id):
     deadline = time.time() + OUTDATING_S
     while not any(t["id"] == thread_id and t["outdated"] for t in call("GET", "/api/threads")):
         if time.time() > deadline:
-            raise Exit(1, f"Error: the demo review: no outdated thread after {OUTDATING_S}s (the watcher's log is in the demo's home/log)")
+            raise Exit(1, f"Error: the demo review: no outdated thread after {OUTDATING_S}s ")
         time.sleep(0.1)
 
 
@@ -226,4 +240,4 @@ def _print_where(demo, home, repo, pid):
           f"  Neovim:   cd {shlex.quote(repo)} && {with_home} nvim +DifftateOpen\n"
           f"  browser:  cd {shlex.quote(repo)} && {with_home} difftate browser\n"
           f"Remove it (`difftate demo` again makes a fresh one):\n"
-          f"  {with_home} difftate stop && rm -rf {shlex.quote(demo)}")
+          f"  {_removal(demo, home)}")
