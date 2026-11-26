@@ -25,7 +25,8 @@ No `api.json`, or no answer on its port, means no watcher runs. Then show the re
 
 - `GET /api/review` sends nothing. Returns `{"id", "branch", "base", "waitingForRun", "checkedOut", "mode", "held", "folder", "warnings"}`. The first request that names a folder adds it to what the watcher serves.
   - `id` names the review. The watcher follows the checked-out branch: when `id` changes, the reviewer checked out another branch, and every list you show must be read again.
-  - `waitingForRun` is true while another branch is checked out and a run still holds this review; `checkedOut` names that branch. With the base branch checked out, or a detached HEAD, there is no branch to review: the review is of the current commit, and `branch` (and `checkedOut`) are that commit's full id; shorten it for display. Show it in one line: the review takes no new thread or viewed mark until the run ends (409).
+  - `branch` is the checked-out branch. With the base branch checked out, or a detached HEAD, the review is of the current commit: `branch` and `checkedOut` are its full id; shorten it for display.
+  - `waitingForRun` is true while another branch is checked out and a run still holds this review; `checkedOut` names that branch. Show it in one line: the review takes no new thread or viewed mark until the run ends (409).
   - `folder` is the checked-out folder's top. `mode` and `held` are the review mode (see 3.5).
   - `warnings`: `[{"id", "time", "text"}]` about the review (such as a `review-path.md` that can't be read). Show each `id` once.
 
