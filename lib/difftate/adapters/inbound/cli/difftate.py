@@ -2,7 +2,7 @@
 for the machine when none runs, and ends. It is the only thing that starts the
 watcher (ADR 0008): viewers and scripts only find the one that runs.
 
-  difftate [<view>] [--base <branch>] [--open browser|nvim|both]
+  difftate [<view>] [--base <branch>] [--open browser|nvim|both|none]
   difftate browser [<view>] [--base <branch>]
   difftate stop
   difftate restart
@@ -107,7 +107,7 @@ def _open(argv, wiring):
     print(f"difftate is running (pid {pid}): the review of {review['branch']} against {review['base']} "
           f"in {root}, showing {View((shown or {}).get('view') or '').name}")
     url = ""
-    if opts["open"] != "nvim":  # the Neovim viewer needs no link
+    if opts["open"] not in ("nvim", viewers.NONE):  # only the browser needs a link
         status, launch = _ask(wiring, "POST", with_folder("/api/launch", root))
         if status != 200:
             raise Exit(1, f"Error: {_said(launch, status)}")

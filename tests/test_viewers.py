@@ -1,6 +1,7 @@
 """The viewers `--open` names: the browser and the Neovim viewer (nvim here when there is a terminal,
 the command to run when there is none). difftate opens no host: a fake Herdr records any call, and the
 tests check there is none."""
+import dataclasses
 import io
 import os
 import shutil
@@ -15,7 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
 from difftate import main  # noqa: E402
-from difftate.adapters.inbound.cli import options, viewers  # noqa: E402
+from difftate.adapters.inbound.cli import options, run_difftate, viewers  # noqa: E402
 
 FAKE_HERDR = """#!/bin/sh
 echo "$@" >> "$FAKE_HERDR_CALLS"
@@ -136,27 +137,97 @@ class ViewersTest(unittest.TestCase):
 
         self.assertEqual(order, ["browser", "nvim"])
 
-    def test_the_composition_names_two_viewers_and_both(self):
+    def test_the_composition_names_two_viewers_both_and_none(self):
         self.assertEqual(set(main.VIEWERS), {"browser", "nvim"})
         self.assertFalse(hasattr(viewers, "open_in_herdr"))
-        self.assertEqual(viewers.where_to_open(main.VIEWERS), (*main.VIEWERS, "both"))
+        self.assertEqual(viewers.where_to_open(main.VIEWERS), (*main.VIEWERS, "both", "none"))
         self.assertIn("nvim", viewers.where_to_open(main.VIEWERS))
 
-    def test_open_herdr_is_refused_like_any_unknown_value_naming_the_three_values(self):
+    def test_open_herdr_is_refused_like_any_unknown_value_naming_the_four_values(self):
         for argv, env in ((["--open", "herdr"], {}), ([], {"DT_OPEN": "herdr"})):
             with mock.patch.dict(os.environ, env), self.assertRaises(options.Exit) as raised:
                 options.parse(argv, viewers.where_to_open(main.VIEWERS))
             self.assertEqual(raised.exception.code, 1)
-            self.assertIn("must be browser, nvim or both, not 'herdr'", raised.exception.message)
+            self.assertIn("must be browser, nvim, both or none, not 'herdr'", raised.exception.message)
 
-    def test_open_accepts_nvim_and_the_help_names_the_three_values(self):
+    def test_open_accepts_nvim_and_the_help_names_the_four_values(self):
         opts = options.parse(["--open", "nvim"], viewers.where_to_open(main.VIEWERS))
         self.assertEqual(opts["open"], "nvim")
         with mock.patch.dict(os.environ, {"DT_OPEN": "nvim"}):
             opts = options.parse([], viewers.where_to_open(main.VIEWERS))
         self.assertEqual(opts["open"], "nvim")
-        self.assertRegex(options.USAGE, r"browser, nvim or both")
+        self.assertRegex(options.USAGE, r"browser, nvim, both or none")
+        self.assertRegex(options.USAGE, r"none: [^.]*your own viewer[^.]*finds the watcher")
         self.assertNotIn("herdr:", options.USAGE)
+
+
+class OpenNoneTest(unittest.TestCase):
+    """`--open none`, for the reviewer's own viewer: the `difftate` command with fake wiring."""
+    def setUp(self):
+        home = tempfile.mkdtemp(prefix="difftate-open-none-")
+        self.addCleanup(shutil.rmtree, home, ignore_errors=True)
+        patch = mock.patch.dict(os.environ)
+        patch.start()
+        self.addCleanup(patch.stop)
+        os.environ.pop("DT_OPEN", None)
+        os.environ.pop("DT_INTERVAL", None)
+        self.started, self.asked, self.opened = [], [], []
+
+        def start_watcher(args):
+            self.started.append(args)
+            return lambda: True
+
+        def ask(home, method, path, payload=None):
+            self.asked.append((method, path, payload))
+            route = path.split("?")[0]
+            return 200, {"/api/review": {"branch": "feature", "base": "develop"},
+                         "/api/view": {"view": "HEAD~1"},
+                         "/api/launch": {"url": "http://127.0.0.1:1/?launch=code"}}[route]
+
+        self.wiring = dataclasses.replace(
+            main.wiring(), difftate_home=home,
+            viewers={name: lambda url, root, name=name: self.opened.append(name) or True for name in main.VIEWERS},
+            difftate_folder=lambda cwd: mock.Mock(root="/work/shop-api"),
+            running_watcher=lambda home: 4242 if self.started else None,
+            start_watcher=start_watcher, ask_running_watcher=ask, agent_choice=lambda root: None)
+
+    def difftate(self, *argv):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = run_difftate(list(argv), self.wiring)
+        return code, out.getvalue()
+
+    def routes(self):
+        return [(method, path.split("?")[0]) for method, path, _ in self.asked]
+
+    def test_open_none_starts_the_watcher_adds_the_review_and_opens_nothing(self):
+        code, said = self.difftate("HEAD~1", "--base", "develop", "--open", "none")
+
+        self.assertEqual(code, 0, said)
+        self.assertEqual(len(self.started), 1)
+        self.assertEqual(self.routes(), [("GET", "/api/review"), ("PUT", "/api/view")], "no link is asked for")
+        self.assertIn("base=develop", self.asked[0][1])
+        self.assertEqual(self.asked[1][2], {"view": "HEAD~1"})
+        self.assertEqual(said.strip(), "difftate is running (pid 4242): the review of feature against develop "
+                                       "in /work/shop-api, showing the commits after HEAD~1")
+        self.assertEqual(self.opened, [])
+
+    def test_dt_open_none_makes_it_the_default(self):
+        os.environ["DT_OPEN"] = "none"
+
+        code, said = self.difftate()
+
+        self.assertEqual(code, 0, said)
+        self.assertNotIn(("POST", "/api/launch"), self.routes())
+        self.assertEqual(self.opened, [])
+
+    def test_open_overrides_dt_open_none(self):
+        os.environ["DT_OPEN"] = "none"
+
+        self.difftate("--open", "browser")
+
+        self.assertIn(("POST", "/api/launch"), self.routes())
+        self.assertEqual(self.opened, ["browser"])
 
 
 if __name__ == "__main__":

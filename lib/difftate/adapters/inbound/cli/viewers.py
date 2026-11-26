@@ -3,7 +3,7 @@ when difftate runs in a terminal; difftate opens no other host).
 
 Each viewer is opened with (url, root): the link to difftate's own page, and
 the repository's top folder. It says whether it could be reached. main.py
-picks the viewers; --open names one of them, or both.
+picks the viewers; --open names one of them, both, or none.
 """
 import os
 import shlex
@@ -13,11 +13,12 @@ import sys
 
 BROWSER = "browser"
 BOTH = "both"
+NONE = "none"  # the reviewer's own viewer: it opens itself, so difftate opens nothing
 
 
 def where_to_open(viewers):
-    """What --open accepts: each viewer's name, then both."""
-    return (*viewers, BOTH)
+    """What --open accepts: each viewer's name, then both and none."""
+    return (*viewers, BOTH, NONE)
 
 
 def open_browser(url, root):
@@ -74,8 +75,10 @@ def open_in_nvim(url, root):
 
 def open_review(viewers, where, url, root):
     """Open the review in the viewer named <where> (one of <viewers>, or both:
-    each of them, the browser first: Neovim may replace this process). A viewer that can't be reached falls back
-    to the browser."""
+    each of them, the browser first: Neovim may replace this process; or none: nothing opens). A viewer that
+    can't be reached falls back to the browser."""
+    if where == NONE:
+        return
     if where == BOTH:
         for name in sorted(viewers, key=lambda name: name != BROWSER):
             viewers[name](url, root)
