@@ -344,6 +344,8 @@ def difftate_main(argv):
         return cli.run_status(argv[1:], wiring())
     if argv[:1] == ["agent"]:
         return cli.run_agent(argv[1:], wiring())
+    if argv[:1] == ["demo"]:
+        return cli.run_demo(argv[1:], wiring())
     return cli.run_difftate(argv, wiring())
 
 

@@ -11,6 +11,7 @@ Usage:
   difftate restart
   difftate agent [<name>]
   difftate log
+  difftate demo                                 a throwaway demo review, to check a viewer against
   difftate status [--json] [--branch <branch>] [--base <branch>] [--cwd <path>]
 
 The watcher serves the review of every checked-out folder that a request names, in the
