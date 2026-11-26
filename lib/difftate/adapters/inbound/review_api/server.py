@@ -375,6 +375,10 @@ class ReviewApi:
         self.token_file = token_file(home)
         self.api_file = os.path.join(home, "api.json")
 
+    def routes(self):
+        """Each route the started API has: (method, the compiled pattern of its path)."""
+        return self.server.RequestHandlerClass.routes
+
     def address(self):
         return ApiAddress(f"http://127.0.0.1:{self.server.server_address[1]}", self.token_file)
 
@@ -690,4 +694,5 @@ def _handler(folders, token, login, default_reviewer, page_url, on_stop):
 
         do_GET = do_POST = do_PATCH = do_PUT = _handle
 
+    Handler.routes = [(method, path) for method, path, _, _ in routes]
     return Handler
