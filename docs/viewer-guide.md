@@ -89,7 +89,7 @@ A thread, as every call returns it:
 
 **Calls.**
 
-- `GET /api/review-path` sends nothing; optional `&view=<view>`. Returns `{"path": null}` when there is no review path (or the file can't be read: that is a warning in `GET /api/review`), else:
+- `GET /api/review-path` sends nothing; optional `&view=<view>`. Returns `{"path": null}` when there is no `review-path.md`, or when it is out of shape (a heading out of shape, a file named twice, a file not in the changeset: then `GET /api/review` has a warning). A `review-path.md` the watcher can't open gets 502 with the reason, and the same warning. Text with no stops in it is a path with `stops: []`, every changed file not on the path. Else:
 
 ```json
 {"path": {
@@ -105,7 +105,7 @@ A thread, as every call returns it:
 
 **Rules.**
 
-- Read it again when you poll: the coding agent may rewrite it at any time. Its file lists (`not_on_the_path`, and the files a view keeps) may lag a file that was just added by up to one second, while the changeset already has it: the next poll has it. No call order is needed. With `"path": null`, show the changed files in the changeset's order.
+- Read it again when you poll: the coding agent may rewrite it at any time. Its file lists (`not_on_the_path`, and the files a view keeps) may lag a file that was just added by up to one second, while the changeset already has it: the next poll has it. No call order is needed. With `"path": null`, or a 502 from this call, show the changed files in the changeset's order and keep the rest of the poll.
 - `ranges` are `[first, last]` new-side lines; `[]` is the whole file. `viewed` is the file's viewed mark (3.4).
 - Show stops in their order and with their numbers, ★ on key stops, side files under their stop, then the skipped files with their reasons, then the files not on the path.
 - In a view, the path is cut down to the view's files, numbers kept. Without `&view=` it is the view viewers show (3.3); `&view=` (empty) is all changes. Ask for the view you display.
@@ -232,7 +232,7 @@ Open your editor in the demo's repository with that `DIFFTATE_HOME`, and check e
 - **The coding agent that replies**: the agent list names one agent, `demo`, whose command does nothing. A submitted run starts and ends with no reply, so its threads become `failed` with a progress note.
 - **Export**: the export lists the five threads and the two commit messages.
 
-What the demo doesn't show: no file is **not on the path** (the review path names every changed file), no general thread, no dismissed thread, no `waitingForRun`, and no agent override. Make them yourself if your viewer shows them: for `waitingForRun`, set the mode to live (`PUT /api/mode`), post a comment, and at once `git checkout main` in the demo repository; it lasts until the demo's run ends, about 2 seconds; a general thread or a dismissed one through the API; a new file in the demo's repository that the review path doesn't name.
+What the demo doesn't show: no file is **not on the path** (the review path names every changed file), no general thread, no dismissed thread, no `waitingForRun`, no warning, and no agent override. Make them yourself if your viewer shows them: for `waitingForRun`, set the mode to live (`PUT /api/mode`), post a comment, and at once `git checkout main` in the demo repository; it lasts until the demo's run ends, about 2 seconds; a general thread or a dismissed one through the API; a new file in the demo's repository that the review path doesn't name; for a warning, name a file twice in the demo's `review-path.md`.
 
 ## 6. Working examples
 
