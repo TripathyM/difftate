@@ -74,7 +74,7 @@ class ViewerGuideTest(unittest.TestCase):
         for capability, text in zip(capabilities, re.split(r"^### 3\.\d .*$", guide, flags=re.MULTILINE)[1:]):
             for part in ("**What it is.**", "**Calls.**", "**Rules.**"):
                 self.assertIn(part, text, capability)
-        self.assertIn("Threads and the review path make a useful first viewer.", guide)
+        self.assertIn("Threads, review mode with submit, and the review path make a useful first viewer.", guide)
         self.assertIn("Run `difftate demo`", guide)
         self.assertIn("**A viewer that starts threads in batched mode offers submit.**", guide)
 
