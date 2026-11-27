@@ -6,7 +6,7 @@ from typing import Optional
 
 from ...changes.ports import ForReadingTheCode
 from ..ports import ForKeepingTheReview, ForRecordingReviewHistory
-from ..review_path import ReviewPath, check_files, parse
+from ..review_path import ReviewPath, parse
 from .list_viewed import list_viewed
 
 
@@ -22,16 +22,17 @@ def read_review_path(store: ForKeepingTheReview, code: ForReadingTheCode,
     The text is read each time, so a rewrite shows on the next call. Raises
     CouldNotRead when the file or the changeset can't be read, and
     BadReviewPath when the file can't be read as a review path: a heading out
-    of shape, a file named twice, a file not in the changeset."""
+    of shape, a file named twice. A file it names that is not in the changeset
+    is marked so (in_changeset) on its stop, side file or skipped file, and is
+    on the path in every view: the path is out of date, not broken."""
     text = code.review_path_text()
     if text is None:
         return None
-    path = parse(text)
     changed = list(code.diff_hashes())
-    check_files(path, changed)
+    path = parse(text).against(changed)
     viewed = list_viewed(store, code, history)
     path = path.with_viewed(viewed)
     if view:
         changed = list(code.changeset(view).versions)  # the files of the view, in the changeset's order
-        path = path.cut_to(changed)
+        path = path.cut_to([*changed, *path.out_of_date()])  # a file with no changes is in no view: kept in each
     return path.with_changed_files(changed)

@@ -89,16 +89,16 @@ A thread, as every call returns it:
 
 **Calls.**
 
-- `GET /api/review-path` sends nothing; optional `&view=<view>`. Returns `{"path": null}` when there is no `review-path.md`, or when it is out of shape (a heading out of shape, a file named twice, a file not in the changeset: then `GET /api/review` has a warning). A `review-path.md` the watcher can't open gets 502 with the reason, and the same warning. Text with no stops in it is a path with `stops: []`, every changed file not on the path. Else:
+- `GET /api/review-path` sends nothing; optional `&view=<view>`. Returns `{"path": null}` when there is no `review-path.md`, or when it is out of shape (a heading out of shape, a file named twice: then `GET /api/review` has a warning). A path that names a file with no changes is **out of date**, not out of shape: it is returned, that stop, side file or skipped file has `"in_changeset": false`, and `GET /api/review` has a warning naming the files. A `review-path.md` the watcher can't open gets 502 with the reason, and the same warning. Text with no stops in it is a path with `stops: []`, every changed file not on the path. Else:
 
 ```json
 {"path": {
-  "stops": [{"number": "1", "file": "greet.py", "key": true, "viewed": false,
+  "stops": [{"number": "1", "file": "greet.py", "key": true, "viewed": false, "in_changeset": true,
              "questions": [{"question": "What does this change?", "answer": "…"}],
              "ranges": [[4, 6]], "specs": [{"file": "test_greet.py", "name": "…"}], "see": ["The fallback"],
-             "side_files": [{"file": "languages.py", "viewed": false, "ranges": [], "text": "…"}],
+             "side_files": [{"file": "languages.py", "viewed": false, "ranges": [], "text": "…", "in_changeset": true}],
              "children": [{"number": "1.1", "file": "test_greet.py", "…": "…"}]}],
-  "skipped": [{"file": "greetings.lock", "reason": "generated"}],
+  "skipped": [{"file": "greetings.lock", "reason": "generated", "in_changeset": false}],
   "not_on_the_path": ["other.py"],
   "sections": [{"name": "The fallback", "text": "…"}]}}
 ```
@@ -108,6 +108,7 @@ A thread, as every call returns it:
 - Read it again when you poll: the coding agent may rewrite it at any time. Its file lists (`not_on_the_path`, and the files a view keeps) may lag a file that was just added by up to one second, while the changeset already has it: the next poll has it. No call order is needed. With `"path": null`, or a 502 from this call, show the changed files in the changeset's order and keep the rest of the poll.
 - `ranges` are `[first, last]` new-side lines; `[]` is the whole file. `viewed` is the file's viewed mark (3.4).
 - Show stops in their order and with their numbers, ★ on key stops, side files under their stop, then the skipped files with their reasons, then the files not on the path.
+- Show an entry with `"in_changeset": false` marked (red, say) as having no changes, with nothing to open: the reviewer can see the path needs rewriting. It is on the path in every view.
 - In a view, the path is cut down to the view's files, numbers kept. Without `&view=` it is the view viewers show (3.3); `&view=` (empty) is all changes. Ask for the view you display.
 - The viewer reads `review-path.md` through this call only, and never writes it: the coding agent does.
 

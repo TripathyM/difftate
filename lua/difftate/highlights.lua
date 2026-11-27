@@ -9,6 +9,8 @@ local LINKS = {
   DifftateCode = "Comment", DifftateSign = "DiagnosticSignInfo", DifftateNumber = "DiagnosticInfo",
   -- The folder a row of the changed files picker ends with, after the file name
   DifftateFolder = "Comment",
+  -- A row of the review path whose file has no changes: the path is out of date
+  DifftateNoChanges = "DiagnosticError",
   -- The tint of added and changed lines
   DifftateAdd = "DiffAdd",
 }

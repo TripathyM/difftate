@@ -9,6 +9,19 @@ local M = {}
 
 local MARK = { [true] = "✓ ", [false] = "  " }
 
+-- A file the path names that has no changes (in_changeset false): the path is out of date. Its row
+-- says so and is coloured DifftateNoChanges; the text matches review_path.js
+local NO_CHANGES = " — no changes"
+local function gone(entry)
+  return entry.in_changeset == false
+end
+local function no_changes(entry)
+  return gone(entry) and NO_CHANGES or ""
+end
+local function hl_of(entry)
+  return gone(entry) and "DifftateNoChanges" or nil
+end
+
 -- <path>'s folder, which a row ends with (the picker dims it); nil at the top of the repository
 local function folder_of(path)
   local _, folder = nav.name_and_folder(path)
@@ -84,7 +97,7 @@ end
 -- after a long path they were cut off to a word or two.
 local function stop_label(stop)
   local name = nav.name_and_folder(stop.file)
-  return nav.with_folder(("%s %s%s"):format(stop.number, name, stop.key and " ★" or ""), stop.file)
+  return nav.with_folder(("%s %s%s%s"):format(stop.number, name, stop.key and " ★" or "", no_changes(stop)), stop.file)
 end
 
 --- The entries of the changed files picker ({ { text, folder, value } }, value a file of
@@ -114,7 +127,8 @@ function M.entries(written, files, viewed)
   -- <stop>'s rows, then its side files' and children's below it, <prefix> being the drawing so far
   local function add_stop(stop, prefix, connector)
     table.insert(entries, { text = row(stop.viewed, prefix .. connector, stop_label(stop)),
-      folder = folder_of(stop.file), value = value_of(stop.file, stop.ranges), preview = stop_preview(stop, sections) })
+      folder = folder_of(stop.file), value = value_of(stop.file, stop.ranges), preview = stop_preview(stop, sections),
+      hl = hl_of(stop) })
     local below = prefix .. (connector == "├─ " and "│  " or connector == "└─ " and "   " or "")
     local items = {}
     for _, side in ipairs(stop.side_files or {}) do
@@ -127,8 +141,9 @@ function M.entries(written, files, viewed)
       local last = i == #items and "└─ " or "├─ "
       if item.side then
         table.insert(entries, { text = row(item.side.viewed, below .. last,
-            nav.with_folder((nav.name_and_folder(item.side.file)), item.side.file)), folder = folder_of(item.side.file),
-          value = value_of(item.side.file, item.side.ranges), preview = side_preview(item.side, stop) })
+            nav.with_folder((nav.name_and_folder(item.side.file)) .. no_changes(item.side), item.side.file)),
+          folder = folder_of(item.side.file), value = value_of(item.side.file, item.side.ranges),
+          preview = side_preview(item.side, stop), hl = hl_of(item.side) })
       else
         add_stop(item.child, below, last)
       end
@@ -145,17 +160,18 @@ function M.entries(written, files, viewed)
     table.insert(entries, { text = heading })
     for i, item in ipairs(items) do
       table.insert(entries, { text = row(item.viewed, i == #items and "└─ " or "├─ ", text_of(item)),
-        folder = folder_of(item.value.path), value = item.value, preview = item.preview })
+        folder = folder_of(item.value.path), value = item.value, preview = item.preview, hl = item.hl })
     end
   end
   local skipped = {}
   for _, one in ipairs(written.skipped or {}) do
-    table.insert(skipped, { value = value_of(one.file), one = one,
+    table.insert(skipped, { value = value_of(one.file), one = one, hl = hl_of(one),
       preview = ("# %s\nSkipped: %s"):format(one.file, one.reason ~= "" and one.reason or "no reason given") })
   end
   add_group("Skipped", skipped, function(item)
     local name = nav.name_and_folder(item.one.file)
-    return nav.with_folder(name .. (item.one.reason ~= "" and (" — " .. item.one.reason) or ""), item.one.file)
+    return nav.with_folder(name .. (item.one.reason ~= "" and (" — " .. item.one.reason) or "") .. no_changes(item.one),
+      item.one.file)
   end)
 
   local off = {}

@@ -62,11 +62,13 @@ class Section:
 class SideFile:
     """A file read with its stop: no number, no questions. <ranges>: the (first,
     last) lines of the new file it names, none for the whole file; <text>: what
-    the agent says it is for."""
+    the agent says it is for. <in_changeset>: False when the file has no
+    changes: the path is out of date."""
     file: str
     viewed: bool = False
     ranges: Tuple[Tuple[int, int], ...] = ()
     text: str = ""
+    in_changeset: bool = True
 
 
 @dataclass(frozen=True)
@@ -75,7 +77,8 @@ class Stop:
     side files and the stops under it, and the reviewer's viewed mark for the
     file. <key>: the agent marked it ★. <ranges>: the (first, last) lines of the
     new file the stop is about, none for the whole file; <specs>: the tests that
-    show its behaviour; <see>: the names of the path sections its answers point to."""
+    show its behaviour; <see>: the names of the path sections its answers point to.
+    <in_changeset>: False when its file has no changes: the path is out of date."""
     number: str
     file: str
     questions: Tuple[Question, ...]
@@ -86,6 +89,7 @@ class Stop:
     ranges: Tuple[Tuple[int, int], ...] = ()
     specs: Tuple[Spec, ...] = ()
     see: Tuple[str, ...] = ()
+    in_changeset: bool = True
 
     def walk(self) -> Iterator["Stop"]:
         """This stop, then the stops under it, in reading order."""
@@ -97,6 +101,11 @@ class Stop:
         return replace(self, viewed=self.file in viewed,
                        side_files=tuple(replace(f, viewed=f.file in viewed) for f in self.side_files),
                        children=tuple(c.with_viewed(viewed) for c in self.children))
+
+    def against(self, changed: Collection[str]) -> "Stop":
+        return replace(self, in_changeset=self.file in changed,
+                       side_files=tuple(replace(f, in_changeset=f.file in changed) for f in self.side_files),
+                       children=tuple(c.against(changed) for c in self.children))
 
     def cut_to(self, kept: Collection[str]) -> Tuple["Stop", ...]:
         """What is left of this stop when only the files of <kept> are shown:
@@ -118,9 +127,11 @@ class Stop:
 
 @dataclass(frozen=True)
 class Skipped:
-    """A changed file the coding agent left out on purpose, with its reason."""
+    """A changed file the coding agent left out on purpose, with its reason.
+    <in_changeset>: False when the file has no changes: the path is out of date."""
     file: str
     reason: str
+    in_changeset: bool = True
 
 
 @dataclass(frozen=True)
@@ -149,6 +160,17 @@ class ReviewPath:
         of the files the path does not show (with_changed_files)."""
         return replace(self, stops=tuple(c for s in self.stops for c in s.cut_to(kept)),
                        skipped=tuple(s for s in self.skipped if s.file in kept))
+
+    def against(self, changed: Collection[str]) -> "ReviewPath":
+        """The same path, each stop, side file and skipped file marked not in
+        the changeset when its file is not one of <changed>."""
+        return replace(self, stops=tuple(s.against(changed) for s in self.stops),
+                       skipped=tuple(replace(s, in_changeset=s.file in changed) for s in self.skipped))
+
+    def out_of_date(self) -> Tuple[str, ...]:
+        """The files the path names that are not in the changeset, in path order."""
+        return tuple([f.file for s in self.all_stops() for f in (s, *s.side_files) if not f.in_changeset]
+                     + [s.file for s in self.skipped if not s.in_changeset])
 
     def with_changed_files(self, changed: Collection[str]) -> "ReviewPath":
         """The same path, with the files of <changed> (the changeset's, in its
@@ -211,14 +233,6 @@ def _headings(text: str) -> List[Tuple[Optional[str], str]]:
         heading = line if not fence and re.match(r"^#{1,6} ", line) else None
         out.append((heading, line))
     return out
-
-
-def check_files(path: ReviewPath, changed: Collection[str]) -> None:
-    """Raises BadReviewPath when a file the path names (a stop, a side file or a
-    skipped file) is not one of <changed>, the changeset's files."""
-    for file in [f for s in path.stops for f in s.files()] + [s.file for s in path.skipped]:
-        if file not in changed:
-            raise BadReviewPath(f"`{file}` is named, but is not in the changeset")
 
 
 def parse(text: str) -> ReviewPath:

@@ -2090,14 +2090,14 @@ class ThePickers(ReviewOfTwoFiles, unittest.TestCase):
         nvim.lua("T.notes = {}; vim.notify = function(m, level, o) table.insert(T.notes, { m, level, o and o.title }) end")
         before = nvim.lua("return T.snapshot()")
         self.a_review_path("## 1 `util.py`\n\n### What does shout do?\nUpper-cases.\n\n"
-                           "## 2 `gone.py`\n\n### Why?\nBecause.\n")
+                           "## 2 `util.py`\n\n### Why?\nBecause.\n")
 
-        wait_for("the warning", lambda: any("gone.py" in n[0] for n in nvim.lua("return T.notes")))
+        wait_for("the warning", lambda: any("util.py" in n[0] for n in nvim.lua("return T.notes")))
         time.sleep(1)  # more polls, each still carrying it
         notes = [n for n in nvim.lua("return T.notes") if "review-path.md" in n[0]]
         self.assertEqual(len(notes), 1, f"shown once: {notes}")
         self.assertEqual((notes[0][1], notes[0][2]), (3, "difftate"), "at warning level, titled difftate")
-        self.assertIn("not in the changeset", notes[0][0])
+        self.assertIn("twice", notes[0][0])
         nvim.keys("<leader>rf")
         wait_for("the picker", lambda: nvim.menu())
         self.assertEqual(nvim.menu()["lines"], ["  app.py  +1 −1", "  util.py  +6 −0"], "the changeset's order")

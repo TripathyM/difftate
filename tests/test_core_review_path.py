@@ -260,19 +260,6 @@ class ABrokenReviewPathIsAProblemAndNoPath(unittest.TestCase):
         self.assertIsNone(self.problem(A_PATH))
         self.assertIsNone(self.problem(None))
 
-    def test_a_stop_naming_a_file_not_in_the_changeset_is_a_problem_naming_it(self):
-        text = "## 1 `src/cards/Card.tsx`\n\n### Why?\nBecause.\n\n## 2 `src/gone.ts`\n\n### Why?\nBecause.\n"
-
-        self.assertIn("src/gone.ts", self.problem(text))
-        self.assertIn("not in the changeset", self.problem(text))
-        with self.assertRaises(BadReviewPath):
-            read_review_path(self.store, self.code(text), self.history)
-
-    def test_a_skipped_file_not_in_the_changeset_is_a_problem_too(self):
-        text = "## 1 `src/cards/Card.tsx`\n\n### Why?\nBecause.\n\n## Skipped\n- `yarn.lock` — lockfile only\n"
-
-        self.assertIn("yarn.lock", self.problem(text))
-
     def test_a_heading_out_of_shape_is_a_problem_naming_its_line(self):
         for heading in ("## 1 src/cards/Card.tsx", "## One `src/cards/Card.tsx`", "## 1 `src/cards/Card.tsx` ★★",
                         "## Sections: State flow", "## Skippd"):
@@ -297,11 +284,6 @@ class ABrokenReviewPathIsAProblemAndNoPath(unittest.TestCase):
 
         self.assertIn("src/cards/Card.tsx", self.problem(text))
         self.assertIn("twice", self.problem(text))
-
-    def test_a_side_file_not_in_the_changeset_is_a_problem(self):
-        text = "## 1 `app.py`\n\n### Why?\nBecause.\n\n### Side file: `gone.css`\n"
-
-        self.assertIn("gone.css", self.problem(text, {"app.py": "x\n"}))
 
     def test_a_file_that_is_a_stop_and_a_side_file_is_named_twice(self):
         text = "## 1 `app.py`\n\n### Why?\nBecause.\n\n### Side file: `app.py`\n"
@@ -331,6 +313,49 @@ class ABrokenReviewPathIsAProblemAndNoPath(unittest.TestCase):
         self.problem("## 1 `src/gone.ts`\n")
 
         self.assertEqual(self.store.load(), [])
+
+
+class AnOutOfDateReviewPath(unittest.TestCase):
+    """review-path.md naming a file that has no changes (a stop, a side file or
+    a skipped file): the path is out of date, not broken. It is read, each such
+    entry marked not in the changeset, and review_path_problem names the files
+    for a warning asking for the path to be rewritten."""
+
+    def setUp(self):
+        self.store = MemoryStore()
+        self.history = FakeHistory()
+
+    def code(self, text, files=None):
+        return FakeCode(files or CHANGED, base={}, review_path=text)
+
+    def read(self, text, files=None):
+        return read_review_path(self.store, self.code(text, files), self.history)
+
+    def test_a_stop_whose_file_has_no_changes_is_on_the_path_marked_not_in_the_changeset(self):
+        path = self.read("## 1 `src/cards/Card.tsx`\n\n### Why?\nBecause.\n\n## 2 `src/gone.ts`\n\n### Why?\nBecause.\n")
+
+        self.assertEqual([(s.file, s.in_changeset) for s in path.all_stops()],
+                         [("src/cards/Card.tsx", True), ("src/gone.ts", False)])
+        self.assertEqual(path.stops[1].questions, (Question("Why?", "Because."),))
+
+    def test_the_problem_names_every_file_with_no_changes_first_and_asks_for_a_rewrite(self):
+        text = ("## 1 `src/cards/Card.tsx`\n\n### Why?\nBecause.\n\n### Side file: `gone.css`\n\n"
+                "## 2 `src/gone.ts`\n\n### Why?\nBecause.\n\n## Skipped\n- `yarn.lock` — lockfile only\n")
+
+        self.assertEqual(review_path_problem(self.code(text)),
+                         "review-path.md is out of date: `gone.css`, `src/gone.ts`, `yarn.lock` have no changes."
+                         " Ask the agent to rewrite it")
+
+    def test_one_file_has_no_changes(self):
+        text = "## 1 `src/cards/Card.tsx`\n\n### Why?\nBecause.\n\n### Side file: `gone.css`\n"
+
+        self.assertEqual(review_path_problem(self.code(text)),
+                         "review-path.md is out of date: `gone.css` has no changes. Ask the agent to rewrite it")
+
+    def test_a_path_out_of_shape_is_still_not_used(self):
+        text = "## 1 `src/gone.ts`\n\n### Why?\nB.\n\n## 2 `src/gone.ts`\n\n### Why?\nB.\n"
+
+        self.assertTrue(review_path_problem(self.code(text)).startswith("review-path.md is not used"))
 
 
 class TheReviewPathInAView(unittest.TestCase):
@@ -410,7 +435,19 @@ class TheReviewPathInAView(unittest.TestCase):
 
     def test_a_broken_file_is_broken_in_a_view_too(self):
         with self.assertRaises(BadReviewPath):
-            self.read(["a.py"], text="## 1 `gone.py`\n\n### Why?\nBecause.\n")
+            self.read(["a.py"], text="## 1 `a.py`\n\n### Why?\nBecause.\n\n## 2 `a.py`\n\n### Why?\nBecause.\n")
+
+    def test_a_file_with_no_changes_is_in_no_view_but_stays_on_the_path_in_every_view(self):
+        text = ("## 1 `a.py`\n\n### A?\nx\n\n### Side file: `gone.css`\n\n## 2 `gone.py`\n\n### Why?\nx\n\n"
+                "## 3 `c.py`\n\n### C?\nx\n\n## Skipped\n- `gone.lock` — lockfile only\n")
+
+        path = self.read(["a.py"], text=text)
+
+        self.assertEqual([(s.number, s.file, s.in_changeset) for s in path.stops],
+                         [("1", "a.py", True), ("2", "gone.py", False)])
+        self.assertEqual(path.stops[0].side_files, (SideFile("gone.css", in_changeset=False),))
+        self.assertEqual(path.skipped, (Skipped("gone.lock", "lockfile only", in_changeset=False),))
+        self.assertEqual(path.not_on_the_path, ())
 
     def test_a_name_that_is_no_view_is_not_found(self):
         code = FakeCode(self.ALL, base={}, review_path=self.TEXT)

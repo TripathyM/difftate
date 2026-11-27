@@ -5919,6 +5919,7 @@
       "file": "app.py",
       "key": true,
       "viewed": false,
+      "in_changeset": true,
       "questions": [
        {
         "question": "What is new?",
@@ -5954,7 +5955,8 @@
           2
          ]
         ],
-        "text": "What it says."
+        "text": "What it says.",
+        "in_changeset": true
        }
       ],
       "children": [
@@ -5963,6 +5965,7 @@
         "file": "lib.py",
         "key": false,
         "viewed": false,
+        "in_changeset": true,
         "questions": [
          {
           "question": "Why?",
@@ -5981,7 +5984,8 @@
     "skipped": [
      {
       "file": "long.py",
-      "reason": "numbers only"
+      "reason": "numbers only",
+      "in_changeset": true
      }
     ],
     "not_on_the_path": [

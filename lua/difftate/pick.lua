@@ -12,13 +12,14 @@ local function preview(ctx)
   return shown
 end
 
--- How Snacks draws a row: its text, the folder it ends with (entry.folder) dimmed
+-- How Snacks draws a row: its text (in entry.hl, if it has one), the folder it ends with
+-- (entry.folder) dimmed
 local function format(item)
   local text, folder = item.text, item.folder
   if folder and #text > #folder and text:sub(-#folder) == folder then
-    return { { text:sub(1, #text - #folder) }, { folder, "DifftateFolder" } }
+    return { { text:sub(1, #text - #folder), item.hl }, { folder, "DifftateFolder" } }
   end
-  return { { text } }
+  return { { text, item.hl } }
 end
 
 local function snacks_picker()
@@ -34,7 +35,7 @@ end
 --- it does nothing. <title> names the picker. <opts>: `current`, a function of an entry's value that is
 --- true for the row the cursor starts on (Snacks only), and an entry's `preview`, markdown shown beside
 --- the rows when Snacks is there (vim.ui.select shows rows only). An entry's `folder`, the end of its
---- text, is dimmed (Snacks only).
+--- text, is dimmed, and its `hl` colours the rest (Snacks only).
 function M.choose(entries, title, on_choice, opts)
   opts = opts or {}
   local picker = snacks_picker()
@@ -42,7 +43,7 @@ function M.choose(entries, title, on_choice, opts)
     local items, previewed, current = {}, false, nil
     for i, entry in ipairs(entries) do
       previewed = previewed or entry.preview ~= nil
-      items[i] = { idx = i, text = entry.text, folder = entry.folder, value = entry.value,
+      items[i] = { idx = i, text = entry.text, folder = entry.folder, value = entry.value, hl = entry.hl,
         preview = { text = entry.preview or "", ft = "markdown", loc = false } }
       if not current and entry.value ~= nil and opts.current and opts.current(entry.value) then
         current = i
@@ -115,7 +116,7 @@ function M.sidebar(entries, title, on_choose, opts)
   local function items_of(list)
     local items = {}
     for i, entry in ipairs(list) do
-      items[i] = { idx = i, text = entry.text, folder = entry.folder, value = entry.value }
+      items[i] = { idx = i, text = entry.text, folder = entry.folder, value = entry.value, hl = entry.hl }
     end
     return items
   end
