@@ -51,13 +51,15 @@ watcher serves. Naming another base switches the folder's review to it.
                                         (review-path.md, read at each request): {"path": null}
                                         without one, and when the file is broken (that is a warning
                                         in /api/review), else {"path": {"stops": [{"number" ("1"),
-                                        "file", "key" (★), "viewed", "questions": [{"question",
+                                        "file", "key" (★), "viewed", "in_changeset" (false: the file
+                                        has no changes, the path is out of date: a warning in
+                                        /api/review), "questions": [{"question",
                                         "answer"}], "ranges": [[first, last]] (none: the whole
                                         file), "specs": [{"file", "name"}], "see": [names of the
                                         path sections its answers point to], "side_files":
-                                        [{"file", "viewed", "ranges", "text"}],
+                                        [{"file", "viewed", "ranges", "text", "in_changeset"}],
                                         "children": [stops, numbered "1.1"]}] in reading order,
-                                        "skipped": [{"file", "reason"}], "not_on_the_path": [file]:
+                                        "skipped": [{"file", "reason", "in_changeset"}], "not_on_the_path": [file]:
                                         the changed files it names nowhere, "sections": [{"name",
                                         "text"}]: the path sections}}. In a view (default: the one
                                         viewers show) the path is cut down to the view's files,

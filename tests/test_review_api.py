@@ -1003,16 +1003,16 @@ class TheReviewPathRoute(ServedOnFakes, unittest.TestCase):
         self.ask("PUT", "/api/viewed", {"file": "lib.css"})
 
         self.assertEqual(self.ask("GET", "/api/review-path"), (200, {"path": {"stops": [
-            {"number": "1", "file": "lib.py", "key": True, "viewed": False, "questions": [
+            {"number": "1", "file": "lib.py", "key": True, "viewed": False, "in_changeset": True, "questions": [
                 {"question": "What is new?", "answer": "A helper."},
                 {"question": "Why here?", "answer": "Both callers live here."}],
-             "side_files": [{"file": "lib.css", "viewed": True, "ranges": [], "text": "Style."}],
+             "side_files": [{"file": "lib.css", "viewed": True, "ranges": [], "text": "Style.", "in_changeset": True}],
              "ranges": [], "specs": [], "see": [],
              "children": [
-                 {"number": "1.1", "file": "app.py", "key": False, "viewed": True, "questions": [
+                 {"number": "1.1", "file": "app.py", "key": False, "viewed": True, "in_changeset": True, "questions": [
                      {"question": "Who calls it?", "answer": "main."}], "side_files": [], "children": [],
                   "ranges": [], "specs": [], "see": []}]},
-        ], "skipped": [{"file": "uv.lock", "reason": "lockfile only"}], "not_on_the_path": ["notes.md"],
+        ], "skipped": [{"file": "uv.lock", "reason": "lockfile only", "in_changeset": True}], "not_on_the_path": ["notes.md"],
             "sections": []}}))
 
     def test_it_answers_ranges_specs_the_sections_a_stop_points_to_and_the_sections_text(self):
@@ -1027,7 +1027,8 @@ class TheReviewPathRoute(ServedOnFakes, unittest.TestCase):
         self.assertEqual((stop["ranges"], stop["specs"], stop["see"]), (
             [[3, 9], [20, 20]], [{"file": "lib.test.py", "name": "adds"}, {"file": "edge.test.py", "name": ""}],
             ["State flow"]))
-        self.assertEqual(stop["side_files"], [{"file": "lib.css", "viewed": False, "ranges": [[2, 4]], "text": "Style."}])
+        self.assertEqual(stop["side_files"], [{"file": "lib.css", "viewed": False, "ranges": [[2, 4]], "text": "Style.",
+                                               "in_changeset": True}])
         self.assertEqual(path["sections"], [{"name": "State flow", "text": "It starts idle.\n\n### Then\nIt loads."}])
 
     def a_view_code(self):
@@ -1075,7 +1076,7 @@ class TheReviewPathRoute(ServedOnFakes, unittest.TestCase):
 
         self.assertEqual([s["file"] for s in self.ask("GET", "/api/review-path")[1]["path"]["stops"]], ["app.py"])
 
-    BROKEN = "## 1 `app.py`\n\n### Why?\nBecause.\n\n## 2 `gone.py`\n\n### Why?\nBecause.\n"
+    BROKEN = "## 1 `app.py`\n\n### Why?\nBecause.\n\n## 2 `app.py`\n\n### Why?\nBecause.\n"
 
     def test_a_broken_file_is_no_path_and_a_warning_about_the_review_until_it_is_fixed(self):
         code = FakeCode({"app.py": "x = 1\n"}, base={}, review_path=self.BROKEN)
@@ -1084,7 +1085,7 @@ class TheReviewPathRoute(ServedOnFakes, unittest.TestCase):
         self.assertEqual(self.ask("GET", "/api/review-path"), (200, {"path": None}))
         warnings = self.ask("GET", "/api/review")[1]["warnings"]
         self.assertEqual(len(warnings), 1)
-        self.assertIn("gone.py", warnings[0]["text"])
+        self.assertIn("twice", warnings[0]["text"])
         self.assertIn("review-path.md", warnings[0]["text"])
         self.assertEqual(self.ask("GET", "/api/review")[1]["warnings"][0]["id"], warnings[0]["id"],
                          "the same id while it stays broken the same way: a viewer shows it once")
