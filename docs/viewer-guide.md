@@ -76,7 +76,8 @@ A thread, as every call returns it:
 
 **Rules.**
 
-- Place a thread on its anchor's side and lines in the view you show. Place it on a line only when your view shows that file (it is in the changeset's `versions`) and that line; show every other thread, and each `inView: false` one, in a list. Show an outdated thread with its own `code`, marked outdated.
+- Place a thread on its anchor's side and lines in the view you show. Place it on a line only when your view shows that file (it is in the changeset's `versions`) and that line; show every other thread, and each `inView: false` one, in a list.
+- An outdated thread keeps the lines it was written on, and they may now hold other code. Show it with its own `code`, marked outdated, either only in the list (the browser viewer) or on its kept lines (the Neovim viewer, under "code when written"). Never show it as if it were about the code now on those lines.
 - A viewer writes comments only (`kind` left out): the reviewer answers a thread, or a reply in it, by adding a comment. Replies come from the coding agent, notes from difftate.
 - Show the thread state: it tells the reviewer whether the coding agent has the thread (`queued`, `working`), answered (`replied`) or failed (`failed`: its run ended with no reply; a new comment sends it again).
 - Resolving or dismissing a thread is the reviewer's. Offer reopening (`open`) too.
