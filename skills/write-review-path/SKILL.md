@@ -34,7 +34,8 @@ Terms (see `GLOSSARY.md` if present): **stop** (a numbered file), **key stop** (
    - Start where the change begins (the entry point or the contract), then follow it inward; each stop assumes only the stops before it.
    - A file that exists to serve another (its style, its test helpers, its types) is a side file under that stop. A part of a stop (a view's panel and its tips) is a nested stop.
    - Mark ★ on the few stops where the reviewer should slow down: a decision, a risk, the heart of the change.
-   - Per stop, write the questions the reviewer would ask on opening the file (what does it do, how is it built, why this way), each with a short, concrete answer about intent, not location: name functions and components, never line numbers. Name the specs that show its behaviour.
+   - Per stop, write one to three questions the reviewer asks on opening the file. The first asks what the user or the caller gets from it; the next ones, how it is built or why this way. Each answer is about intent, not location: name functions and components, never line numbers. Keep the path terse: it is a reading guide, and the diff, the tests and the commit bodies hold the rest.
+   - Give a stop a spec only where the test is the clearest statement of what the file does, usually on a key stop. Most stops have none.
    - Put material that spans files (a state flow, an event list) in a path section, and point to it from a stop's answer by its name: `see "State flow"`.
 
 5. **Account for every changed file.** Each changed file, including new files, appears exactly once, as a stop, a side file or in Skipped with a reason (`lockfile only`, `generated`, `rename with no change`). Never name a file that is not in the changeset.
@@ -50,12 +51,12 @@ The file is markdown a person can read as it is, and a program reads by these ru
 | Part | Form | Rules |
 |---|---|---|
 | Frontmatter | `---`, `branch: <name>`, `createdAt: <UTC time>`, `---` | First lines of the file. `createdAt` is `YYYY-MM-DDTHH:MM:SSZ`; get it with `date -u +%Y-%m-%dT%H:%M:%SZ`. |
-| Preamble | Any text before the first `##` | Free text for a person. With no ticket, its first line is exactly `Written without a ticket: from the code only.` |
+| Preamble | Any text before the first `##` | One or two sentences: the ticket and what the change does for the user. Branch history (rebases, commit hashes, review threads) stays in git. With no ticket, its first line is exactly `Written without a ticket: from the code only.` |
 | Stop | ``## 2 `path/to/file.ts` ★`` | See below. |
 | Nested stop | ``## 2.1 `path/to/file.ts` `` | Dotted number; the parent (`2`) must come first. Document order is reading order. |
-| Spec | ``Spec: `path/to/file.test.ts` "test name"`` | A line directly under a stop's heading, before its first `###`. One line per spec. |
+| Spec | ``Spec: `path/to/file.test.ts` "test name"`` | A line directly under a stop's heading, before its first `###`. Optional; at most one per stop. |
 | Question | `### Is the data good enough?` | Any `###` that is not a side file. The answer is the text under it, up to the next heading. |
-| Side file | ``### Side file: `path/to/file.css` `` | Optional text under it says what it is for. No number, no questions. |
+| Side file | ``### Side file: `path/to/file.css` `` | Optional text under it: a short phrase saying what it is for (`the 10 tips`, `moved tests, plus the error case`). No number, no questions. |
 | Path section | `## Section: State flow` | After the last stop. Free text, any `###` inside it is plain text. |
 | Skipped | `## Skipped` | Last. One line each: ``- `path/to/file` — reason``. |
 
@@ -67,7 +68,7 @@ The file is markdown a person can read as it is, and a program reads by these ru
 
 **One file, once.** A file is one stop, one side file, or one Skipped line; never two. Side files take no line ranges either.
 
-**Questions** are plain text. Write the answer as one to four sentences, concrete, naming real things in the code. A stop has at least one question.
+**Questions** are plain text. A stop has one to three. Write each answer in one or two short lines, concrete, naming real things in the code; fragments are fine (`Card at 1.6s. Data limit 5s.`). A question earns its place when the reviewer would ask it while reading; a decision made along the way belongs in the commit body.
 
 **Pointers.** A pointer from a stop to a path section is plain text: `see "State flow"`. Spell the name as in its `## Section:` heading.
 
@@ -81,44 +82,42 @@ branch: feature/loading-flow
 createdAt: 2026-11-22T06:10:00Z
 ---
 
-Review path for "Show a loading flow while the trails download" (PLAT-212).
+PLAT-212: a loading flow (a quiz, then tips) while the trail downloads.
 
 ## 1 `src/loading/LoadingView.tsx` ★
 Spec: `src/loading/LoadingView.test.tsx` "shows the quiz after two seconds"
 
-### What does the view do?
-It is the screen shown while `useTrailData` fetches. It starts on the spinner, moves to the quiz after two seconds, and to the tips if the quiz is skipped. See "State flow".
+### What does the user see while the trail downloads?
+The spinner, then the quiz after 2s, then the tips if the quiz is skipped. See "State flow".
 
 ### Is the fetch cancelled when the user leaves?
-Yes. The hook returns an abort function and the view calls it in its cleanup, so a slow download never updates an unmounted view.
+Yes. The view calls the hook's `cancel` in its cleanup.
 
 ### Side file: `src/loading/loading.css`
-Layout for the three states. Nothing to review beyond the class names.
+Layout for the three states.
 
 ## 1.1 `src/loading/Quiz.tsx`
-Spec: `src/loading/Quiz.test.tsx` "scores one point per right answer"
 
-### Is the question list good enough for a quiz?
-Yes, if the trail has at least three landmarks. With fewer, `buildQuiz` returns nothing and the view goes straight to the tips.
+### When is there a quiz?
+When the trail has 3 or more landmarks. Fewer: `buildQuiz` returns nothing, and the tips show.
 
 ## 1.2 `src/loading/Tips.tsx`
 
 ### Where do the tips come from?
-A fixed list in `tips.json`, picked by the trail's difficulty. No network call.
+`tips.json`, picked by the trail's difficulty. No network call.
 
 ### Side file: `src/loading/tips.json`
-The tip texts. Read for wording only.
+The tip texts.
 
 ## 2 `src/data/useTrailData.ts`
 
 ### How is the fetch built?
-One request, retried twice with a 500 ms pause. It returns `{ status, trail, cancel }`, where `status` is `idle`, `loading`, `ready` or `failed`.
+One request, retried twice, 500 ms apart. Returns `{ status, trail, cancel }`.
 
 ## 3 `src/analytics/loadingEvents.ts`
-Spec: `src/analytics/loadingEvents.test.ts` "sends one event per state change"
 
 ### What do we record?
-One event each time the view changes state, with the trail id and the time spent. No personal data.
+One event per state change: the trail id and the time spent. No personal data.
 
 ## Section: State flow
 The view starts on `spinner`. `ready` before two seconds goes straight to the trail. After two seconds it moves to `quiz`. `quiz` ends on a skip or on the last answer, and then shows `tips` until `ready`. `failed` shows the retry button from any state.
