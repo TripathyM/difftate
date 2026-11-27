@@ -205,11 +205,15 @@ A thread, as every call returns it:
 
 ## 4. Start here
 
-Threads and the review path make a useful first viewer. Build `GET /api/review`, then the changeset (`GET /api/changeset`, 3.3: the diff your viewer shows, and each anchor's `version`), then threads (list, place, start one on a line, comment, resolve), then the review path, and check them against the demo review (section 5) before you add more.
+Threads, review mode with submit, and the review path make a useful first viewer. Build `GET /api/review`, then the changeset (`GET /api/changeset`, 3.3: the diff your viewer shows, and each anchor's `version`), then threads (list, place, start one on a line, comment, resolve), then the review mode and submit (3.5: the demo review is batched, and without submit its comments never reach the coding agent), then the review path. Check them against the demo review (section 5) before you add more.
+
+When the reviewer named no capabilities, build the rest of section 3 after that, in its order. Leave one out only when the reviewer says so.
 
 ## 5. Checking your viewer
 
 Run `difftate demo`. It makes a throwaway **demo review**, with one example of each capability, in a folder of its own in the temporary folder: a git repository, a difftate folder and a watcher of its own. The reviewer's own `~/.difftate` is never read or written. It prints the folder, the line that opens an editor on it with its difftate folder (`DIFFTATE_HOME=…`), and the line that removes it. Running it again makes a fresh one.
+
+An editor that runs as one long-lived process (a JetBrains IDE, VS Code) gets `DIFFTATE_HOME` only from the process that started it: one opened from the Dock has none, and a second launch is handed to the running one. Quit it, then start it from a terminal with the variable set.
 
 Open your editor in the demo's repository with that `DIFFTATE_HOME`, and check each capability:
 
