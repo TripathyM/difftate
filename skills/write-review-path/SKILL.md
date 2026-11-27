@@ -34,7 +34,7 @@ Terms (see `GLOSSARY.md` if present): **stop** (a numbered file), **key stop** (
    - Start where the change begins (the entry point or the contract), then follow it inward; each stop assumes only the stops before it.
    - A file that exists to serve another (its style, its test helpers, its types) is a side file under that stop. A part of a stop (a view's panel and its tips) is a nested stop.
    - Mark ★ on the few stops where the reviewer should slow down: a decision, a risk, the heart of the change.
-   - Per stop, write the questions the reviewer would ask on opening the file (what does it do, how is it built, why this way), each with a short, concrete answer. Name the specs that show its behaviour.
+   - Per stop, write the questions the reviewer would ask on opening the file (what does it do, how is it built, why this way), each with a short, concrete answer about intent, not location: name functions and components, never line numbers. Name the specs that show its behaviour.
    - Put material that spans files (a state flow, an event list) in a path section, and point to it from a stop's answer by its name: `see "State flow"`.
 
 5. **Account for every changed file.** Each changed file, including new files, appears exactly once, as a stop, a side file or in Skipped with a reason (`lockfile only`, `generated`, `rename with no change`). Never name a file that is not in the changeset.
@@ -51,7 +51,7 @@ The file is markdown a person can read as it is, and a program reads by these ru
 |---|---|---|
 | Frontmatter | `---`, `branch: <name>`, `createdAt: <UTC time>`, `---` | First lines of the file. `createdAt` is `YYYY-MM-DDTHH:MM:SSZ`; get it with `date -u +%Y-%m-%dT%H:%M:%SZ`. |
 | Preamble | Any text before the first `##` | Free text for a person. With no ticket, its first line is exactly `Written without a ticket: from the code only.` |
-| Stop | ``## 2 `path/to/file.ts:10-48,90-120` ★`` | See below. |
+| Stop | ``## 2 `path/to/file.ts` ★`` | See below. |
 | Nested stop | ``## 2.1 `path/to/file.ts` `` | Dotted number; the parent (`2`) must come first. Document order is reading order. |
 | Spec | ``Spec: `path/to/file.test.ts` "test name"`` | A line directly under a stop's heading, before its first `###`. One line per spec. |
 | Question | `### Is the data good enough?` | Any `###` that is not a side file. The answer is the text under it, up to the next heading. |
@@ -62,10 +62,10 @@ The file is markdown a person can read as it is, and a program reads by these ru
 **Stop heading.** `## ` + number + space + the file in backticks + optionally ` ★`.
 - The number is `1`, `2`, `3`… for stops in order, and `2.1`, `2.2`, `2.1.1`… for nested stops. No gaps.
 - The file is a path from the repository root, forward slashes, as the changeset names it (a renamed file: its new path).
-- Line ranges follow the path inside the same backticks after a colon: `:10-48` or `:10-48,90-120`. New-file line numbers, ascending. Leave them out to mean the whole file.
+- No line ranges: a stop is the whole file. The path gives the reading order and the reasons, not where in the file the code is; line numbers go stale with every edit.
 - ★ marks a key stop. It is the last thing on the line.
 
-**One file, once.** A file is one stop, one side file, or one Skipped line; never two. Side files take line ranges the same way as stops.
+**One file, once.** A file is one stop, one side file, or one Skipped line; never two. Side files take no line ranges either.
 
 **Questions** are plain text. Write the answer as one to four sentences, concrete, naming real things in the code. A stop has at least one question.
 
@@ -83,7 +83,7 @@ createdAt: 2026-11-22T06:10:00Z
 
 Review path for "Show a loading flow while the trails download" (PLAT-212).
 
-## 1 `src/loading/LoadingView.tsx:12-64` ★
+## 1 `src/loading/LoadingView.tsx` ★
 Spec: `src/loading/LoadingView.test.tsx` "shows the quiz after two seconds"
 
 ### What does the view do?
@@ -109,7 +109,7 @@ A fixed list in `tips.json`, picked by the trail's difficulty. No network call.
 ### Side file: `src/loading/tips.json`
 The tip texts. Read for wording only.
 
-## 2 `src/data/useTrailData.ts:5-40`
+## 2 `src/data/useTrailData.ts`
 
 ### How is the fetch built?
 One request, retried twice with a 500 ms pause. It returns `{ status, trail, cancel }`, where `status` is `idle`, `loading`, `ready` or `failed`.
