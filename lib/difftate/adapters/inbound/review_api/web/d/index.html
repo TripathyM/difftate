@@ -13,11 +13,22 @@
 <body>
 <div class="appbar">difftate</div>
 <header class="review-head">
-  <div id="review"></div>
+  <div class="head-row">
+    <div id="review"></div>
+    <div id="controls" class="controls">
+      <div id="actions" class="actions"></div>
+      <section id="submit-panel" class="submit-panel" aria-label="Submit review" hidden>
+        <div class="panel-head"><b>Submit review</b><button type="button" id="submit-close" class="link" data-focus="submit-close">Close</button></div>
+        <div id="pending" class="pending"></div>
+        <div id="summary"></div>
+      </section>
+    </div>
+  </div>
   <nav id="tabs" class="tabs"></nav>
 </header>
 <div id="problem" class="flash" role="status" hidden></div>
 <div id="why" class="flash why" role="status" hidden></div>
+<div id="notice" class="flash why" role="status" hidden></div>
 <p id="loading" class="blank">Loading the review…</p>
 <main id="files-tab" hidden>
   <div class="toolbar">

@@ -33,10 +33,28 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 
 .appbar { padding: var(--space-sm) var(--space-lg); background: var(--bgColor-muted); border-bottom: 1px solid var(--borderColor-default); font-weight: 600; }
 .review-head { box-shadow: inset 0 -1px var(--borderColor-muted); }
-#review { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-md); padding: var(--space-md) var(--space-lg) 0; min-height: 52px; }
+.head-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; column-gap: var(--space-md); padding: var(--space-md) var(--space-lg) 0; }
+#review { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-md); min-height: 40px; }
 #review h1 { margin: 0; font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
 .state { padding: var(--space-xs) var(--space-md); border-radius: var(--borderRadius-full); background: var(--bgColor-accent-emphasis); color: var(--fgColor-onEmphasis); font-size: 12px; font-weight: 600; }
-.state.done { background: var(--bgColor-done-emphasis); }
+/* Done is a state, not an approval: neither the green nor the purple of a pull request's */
+.state.done { background: var(--fgColor-muted); }
+.controls { position: relative; margin-left: auto; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-sm); }
+.actions .counter { margin-left: var(--space-sm); background: var(--bgColor-default); color: var(--fgColor-default); }
+.modes { display: flex; padding: 2px; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-muted); }
+.modes button { padding: 1px var(--space-md); border: 1px solid transparent; border-radius: var(--borderRadius-medium); color: var(--fgColor-muted); font-size: 12px; }
+.modes button[aria-pressed="true"] { border-color: var(--borderColor-default); background: var(--bgColor-default); color: var(--fgColor-default); font-weight: 600; }
+/* Anchored under the header's buttons, over the page, which goes on scrolling */
+.submit-panel { position: absolute; top: calc(100% + var(--space-sm)); right: 0; z-index: 3; width: min(460px, calc(100vw - 2 * var(--space-lg))); max-height: 75vh; overflow: auto; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); box-shadow: 0 8px 24px #25292e33; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--borderColor-default); }
+.pending { padding: 0 var(--space-md); }
+.pending ul { margin: 0; padding: 0; list-style: none; }
+.pending li { padding: var(--space-sm) 0; border-bottom: 1px solid var(--borderColor-muted); }
+.pending-where { font: 600 12px var(--fontStack-monospace); overflow-wrap: anywhere; }
+.pending li p { margin: var(--space-xs) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.submit-panel .box:not(.reply) { border: 0; }
+.submit-panel .box-foot { flex-wrap: wrap; }
 .tabs { display: flex; gap: var(--space-sm); padding: var(--space-sm) var(--space-lg) 0; min-height: 48px; }
 .tab { position: relative; height: 32px; padding: 6px var(--space-sm); line-height: 20px; }
 .tab .needs-you { margin-left: var(--space-sm); }

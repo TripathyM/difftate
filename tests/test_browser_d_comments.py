@@ -72,7 +72,7 @@ console.log(JSON.stringify(m.pageModel(s).body));""")
         long = self.file(self.body("pick(spot(5));", poll=poll), "long.py")
 
         box = next(r for r in long["rows"] if r["kind"] == "below")["drafts"][0]
-        self.assertEqual((box["send"], box["hint"]), ("Comment", "Held until you submit the review."))
+        self.assertEqual((box["send"], box["hint"]), ("Add review comment", "Held until you submit the review."))
 
     def picked(self, body):
         return [(r["old"], r["new"], r["picked"]) for f in body["files"] for r in f["rows"] if r.get("picked")]
