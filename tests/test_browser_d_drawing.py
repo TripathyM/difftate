@@ -61,11 +61,11 @@ class WhatIsOnScreenBelowThePinnedHeader(unittest.TestCase):
     """In a window 800 high whose top 100 is under the pinned header, a file's sticky header,
     below it, covers down to 144."""
 
-    def shown(self, function, *boxes):
+    def shown(self, function, *boxes, **viewport):
         """<function> of each of <boxes>, a node's (top, bottom) from the window's top."""
         boxes = [{"top": top, "bottom": bottom, "height": bottom - top} for top, bottom in boxes]
         return run_js("scroll", f"""
-console.log(JSON.stringify({json.dumps(boxes)}.map((box) => m.{function}(box, {{ pinned: 100, height: 800 }}))));""")
+console.log(JSON.stringify({json.dumps(boxes)}.map((box) => m.{function}(box, {json.dumps(dict({"pinned": 100, "height": 800}, **viewport))}))));""")
 
     def test_a_line_is_on_screen_when_all_of_it_is_below_both_headers(self):
         self.assertEqual(self.shown("lineShown", (144, 164), (130, 150), (60, 80), (780, 800), (790, 810), (300, 300)),
@@ -79,6 +79,10 @@ console.log(JSON.stringify({json.dumps(boxes)}.map((box) => m.{function}(box, {{
         # Scrolled up by what is under them. One above the window the browser scrolls to itself
         self.assertEqual(self.shown("uncoverBy", (60, 80), (143, 163), (144, 164), (500, 520), (-30, -10)),
                          [-84, -1, 0, 0, 0])
+
+    def test_where_no_file_header_is_over_the_node_only_the_pinned_one_covers_it(self):
+        self.assertEqual(self.shown("uncoverBy", (60, 80), (99, 119), (100, 120), (120, 140), fileHead=False),
+                         [-40, -1, 0, 0])
 
 
 # As much of a document as drawing the files needs: a tree of nodes

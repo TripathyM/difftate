@@ -90,7 +90,7 @@ select, #commit { padding: 0 var(--space-sm); border: 1px solid var(--borderColo
    the root's scroll-padding would make Chrome scroll the page for the keyboard's focus on a
    control of the pinned header, which no scroll brings out of it */
 .file { scroll-margin-top: var(--pinned-height); }
-.thread, #conversation-tab textarea { scroll-margin-top: calc(var(--pinned-height) + var(--space-sm)); }
+.thread, #conversation-tab textarea, #loose textarea { scroll-margin-top: calc(var(--pinned-height) + var(--space-sm)); }
 .review-head { box-shadow: inset 0 -1px var(--borderColor-muted); }
 .head-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; column-gap: var(--space-md); padding: var(--space-md) var(--space-lg) 0; }
 #review { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-md); min-height: 40px; }
@@ -212,7 +212,8 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 #timeline { gap: var(--space-lg); }
 #general { margin-top: var(--space-lg); }
 #timeline .thread.needs-you { border-color: var(--fgColor-accent); }
-/* A thread link's target stops under the file's sticky header, itself under the pinned one */
+/* In a file, what is scrolled to (a thread link's line, a comment box) stops under the file's
+   sticky header, itself under the pinned one */
 .diff tr, .file-top .thread, .file textarea { scroll-margin-top: calc(var(--pinned-height) + 56px); }
 .thread, .box:not(.reply) { max-width: 760px; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); }
 .thread-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-md); background: var(--bgColor-muted); border-radius: var(--borderRadius-medium); }

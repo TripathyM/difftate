@@ -1,6 +1,6 @@
 -- The review mode and Submit, as text (GLOSSARY.md: Review mode, Live, Batched, Submit). Pure: no
 -- editor, no request. The words follow the browser viewer's (lib/difftate/adapters/inbound/review_api/web/d/:
--- submit.js, actions.js setMode). <mode> is what GET /api/mode
+-- submit.js, actions.js setMode and submitReview). <mode> is what GET /api/mode
 -- answers: { mode = "live" | "batched", held = { thread ids } }.
 local M = {}
 
