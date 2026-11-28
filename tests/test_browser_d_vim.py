@@ -718,15 +718,15 @@ out([kept, reset.keys ?? null, broken.keys ?? null, odd, state.own.settings.keys
 PATH = {"stops": [{"number": "1", "file": "a.py", "key": False, "viewed": False, "questions": [],
                    "ranges": [], "specs": [], "see": [], "side_files": [], "children": []}],
         "skipped": [], "not_on_the_path": ["b.py"], "sections": []}
-# The file whose description is open, or null
-OPEN = "const shown = () => page().body.description?.file ?? null;"
+# The file whose popover is open, or null
+OPEN = "const shown = () => page().body.popover?.file ?? null;"
 
 
-class TheReviewPathDescription(Keys):
+class TheReviewPathPopover(Keys):
     def described(self, body, **more):
         return self.run_keys(OPEN + body, reviewPath=PATH, **more)
 
-    def test_p_opens_the_description_of_the_cursors_file_and_p_again_closes_it(self):
+    def test_p_opens_the_popover_of_the_cursors_file_and_p_again_closes_it(self):
         got = self.described("""
 await press("]", "f"); await press("p"); const opened = shown();
 await press("p");
@@ -742,11 +742,11 @@ out(shown());""")
         self.assertEqual(got, "a.py")
 
     def test_it_stays_open_while_the_same_file_is_at_the_top(self):
-        # The file at the top is a.py, whichever file's description is open
+        # The file at the top is a.py, whichever file's popover is open
         got = self.described("""
 const { scrolledTo } = await import("{STATE}");
 await press("]", "f"); await press("p");
-state = scrolledTo(state, "a.py");
+state = scrolledTo(state, "a.py", true);
 out(shown());""")
 
         self.assertEqual(got, "b.py")

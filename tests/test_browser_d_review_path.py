@@ -1,5 +1,5 @@
 """The review path in layout D (#260, #276): the file tree in Reading order or by folder, each
-file's header line and the description it opens, and Viewed, next (the models of web/d/, with the review path model of
+file's header line and the popover it opens, and Viewed, next (the models of web/d/, with the review path model of
 web/review_path.js). Node runs them, with answers shaped like the released transcript."""
 import json
 import shutil
@@ -197,10 +197,10 @@ class TheHeaderLine(Pages):
     def test_with_no_lines_either_it_says_it_is_a_stop(self):
         self.assertEqual(self.line("app.py", with_stop(questions=[], ranges=[]))["text"], "Stop on the review path")
 
-    def test_a_side_file_shows_its_note_and_the_stop_it_goes_with(self):
+    def test_a_side_file_shows_its_text_and_the_stop_it_goes_with(self):
         self.assertEqual(self.line("README.md"), {"badge": "with 1", "key": False, "text": "What it says.", "more": ""})
 
-    def test_a_side_file_without_a_note_names_its_stop(self):
+    def test_a_side_file_without_text_names_its_stop(self):
         side = dict(PATH["stops"][0]["side_files"][0], text="")
 
         self.assertEqual(self.line("README.md", with_stop(side_files=[side]))["text"], "Side file of app.py")
@@ -225,25 +225,25 @@ class TheHeaderLine(Pages):
         self.assertEqual(self.page(LINES, with_path(None)), dict.fromkeys(NAMED))
 
 
-# The open description (web/review_path.js's stop block), as the page's model has it: its file
+# The open popover (web/review_path.js's stop block), as the page's model has it: its file
 # and its text, flattened, or null while none is open
 SHOWN = """((d) => d && [d.file, ((flat) => flat(d.block).replace(/\\s+/g, " ").trim())(
-  function flat(n) { return [n.text ?? "", ...n.kids.map(flat)].join(" "); })])(body().description)"""
-# What opens each file's description in turn
+  function flat(n) { return [n.text ?? "", ...n.kids.map(flat)].join(" "); })])(body().popover)"""
+# What opens each file's popover in turn
 EVERY = """Object.fromEntries(body().files.map((f) => {
-  s = st.togglePath(s, f.path, "app.py");
+  s = st.togglePathPopover(s, f.path, "app.py");
   return [f.path, (SHOWN)?.[1] ?? null];
 }))""".replace("SHOWN", SHOWN)
 
 
 def toggle(file, top="app.py"):
     """The reviewer presses <file>'s review path line, with <top> the file at the top of the screen."""
-    return f"s = st.togglePath(s, {json.dumps(file)}, {json.dumps(top)});"
+    return f"s = st.togglePathPopover(s, {json.dumps(file)}, {json.dumps(top)});"
 
 
-class TheDescription(Pages):
-    def test_no_description_shows_until_the_reviewer_asks_for_one(self):
-        got = self.page("[body().description, body().files.filter((f) => 'stop' in f).length]")
+class ThePopover(Pages):
+    def test_no_popover_shows_until_the_reviewer_asks_for_one(self):
+        got = self.page("[body().popover, body().files.filter((f) => 'stop' in f).length]")
 
         self.assertEqual(got, [None, 0])
 
@@ -272,7 +272,7 @@ class TheDescription(Pages):
         self.assertEqual(got, ["long.py", "Review path Skipped: numbers only"])
 
     def test_it_closes(self):
-        self.assertIsNone(self.page(SHOWN, steps=toggle("lib.py") + "s = st.closePath(s);"))
+        self.assertIsNone(self.page(SHOWN, steps=toggle("lib.py") + "s = st.closePathPopover(s);"))
 
     def test_a_poll_keeps_it_open_with_what_the_path_says_now(self):
         asked = with_stop(questions=questions("Why now?"))
@@ -285,23 +285,31 @@ class TheDescription(Pages):
         self.assertIsNone(self.page(SHOWN, with_path(None), toggle("lib.py")))
 
 
-class ClosingTheDescription(Pages):
+class ClosingThePopover(Pages):
     def after(self, steps):
         """What shows once the reviewer, with app.py at the top of the screen, opened lib.py's
-        description and <steps> happened."""
+        popover and <steps> happened."""
         return self.page(f"({SHOWN})?.[0] ?? null", steps=toggle("lib.py") + steps)
 
+    def scrolled(self, top, line_shown=True):
+        """A scroll that leaves <top> at the top of the screen, and lib.py's line on it or not."""
+        return f"s = st.scrolledTo(s, {json.dumps(top)}, {json.dumps(line_shown)});"
+
     def test_scrolling_with_the_same_file_at_the_top_keeps_it_open(self):
-        self.assertEqual(self.after('s = st.scrolledTo(s, "app.py");'), "lib.py")
+        self.assertEqual(self.after(self.scrolled("app.py")), "lib.py")
 
     def test_scrolling_to_another_file_closes_it(self):
-        self.assertIsNone(self.after('s = st.scrolledTo(s, "README.md");'))
+        self.assertIsNone(self.after(self.scrolled("README.md")))
 
-    def test_even_when_that_is_the_described_file(self):
-        self.assertIsNone(self.after('s = st.scrolledTo(s, "lib.py");'))
+    def test_scrolling_towards_its_own_file_keeps_it_open(self):
+        self.assertEqual(self.after(self.scrolled("lib.py")), "lib.py")
+
+    def test_scrolling_its_line_out_of_sight_closes_it(self):
+        # The file at the top is the same still: the described one left at the window's foot
+        self.assertIsNone(self.after(self.scrolled("app.py", line_shown=False)))
 
     def test_a_scroll_with_none_open_changes_nothing(self):
-        self.assertTrue(self.page("st.scrolledTo(s, 'lib.py') === s"))
+        self.assertTrue(self.page("st.scrolledTo(s, 'lib.py', false) === s"))
 
     def test_another_tab_closes_it_for_good(self):
         self.assertIsNone(self.after('s = st.showTab(st.showTab(s, "conversation"), "files");'))
@@ -318,14 +326,14 @@ class ClosingTheDescription(Pages):
 
         self.assertIsNone(self.after(f"s = st.polled(s, {json.dumps(other)});"))
 
-    def test_a_file_that_leaves_the_diff_takes_its_description_along(self):
+    def test_a_file_that_leaves_the_diff_takes_its_popover_along(self):
         gone = with_path(PATH, [f for f in NAMED if f != "lib.py"])
 
         self.assertIsNone(self.after(f"s = st.polled(s, {json.dumps(gone)});"))
 
 
 @unittest.skipUnless(shutil.which("node"), "needs node")
-class WhereTheDescriptionGoes(unittest.TestCase):
+class WhereThePopoverGoes(unittest.TestCase):
     def place(self, line, width=1440, height=900):
         """Where the popover goes for a header line at <line> ({left, top, bottom}) in a window of
         <width> by <height>."""
