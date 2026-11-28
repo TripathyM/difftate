@@ -69,11 +69,12 @@ console.log(JSON.stringify([ids(top), rows.filter((r) => r.kind !== "hunk").map(
 
         self.assertEqual(got, [["old-code"], ["1,1", "2,", ",2"]])
 
-    def test_a_thread_this_view_has_no_line_for_goes_to_its_files_top(self):
+    def test_a_thread_this_view_has_no_line_for_is_not_on_the_files_rows_or_its_top(self):
         # inView false: the view hasn't its code, though its numbers name a line the diff shows
         got = self.placed([thread("other-view", "new", 2, 2, inView=False), thread("no-hunk", "new", 40, 41)])
 
-        self.assertEqual(got, [["other-view", "no-hunk"], ["1,1", "2,", ",2"]])
+        # the Conversation tab lists them
+        self.assertEqual(got, [[], ["1,1", "2,", ",2"]])
 
     def test_a_draft_sits_under_its_last_line_while_its_lines_hold_the_code_it_was_started_on(self):
         got = self.placed([thread("t", "new", 2, 2)], [

@@ -17,6 +17,7 @@
   <nav id="tabs" class="tabs"></nav>
 </header>
 <div id="problem" class="flash" role="status" hidden></div>
+<div id="note" class="flash why" role="status" hidden></div>
 <p id="loading" class="blank">Loading the review…</p>
 <main id="files-tab" hidden>
   <div class="toolbar">
@@ -34,6 +35,11 @@
       <div id="files"></div>
     </div>
   </div>
+</main>
+<main id="conversation-tab" hidden>
+  <p id="no-threads" class="blank" hidden></p>
+  <div id="timeline" class="comments"></div>
+  <div id="general" class="comments"></div>
 </main>
 <script type="module" src="/d/main.js"></script>
 </body>
