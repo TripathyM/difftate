@@ -8,13 +8,20 @@ import unittest
 from browser_d import answers, changed, released, run_js
 
 
+def thread(state):
+    """An open general thread of the released transcript, standing as <state> says."""
+    return dict(released("GET", "/api/threads")[0], id=state, anchor=None, outdated=False, status="open", state=state)
+
+
 @unittest.skipUnless(shutil.which("node"), "needs node")
 class ThePage(unittest.TestCase):
-    def page(self, poll=None, steps=""):
-        """The model of the page after a poll answering <poll> (None: none yet), then <steps>."""
+    def page(self, poll=None, steps="", address=None, **given):
+        """The model of the page, opened at an address naming the tab <address>, after a poll
+        answering <poll> (None: none yet), then <steps>."""
+        consts = "".join(f"const {name} = {json.dumps(value)};\n" for name, value in given.items())
         return run_js("page", f"""
 import * as st from "{{STATE}}";
-let s = st.initialState();
+{consts}let s = st.initialState({json.dumps(address)});
 const poll = {json.dumps(poll)};
 if (poll) s = st.polled(s, poll);
 {steps}
@@ -23,7 +30,7 @@ console.log(JSON.stringify(m.pageModel(s)));""")
     def test_a_review_opens_on_files_changed_with_its_tree_and_every_files_rows(self):
         page = self.page(answers(threads=[]))
 
-        self.assertEqual(page["tabs"], [{"id": "files", "text": "Files changed", "count": 3, "current": True}])
+        self.assertEqual(self.tabs(page), [("Conversation", 0, False, ""), ("Files changed", 3, True, "")])
         body = page["body"]
         self.assertEqual(body["kind"], "files")
         self.assertEqual([r["path"] for r in body["tree"]], ["app.py", "long.py", "README.md"])
@@ -60,9 +67,48 @@ console.log(JSON.stringify(m.pageModel(s)));""")
                                 "HEAD~2": "No changes in the commits after HEAD~2."})
 
     def test_a_tab_the_page_does_not_have_shows_files_changed_not_a_blank(self):
-        page = self.page(answers(), steps='s = st.showTab(s, "conversation");')
+        page = self.page(answers(), steps='s = st.showTab(s, "commits");')
 
-        self.assertEqual((page["body"]["kind"], page["tabs"][0]["current"]), ("files", True))
+        self.assertEqual((page["body"]["kind"], page["tabs"][1]["current"]), ("files", True))
+
+    def tabs(self, page):
+        return [(t["text"], t["count"], t["current"], t["needs"]) for t in page["tabs"]]
+
+    def test_a_review_with_a_reply_opens_on_conversation_saying_why(self):
+        page = self.page(answers(threads=[thread("replied")]))
+
+        self.assertEqual((page["body"]["kind"], page["why"]),
+                         ("conversation", "Opened on Conversation: 1 thread needs you (replied or failed)."))
+        self.assertEqual(self.tabs(page), [("Conversation", 1, True, "1 needs you"), ("Files changed", 3, False, "")])
+
+    def test_a_reply_arriving_by_poll_keeps_the_tab_and_shows_that_it_needs_you(self):
+        page = self.page(answers(threads=[thread("working")]), steps="s = st.polled(s, later);",
+                         later=answers(threads=[thread("replied"), dict(thread("failed"), id="other")]))
+
+        self.assertEqual((page["body"]["kind"], page["why"]),
+                         ("files", "Opened on Files changed: no open thread is replied or failed."))
+        self.assertEqual(self.tabs(page)[0], ("Conversation", 2, False, "2 need you"))
+
+    def test_the_tab_the_address_names_is_the_one_shown_saying_nothing(self):
+        page = self.page(answers(threads=[thread("replied")]), address="files")
+
+        self.assertEqual((page["body"]["kind"], page["tab"], page["why"]), ("files", "files", ""))
+
+    def test_why_it_opened_goes_once_the_reviewer_changes_tab(self):
+        page = self.page(answers(threads=[]), steps='s = st.showTab(s, "conversation");')
+
+        self.assertEqual((page["body"]["kind"], page["why"]), ("conversation", ""))
+
+    def test_after_a_checkout_the_tab_stays_and_the_other_reviews_reason_for_it_goes(self):
+        other = answers(threads=[])
+        other["review"] = dict(other["review"], id="other-12345678", branch="other")
+
+        page = self.page(answers(threads=[thread("replied")]), steps="s = st.polled(s, other);", other=other)
+
+        self.assertEqual((page["tab"], page["why"]), ("conversation", ""))
+
+    def test_before_the_first_answers_the_page_has_no_tab_to_put_in_its_address(self):
+        self.assertIsNone(self.page()["tab"])
 
     def test_each_file_header_has_its_viewed_mark_fold_and_line_counts_and_the_progress_counts_them(self):
         # gone.py was viewed and has no changes in this view: it counts in neither number

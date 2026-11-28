@@ -39,6 +39,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .state.done { background: var(--bgColor-done-emphasis); }
 .tabs { display: flex; gap: var(--space-sm); padding: var(--space-sm) var(--space-lg) 0; min-height: 48px; }
 .tab { position: relative; height: 32px; padding: 6px var(--space-sm); line-height: 20px; }
+.tab .needs-you { margin-left: var(--space-sm); }
 .tab[aria-current] { font-weight: 600; }
 .tab[aria-current]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -8px; height: 2px; background: var(--underlineNav-borderColor-active); }
 
@@ -97,6 +98,13 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .comments { display: flex; flex-direction: column; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); font: 14px/1.5 var(--fontStack-sansSerif); white-space: normal; }
 .file-top { border-bottom: 1px solid var(--borderColor-default); }
 #loose { padding: 0 0 var(--space-lg); }
+.flash.why { background: var(--bgColor-muted); }
+#conversation-tab { max-width: 792px; margin: 0 auto; padding: var(--space-md) 0 64px; }
+#timeline { gap: var(--space-lg); }
+#general { margin-top: var(--space-lg); }
+#timeline .thread.needs-you { border-color: var(--fgColor-accent); }
+/* A thread link's target stops under the file's sticky header */
+.diff tr, .file-top .thread { scroll-margin-top: 56px; }
 .thread, .box:not(.reply) { max-width: 760px; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); }
 .thread-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-md); background: var(--bgColor-muted); border-radius: var(--borderRadius-medium); }
 .label { padding: 0 var(--space-sm); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-full); font-size: 12px; font-weight: 600; }
@@ -105,8 +113,9 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .label.tone-working { border-color: var(--fgColor-accent); color: var(--fgColor-accent); }
 .label.tone-replied { border-color: var(--fgColor-success); color: var(--fgColor-success); }
 .label.tone-failed { border-color: var(--fgColor-danger); color: var(--fgColor-danger); }
+.label.needs-you { border-color: var(--fgColor-accent); color: var(--fgColor-accent); }
 .gist { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-file { font: 600 12px var(--fontStack-monospace); overflow-wrap: anywhere; }
+.thread-where { font: 600 12px var(--fontStack-monospace); text-align: left; overflow-wrap: anywhere; }
 .link { color: var(--fgColor-accent); font-size: 12px; }
 .fold-thread { margin-left: auto; }
 .comment, .note-event, .written, .thread-foot { padding: var(--space-sm) var(--space-md); }
