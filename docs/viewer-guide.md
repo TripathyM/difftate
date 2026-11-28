@@ -105,7 +105,7 @@ A thread, as every call returns it:
 
 **Rules.**
 
-- Read it again when you poll: the coding agent may rewrite it at any time. Its file lists (`not_on_the_path`, and the files a view keeps) may lag a file that was just added by up to one second, while the changeset already has it: the next poll has it. No call order is needed. With `"path": null`, or a 502 from this call, show the changed files in the changeset's order and keep the rest of the poll.
+- Read it again when you poll: the coding agent may rewrite it at any time. Its file lists (`not_on_the_path`, and the files a view keeps) may lag a file that was just added by up to one second, while the changeset already has it: the next poll has it. No call order is needed. With `"path": null`, or a 502 from this call, show the changed files in an order of your choosing (the changeset's order, or by folder, as the browser viewer does) and keep the rest of the poll.
 - `ranges` are `[first, last]` new-side lines; `[]` is the whole file. `viewed` is the file's viewed mark (3.4).
 - Show stops in their order and with their numbers, ★ on key stops, side files under their stop, then the skipped files with their reasons, then the files not on the path.
 - Show an entry with `"in_changeset": false` marked (red, say) as having no changes, with nothing to open: the reviewer can see the path needs rewriting. It is on the path in every view.
