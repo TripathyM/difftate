@@ -59,8 +59,8 @@ console.log(JSON.stringify(m.pageModel(s).body));""")
         long = self.file(body, "long.py")
         self.assertEqual(self.below(long), [(7, [], ["Comment on lines 5–7"])])
         box = next(r for r in long["rows"] if r["kind"] == "below")["drafts"][0]
-        self.assertEqual((box["send"], box["tab"], box["text"], box["moved"], box["hint"]), ("Comment", "write", "", None, ""))
-        self.assertEqual(body["loose"], [])
+        self.assertEqual((box["send"], box["tab"], box["text"], box["was"], box["hint"]), ("Comment", "write", "", None, ""))
+        self.assertEqual(body["loose"], {"threads": [], "drafts": []})
 
     def test_in_a_batched_review_the_box_says_the_comment_is_held(self):
         poll = answers(threads=[], mode={"mode": "batched", "held": []})
@@ -88,8 +88,8 @@ console.log(JSON.stringify(m.pageModel(s).body));""")
 
         long = self.file(body, "long.py")
         [box] = long["top"]["drafts"]
-        self.assertEqual((box["text"], box["moved"]), ("Why?", {
-            "text": "Its lines have changed since you picked them. The comment still goes with this code:",
+        self.assertEqual((box["text"], box["was"]), ("Why?", {
+            "text": "The diff doesn't show these lines as you picked them. The comment goes with this code:",
             "code": "line_5 = 5"}))
         self.assertEqual((self.below(long), self.picked(body)), ([], []))
 
@@ -99,8 +99,19 @@ console.log(JSON.stringify(m.pageModel(s).body));""")
 
         body = self.body('const key = pick(spot(5)); s = drafts.typeIn(s, key, "Why?"); s = st.polled(s, later);', later=later)
 
-        self.assertEqual([(d["title"], d["text"], d["moved"]["code"]) for d in body["loose"]],
+        self.assertEqual([(d["title"], d["text"], d["was"]["code"]) for d in body["loose"]["drafts"]],
                          [("Comment on long.py, line 5", "Why?", "line_5 = 5")])
+
+    def test_a_thread_whose_file_is_not_in_the_diff_stays_above_the_files_named_by_its_file(self):
+        first = transcript_threads()[0]
+        gone = dict(first, id="gone", outdated=True, anchor=dict(first["anchor"], file="gone.py", code="old = 1"))
+        general = dict(first, id="general", anchor=None)
+
+        body = self.body(poll=answers(threads=[gone, general]))
+
+        # the file is in the card's head, which a folded card keeps
+        self.assertEqual([(t["id"], t["file"], t["written"]) for t in body["loose"]["threads"]],
+                         [("gone", "gone.py", {"text": "Written on line 2:", "code": "old = 1"})])
 
 
 if __name__ == "__main__":

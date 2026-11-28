@@ -105,8 +105,8 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .label.tone-working { border-color: var(--fgColor-accent); color: var(--fgColor-accent); }
 .label.tone-replied { border-color: var(--fgColor-success); color: var(--fgColor-success); }
 .label.tone-failed { border-color: var(--fgColor-danger); color: var(--fgColor-danger); }
-.label.agent { color: var(--fgColor-muted); }
 .gist { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-file { font: 600 12px var(--fontStack-monospace); overflow-wrap: anywhere; }
 .link { color: var(--fgColor-accent); font-size: 12px; }
 .fold-thread { margin-left: auto; }
 .comment, .note-event, .written, .thread-foot { padding: var(--space-sm) var(--space-md); }

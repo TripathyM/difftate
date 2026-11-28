@@ -109,6 +109,13 @@ s = st.threadTaken(s, thread.id);""", show="m.threadCard(thread, s, { placed }).
                          "Not among the lines shown. Written on lines 2–3 (old side):")
         self.assertIsNone(self.card(a_thread())["written"])
 
+    def test_an_outdated_thread_on_a_blank_line_still_says_where_it_was_written(self):
+        anchor = dict(a_thread()["anchor"], startLine=3, endLine=3, code="")
+
+        card = self.card(a_thread(anchor=anchor, outdated=True), placed=False)
+
+        self.assertEqual(card["written"], {"text": "Written on line 3:", "code": ""})
+
 
 if __name__ == "__main__":
     unittest.main()

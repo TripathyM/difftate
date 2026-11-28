@@ -15,12 +15,13 @@ import * as drafts from "{DRAFTS}";
 const calls = [];
 let refusal = null, during = () => {};
 let s = st.polled(st.initialState(), FIRST);
+let onBranch = s.server.review.id; // the review the folder is on, which the page may not know yet
 const use = {
   api: async (method, path, payload) => {
     calls.push([method, path, payload]);
     during();
     if (refusal) throw refusal;
-    return {};
+    return path === "/api/review" ? { id: onBranch } : {};
   },
   state: () => s,
   update: (change) => { s = change(s); },
@@ -67,10 +68,11 @@ await m.send(use, second);""", show="[calls, left]")
 
         version = released("GET", "/api/changeset")["versions"]["long.py"]["new"]
         anchor = {"file": "long.py", "side": "new", "version": version}
+        asked = ["GET", "/api/review", None]  # which review the folder is on, before a thread is opened
         self.assertEqual(calls, [
-            ["POST", "/api/threads", {"anchor": dict(anchor, startLine=5, endLine=7, code=lines(5, 7)),
+            asked, ["POST", "/api/threads", {"anchor": dict(anchor, startLine=5, endLine=7, code=lines(5, 7)),
                                       "body": "Why these three?", "view": ""}], "refresh",
-            ["POST", "/api/threads", {"anchor": dict(anchor, startLine=12, endLine=12, code=lines(12, 12)),
+            asked, ["POST", "/api/threads", {"anchor": dict(anchor, startLine=12, endLine=12, code=lines(12, 12)),
                                       "body": "And this one?", "view": ""}], "refresh"])
         self.assertEqual(left, [["long.py", "new", 12, 12, "And this one?"]])
 
@@ -148,21 +150,32 @@ drag(spot(8));""", show="kept()")
 
         self.assertEqual(got, [["long.py", "new", 6, 6, "kept"], ["long.py", "new", 8, 8, ""]])
 
-    def test_picking_a_drafts_lines_again_opens_it_on_the_code_they_hold_now(self):
+    def changed_line_5(self):
         later = answers()
         later["changeset"] = dict(later["changeset"], diff=later["changeset"]["diff"].replace("+line_5 = 5", "+five = 5"),
+                                  versions=dict(later["changeset"]["versions"], **{"long.py": {"old": None, "new": "<hash-new>"}}))
+        return later
+
+    def test_picking_a_drafts_lines_again_opens_it_on_the_version_shown_now(self):
+        later = answers()
+        later["changeset"] = dict(later["changeset"],
                                   versions=dict(later["changeset"]["versions"], **{"long.py": {"old": None, "new": "<hash-new>"}}))
 
         got = self.run_page("""
 const key = drag(spot(5));
 type(key, "Why?");
 s = st.polled(s, later);
-const before = drafts.draftsOf(s)[0].anchor;
-const again = drag(spot(5));
-const after = drafts.draftsOf(s)[0];""", show="[again === key, before.code, after.anchor.code, after.anchor.version, after.text]",
-                            later=later)
+const again = drag(spot(5));""", show="[again === key, drafts.draftsOf(s)[0].anchor.version, kept().length]", later=later)
 
-        self.assertEqual(got, [True, "line_5 = 5", "five = 5", "<hash-new>", "Why?"])
+        self.assertEqual(got, [True, "<hash-new>", 1])
+
+    def test_new_code_on_a_drafts_lines_is_another_anchor_so_what_was_written_stays_with_the_old_code(self):
+        got = self.run_page("""
+type(drag(spot(5)), "About the old code");
+s = st.polled(s, later);
+drag(spot(5));""", show="drafts.draftsOf(s).map((d) => [d.anchor.code, d.text])", later=self.changed_line_5())
+
+        self.assertEqual(got, [["line_5 = 5", "About the old code"], ["five = 5", ""]])
 
 
 class Sending(Drafting):
@@ -173,10 +186,10 @@ refusal = new ApiError(409, "another branch is checked out");
 const key = drag(spot(5));
 type(key, "Why?");
 const took = await m.send(use, key);
-const refused = [took, kept()[0][4], drafts.boxOf(s, key).error, drafts.boxOf(s, key).sending, calls.length];
+const refused = [took, kept()[0][4], drafts.boxOf(s, key).error, drafts.boxOf(s, key).sending, calls.includes("refresh")];
 type(key, "Why??");""", show="[...refused, drafts.boxOf(s, key).error]")
 
-        self.assertEqual(got, [False, "Why?", "another branch is checked out", False, 1, ""])
+        self.assertEqual(got, [False, "Why?", "another branch is checked out", False, False, ""])
 
     def test_a_blank_draft_is_not_sent_and_one_being_sent_is_not_sent_again(self):
         got = self.run_page("""
@@ -187,9 +200,50 @@ const blank = calls.length;
 type(key, "Once");
 let second;
 during = () => { during = () => {}; second = m.send(use, key); };
-await m.send(use, key);""", show="[blank, await second, calls.filter((c) => c !== 'refresh').length, kept()]")
+await m.send(use, key);""", show="[blank, await second, calls.filter((c) => c[0] === 'POST').length, kept()]")
 
         self.assertEqual(got, [0, False, 1, []])
+
+    def test_a_draft_being_sent_is_not_moved_by_shift_click_nor_cancelled(self):
+        got = self.run_page("""
+const key = drag(spot(5));
+type(key, "Once");
+let meanwhile;
+during = () => {
+  during = () => {};
+  shiftClick(spot(6));
+  s = drafts.cancelDraft(s, key);
+  meanwhile = kept();
+};
+await m.send(use, key);""", show="[meanwhile, kept()]")
+
+        self.assertEqual(got, [[["long.py", "new", 5, 5, "Once"], ["long.py", "new", 6, 6, ""]],
+                               [["long.py", "new", 6, 6, ""]]])
+
+    def test_a_draft_is_not_posted_once_the_folder_is_on_another_branchs_review(self):
+        # the watcher followed the checkout, and the page hasn't polled since
+        got = self.run_page("""
+const key = drag(spot(5));
+type(key, "Mine");
+onBranch = "other-12345678";
+const took = await m.send(use, key);""", show="[took, calls.filter((c) => c[0] === 'POST'), kept()[0][4], drafts.boxOf(s, key).error]")
+
+        self.assertEqual(got, [False, [], "Mine",
+                               "Another branch is checked out now: the draft waits for its own branch."])
+
+    def test_escape_drops_a_draft_with_nothing_written_and_never_text_or_a_reply_box(self):
+        got = self.run_page("""
+const key = drag(spot(5));
+type(key, " ");
+s = drafts.escapeBox(s, key);
+const blank = kept();
+const other = drag(spot(6));
+type(other, "words");
+s = drafts.escapeBox(s, other);
+type(drafts.replyKey("t1"), "");
+s = drafts.escapeBox(s, drafts.replyKey("t1"));""", show="[blank, kept()]")
+
+        self.assertEqual(got, [[], [["long.py", "new", 6, 6, "words"]]])
 
 
 class ThreadActions(Drafting):
