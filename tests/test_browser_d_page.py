@@ -98,6 +98,20 @@ console.log(JSON.stringify(m.pageModel(s)));""")
 
         self.assertEqual([r["path"] for r in page["body"]["tree"] if r["selected"]], ["long.py"])
 
+    def test_a_file_that_became_a_link_is_one_file_with_both_diffs_git_gives_for_it(self):
+        diff = ("diff --git a/conf b/conf\ndeleted file mode 100644\nindex 1111111..0000000\n--- a/conf\n+++ /dev/null\n"
+                "@@ -1 +0,0 @@\n-a = 1\n"
+                "diff --git a/conf b/conf\nnew file mode 120000\nindex 0000000..2222222\n--- /dev/null\n+++ b/conf\n"
+                "@@ -0,0 +1 @@\n+other.conf\n")
+
+        body = self.page(answers(changeset=dict(answers()["changeset"], diff=diff)))["body"]
+
+        [file] = body["files"]
+        self.assertEqual((file["note"], file["additions"], file["deletions"]), ("type changed", 1, 1))
+        self.assertEqual([r["text"] for r in file["rows"] if r["kind"] == "line"], ["a = 1", "other.conf"])
+        self.assertEqual([r["path"] for r in body["tree"]], ["conf"])
+        self.assertEqual(body["progress"]["total"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

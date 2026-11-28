@@ -55,7 +55,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 button.tree-row:hover { background: var(--control-transparent-bgColor-hover); }
 button.tree-row[aria-current] { background: var(--control-transparent-bgColor-selected); box-shadow: inset 3px 0 var(--fgColor-accent); }
 .tree-row.viewed .name { color: var(--fgColor-muted); }
-.comments { display: flex; align-items: center; gap: 2px; color: var(--fgColor-muted); font-size: 12px; }
+.open-threads { display: flex; align-items: center; gap: 2px; color: var(--fgColor-muted); font-size: 12px; }
 .viewed-mark { display: flex; color: var(--fgColor-success); }
 
 .file { margin-bottom: var(--space-lg); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); }

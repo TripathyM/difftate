@@ -48,7 +48,7 @@ class TheFileTree(unittest.TestCase):
 
         rows = self.rows(["a.py", "b.py"], threads=threads)
 
-        self.assertEqual([(r["name"], r["comments"]) for r in rows], [("a.py", 2), ("b.py", 0)])
+        self.assertEqual([(r["name"], r["openThreads"]) for r in rows], [("a.py", 2), ("b.py", 0)])
 
     def test_a_viewed_file_is_marked(self):
         rows = self.rows(["a.py", "b.py"], viewed=["b.py"])

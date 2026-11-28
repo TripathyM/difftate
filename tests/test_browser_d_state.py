@@ -95,6 +95,11 @@ s = m.polled(s, { ...first, review: { ...first.review, id: "other-12345678", bra
 
         self.assertEqual(got, ["conversation", None, {}])
 
+    def test_a_file_named_like_a_part_of_every_javascript_object_starts_open(self):
+        got = self.after("s = m.polled(s, first);", show="['constructor', 'toString', '__proto__'].map((p) => m.isFolded(s, p))")
+
+        self.assertEqual(got, [False, False, False])
+
 
 if __name__ == "__main__":
     unittest.main()
