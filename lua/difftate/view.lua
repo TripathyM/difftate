@@ -1,5 +1,6 @@
--- The view, as text (GLOSSARY.md: View). Pure: no editor, no request. The words are the browser viewer's
--- (lib/difftate/adapters/inbound/review_api/web/app.js) and the deleted Herdr viewer's (ADR 0008). A view is what GET /api/view answers: "" for all changes, a commit such as HEAD~2 for the
+-- The view, as text (GLOSSARY.md: View). Pure: no editor, no request. The words follow the browser viewer's
+-- (lib/difftate/adapters/inbound/review_api/web/d/views.js) and the deleted Herdr
+-- viewer's (ADR 0008). A view is what GET /api/view answers: "" for all changes, a commit such as HEAD~2 for the
 -- commits after it, HEAD for the uncommitted changes, "staged" or "unstaged".
 --
 -- gitsigns compares the file on disk with one base, so it can show every view but the staged one

@@ -32,13 +32,14 @@ console.log(JSON.stringify([children.map((n) => n.name), inserted]));""")
 
 @unittest.skipUnless(shutil.which("node"), "needs node")
 class WhereAFoldLeavesTheWindow(unittest.TestCase):
-    def target(self, now_folded, **shown):
-        """The file to bring to the top. <shown>: path -> (was it folded, top, bottom) on screen."""
+    def target(self, now_folded, pinned=0, **shown):
+        """The file to bring to the top, with <pinned> of the window under the pinned header.
+        <shown>: path -> (was it folded, top, bottom) on screen."""
         files = [{"path": p, "folded": p in now_folded} for p in shown]
         was = {p: {"folded": f, "top": top, "bottom": bottom} for p, (f, top, bottom) in shown.items()}
         return run_js("scroll", f"""
 const was = new Map(Object.entries({json.dumps(was)}));
-console.log(JSON.stringify(m.foldTarget({json.dumps(files)}, (path) => was.get(path))));""")
+console.log(JSON.stringify(m.foldTarget({json.dumps(files)}, (path) => was.get(path), {pinned})));""")
 
     def test_a_file_folded_while_the_reviewer_is_inside_it_comes_to_the_top(self):
         self.assertEqual(self.target(["b"], a=(False, -900, -400), b=(False, -300, 600)), "b")
@@ -46,8 +47,39 @@ console.log(JSON.stringify(m.foldTarget({json.dumps(files)}, (path) => was.get(p
     def test_a_file_folded_that_the_reviewer_scrolled_past_or_sees_the_top_of_moves_nothing(self):
         self.assertIsNone(self.target(["a", "c"], a=(False, -900, -400), b=(False, -300, 600), c=(False, 616, 900)))
 
+    def test_inside_is_below_the_pinned_header_not_below_the_windows_top(self):
+        self.assertEqual(self.target(["a"], pinned=100, a=(False, 60, 600)), "a")
+        self.assertIsNone(self.target(["a"], pinned=100, a=(False, -300, 90)))
+        self.assertIsNone(self.target(["a"], pinned=100, a=(False, 100, 600)))
+
     def test_a_file_that_was_folded_already_or_that_opens_moves_nothing(self):
         self.assertIsNone(self.target(["a"], a=(True, -10, 30), b=(True, -10, 30)))
+
+
+@unittest.skipUnless(shutil.which("node"), "needs node")
+class WhatIsOnScreenBelowThePinnedHeader(unittest.TestCase):
+    """In a window 800 high whose top 100 is under the pinned header, a file's sticky header,
+    below it, covers down to 144."""
+
+    def shown(self, function, *boxes):
+        """<function> of each of <boxes>, a node's (top, bottom) from the window's top."""
+        boxes = [{"top": top, "bottom": bottom, "height": bottom - top} for top, bottom in boxes]
+        return run_js("scroll", f"""
+console.log(JSON.stringify({json.dumps(boxes)}.map((box) => m.{function}(box, {{ pinned: 100, height: 800 }}))));""")
+
+    def test_a_line_is_on_screen_when_all_of_it_is_below_both_headers(self):
+        self.assertEqual(self.shown("lineShown", (144, 164), (130, 150), (60, 80), (780, 800), (790, 810), (300, 300)),
+                         [True, False, False, True, False, False])
+
+    def test_a_file_or_a_thread_is_on_screen_while_any_of_it_shows_below_both_headers(self):
+        self.assertEqual(self.shown("anyShown", (-500, 145), (-500, 144), (799, 900), (800, 900), (300, 300)),
+                         [True, False, True, False, False])
+
+    def test_a_node_the_keyboard_went_to_under_the_headers_is_scrolled_out_from_under_them(self):
+        # Scrolled up by what is under them. One above the window the browser scrolls to itself
+        self.assertEqual(self.shown("uncoverBy", (60, 80), (143, 163), (144, 164), (500, 520), (-30, -10)),
+                         [-84, -1, 0, 0, 0])
+
 
 # As much of a document as drawing the files needs: a tree of nodes
 DOCUMENT = """
