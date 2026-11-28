@@ -223,7 +223,7 @@ s = st.polled(s, {json.dumps(other)});""", show="[...early, pageModel(s).body.ge
 s = m.typeIn(s, key, "For this branch");
 onBranch = "other-12345678";
 use.refresh = async () => {{ s = st.polled(s, {json.dumps(other)}); }};
-await send(use, key);""", show="[calls.length, pageModel(s).body.general.text, pageModel(s).problem]")
+await send(use, key);""", show="[calls.length, pageModel(s).body.general.text, problemOf(pageModel(s))]")
 
         self.assertEqual(got, [0, "", "Another branch is checked out now: the draft waits for its own branch."])
 

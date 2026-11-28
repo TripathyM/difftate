@@ -38,7 +38,7 @@ const use = {{
   copy: async (text) => {{ {'copied.push(text);' if copies else 'throw new Error("the browser refused to copy");'} }},
 }};
 const took = await m.exportReview(use);
-console.log(JSON.stringify([took, asked, copied, pageModel(s).notice, pageModel(s).problem]));""")
+console.log(JSON.stringify([took, asked, copied, noticeOf(pageModel(s)), problemOf(pageModel(s))]));""")
 
     def test_it_copies_the_export_whose_reply_command_names_the_reviews_folder(self):
         took, asked, copied, notice, problem = self.export()

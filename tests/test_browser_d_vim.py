@@ -420,15 +420,16 @@ out([calls, files()[0].folded, vim().line]);""", viewed=["a.py"])
     def test_mode_done_and_export_make_the_calls_the_buttons_make_and_say_so(self):
         got = self.run_keys("""
 const said = [];
-for (const key of ["M", "D", "E"]) { await leader(key); said.push(vim().line); }
+for (const key of ["M", "D", "E"]) { await leader(key); said.push([vim().line, noticeOf(page())]); }
 out([calls.map((c) => c.slice(0, 2)), calls[0][2], calls[1][2], said, did.filter((d) => d[0] === "copy")]);""")
 
         calls, mode, done, said, copied = got
         self.assertEqual(calls[:2], [["PUT", "/api/mode"], ["PUT", "/api/done"]])
         self.assertTrue(calls[2][1].startswith("/api/export"))
         self.assertEqual((mode, done), ({"mode": "batched"}, {"done": True}))
-        self.assertEqual(said, ["Batched: comments are held until you submit the review.", "Marked Done",
-                                "Export copied: paste it into an agent session."])
+        # A change the page toasts is said there alone, not on the bottom line too
+        self.assertEqual(said, [["", "Batched: comments are held until you submit the review."], ["Marked Done", ""],
+                                ["", "Export copied: paste it into an agent session."]])
         self.assertEqual(copied, [["copy", "the export"]])
 
     def test_submit_opens_the_panel_of_a_batched_review_and_a_live_one_has_nothing_held(self):
@@ -452,17 +453,17 @@ out([calls, page().confirm.text, took, cursor()]);""", threads=[thread("t1")], m
 
         self.assertEqual(got, [[], "Send 1 held comment to the agent now?", [False] * 4, []])
 
-    def test_after_yes_the_key_says_what_was_sent_at_the_bottom_and_a_click_does_not(self):
+    def test_after_yes_what_was_sent_is_toasted_whether_a_key_or_a_click_asked(self):
         said = [self.run_keys(f"""
 const {{ confirmLive, setMode }} = await import("{{ACTIONS}}");
 {asked}
 await confirmLive(use);
-out([calls, vim().line, page().notice]);""", threads=[thread("t1")], mode=self.HELD)
+out([calls, vim().line, page().toasts.map((t) => t.text)]);""", threads=[thread("t1")], mode=self.HELD)
                 for asked in ('await leader("M");', 'await setMode(use, "live");')]
 
         sent = [["PUT", "/api/mode", {"mode": "live"}]]
         notice = "Live: comments go to the coding agent as you write them."
-        self.assertEqual(said, [[sent, notice, notice], [sent, "", notice]])
+        self.assertEqual(said, [[sent, "", [notice]]] * 2)
 
     def test_split_or_unified_the_file_tree_and_a_general_thread(self):
         got = self.run_keys("""
@@ -485,14 +486,14 @@ await leader("A");
 const agents = vim().picker;
 m.pickerKey(use, { key: "k", ctrlKey: true }); // round to the last
 await m.pickerKey(use, { key: "Enter" });
-out([views.title, views.items[0], agents.items.length, calls, vim().line]);""")
+out([views.title, views.items[0], agents.items.length, calls, page().toasts.map((t) => t.text).join()]);""")
 
-        title, first, agents, calls, line = got
+        title, first, agents, calls, toasted = got
         self.assertEqual((title, first["text"], first["current"]), ("Choose the view", "All changes", True))
         self.assertEqual(calls[0], ["PUT", "/api/view", {"view": "staged"}])
         self.assertEqual(calls[1][:2], ["PUT", "/api/agent"])
         self.assertEqual(agents, len(answers()["agent"]["names"]) + 1)
-        self.assertIn("replies in this review, from the next run.", line)
+        self.assertIn("replies in this review, from the next run.", toasted)
 
     def test_the_file_picker_filters_and_goes_to_the_file(self):
         got = self.run_keys("""

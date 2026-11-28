@@ -54,10 +54,15 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .counter { margin-left: var(--space-sm); padding: 2px 6px; border-radius: var(--borderRadius-full); background: var(--bgColor-neutral-muted); font-size: 12px; font-weight: 600; line-height: 1; }
 .blank { margin: var(--space-lg); padding: 32px var(--space-lg); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); text-align: center; color: var(--fgColor-muted); }
 .flash { margin: var(--space-md) var(--space-lg) 0; padding: var(--space-sm) var(--space-md); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-attention-muted); }
-/* Why a change was refused, or a poll failed: pinned, so it is read however far down the reviewer
-   is. Its tint is see-through, so the page's colour goes under it */
-#problem { position: fixed; z-index: 20; left: var(--space-lg); right: var(--space-lg); bottom: var(--space-lg); margin: 0 auto; width: fit-content; max-width: calc(100% - 2 * var(--space-lg));
-  background: linear-gradient(var(--bgColor-attention-muted), var(--bgColor-attention-muted)), var(--bgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); }
+/* The toasts: pinned in the window, so they are read however far down the reviewer is, and they
+   move nothing of the page. What is between and beside them takes no click */
+.toasts { position: fixed; z-index: 20; left: var(--space-lg); right: var(--space-lg); bottom: var(--space-lg); display: flex; flex-direction: column; align-items: center; gap: var(--space-sm); pointer-events: none; }
+/* Above the Vim keys' line at the bottom, which says other things */
+body:has(#vim-line:not([hidden])) .toasts { bottom: 72px; }
+.toast { display: flex; align-items: center; gap: var(--space-md); max-width: min(640px, 100%); max-height: 40vh; margin: 0; overflow: auto; overflow-wrap: anywhere; background: var(--bgColor-muted); box-shadow: 0 8px 24px var(--shadowColor-floating); pointer-events: auto; }
+/* Its tint is see-through, so the page's colour goes under it */
+.toast.error { border-color: var(--borderColor-attention-emphasis); background: linear-gradient(var(--bgColor-attention-muted), var(--bgColor-attention-muted)), var(--bgColor-default); }
+.toast .tool { align-self: flex-start; flex: none; padding: var(--space-xs); }
 
 .appbar { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs) var(--space-lg); background: var(--bgColor-muted); border-bottom: 1px solid var(--borderColor-default); font-weight: 600; }
 .appbar span { margin-right: auto; }
@@ -219,7 +224,6 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .comments { display: flex; flex-direction: column; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); font: 14px/1.5 var(--fontStack-sansSerif); white-space: normal; }
 .file-top { border-bottom: 1px solid var(--borderColor-default); }
 #loose { padding: 0 0 var(--space-lg); }
-.flash.why { background: var(--bgColor-muted); }
 #conversation-tab { max-width: 792px; margin: 0 auto; padding: var(--space-md) 0 64px; }
 #timeline { gap: var(--space-lg); }
 #general { margin-top: var(--space-lg); }
@@ -290,7 +294,8 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .vim-notice span { margin-right: auto; }
 .vim-line, .which { position: fixed; z-index: 19; bottom: var(--space-lg); padding: var(--space-sm) var(--space-md); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); font-size: 12px; }
 .vim-line { left: var(--space-lg); max-width: 50vw; }
-.which { right: var(--space-lg); max-height: 60vh; overflow: auto; }
+/* Over the toasts, as it is read while a key is under way and then goes */
+.which { z-index: 21; right: var(--space-lg); max-height: 60vh; overflow: auto; }
 .which div { display: flex; gap: var(--space-sm); }
 kbd { min-width: 24px; padding: 0 4px; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-muted); font: 12px var(--fontStack-monospace); text-align: center; }
 .dialog { width: min(640px, calc(100vw - 2 * var(--space-lg))); max-height: 80vh; padding: var(--space-md); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); color: var(--fgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); }

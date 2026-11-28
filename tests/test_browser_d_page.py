@@ -27,6 +27,10 @@ if (poll) s = st.polled(s, poll);
 {steps}
 console.log(JSON.stringify(m.pageModel(s)));""")
 
+    def said(self, page, toast):
+        """What the toast <toast> of <page> says, or ""."""
+        return " ".join(t["text"] for t in page["toasts"] if t["id"] == toast)
+
     def test_a_review_opens_on_files_changed_with_its_tree_and_every_files_rows(self):
         page = self.page(answers(threads=[]))
 
@@ -44,7 +48,7 @@ console.log(JSON.stringify(m.pageModel(s)));""")
 
         self.assertEqual(loading["body"], {"kind": "loading", "text": "Loading the review…"})
         self.assertEqual(failed["body"], {"kind": "loading", "text": "Loading the review…"})
-        self.assertEqual(failed["problem"], "Can't reach the watcher")
+        self.assertEqual(self.said(failed, "problem"), "Can't reach the watcher")
         self.assertIsNone(loading["header"])
 
     def test_the_header_names_the_branch_and_base_and_says_in_review(self):
@@ -79,7 +83,7 @@ console.log(JSON.stringify(m.pageModel(s)));""")
     def test_a_review_with_a_reply_opens_on_conversation_saying_why(self):
         page = self.page(answers(threads=[thread("replied")]))
 
-        self.assertEqual((page["body"]["kind"], page["why"]),
+        self.assertEqual((page["body"]["kind"], self.said(page, "why")),
                          ("conversation", "Opened on Conversation: 1 thread needs you (replied or failed)."))
         self.assertEqual(self.tabs(page), [("Conversation", 1, True, "1 needs you"), ("Files changed", 3, False, "")])
 
@@ -87,19 +91,19 @@ console.log(JSON.stringify(m.pageModel(s)));""")
         page = self.page(answers(threads=[thread("working")]), steps="s = st.polled(s, later);",
                          later=answers(threads=[thread("replied"), dict(thread("failed"), id="other")]))
 
-        self.assertEqual((page["body"]["kind"], page["why"]),
+        self.assertEqual((page["body"]["kind"], self.said(page, "why")),
                          ("files", "Opened on Files changed: no open thread is replied or failed."))
         self.assertEqual(self.tabs(page)[0], ("Conversation", 2, False, "2 need you"))
 
     def test_the_tab_the_address_names_is_the_one_shown_saying_nothing(self):
         page = self.page(answers(threads=[thread("replied")]), address="files")
 
-        self.assertEqual((page["body"]["kind"], page["tab"], page["why"]), ("files", "files", ""))
+        self.assertEqual((page["body"]["kind"], page["tab"], self.said(page, "why")), ("files", "files", ""))
 
     def test_why_it_opened_goes_once_the_reviewer_changes_tab(self):
         page = self.page(answers(threads=[]), steps='s = st.showTab(s, "conversation");')
 
-        self.assertEqual((page["body"]["kind"], page["why"]), ("conversation", ""))
+        self.assertEqual((page["body"]["kind"], self.said(page, "why")), ("conversation", ""))
 
     def test_after_a_checkout_the_tab_stays_and_the_other_reviews_reason_for_it_goes(self):
         other = answers(threads=[])
@@ -107,7 +111,7 @@ console.log(JSON.stringify(m.pageModel(s)));""")
 
         page = self.page(answers(threads=[thread("replied")]), steps="s = st.polled(s, other);", other=other)
 
-        self.assertEqual((page["tab"], page["why"]), ("conversation", ""))
+        self.assertEqual((page["tab"], self.said(page, "why")), ("conversation", ""))
 
     def test_before_the_first_answers_the_page_has_no_tab_to_put_in_its_address(self):
         self.assertIsNone(self.page()["tab"])

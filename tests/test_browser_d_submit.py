@@ -117,7 +117,7 @@ class StartAReview(Actions):
         notice = self.run_actions("""
 await m.setMode(use, "live"); await m.confirmLive(use);
 s = d.typeIn(s, general, "Why?"); await m.send(use, general, { start: true });""",
-                                  show="page().notice", mode={"mode": "batched", "held": ["a"]})
+                                  show="noticeOf(page())", mode={"mode": "batched", "held": ["a"]})
 
         self.assertEqual(notice, "")
 
@@ -172,23 +172,23 @@ class TheReviewMode(Actions):
         before, after, moved = self.run_actions("""
 const before = page().header.modes[0].title;
 await m.setMode(use, "live"); await m.confirmLive(use);
-const after = page().notice;
-s = st.showTab(s, "files");""", show="[before, after, page().notice]", mode={"mode": "batched", "held": ["a", "b"]})
+const after = noticeOf(page());
+s = st.showTab(s, "files");""", show="[before, after, noticeOf(page())]", mode={"mode": "batched", "held": ["a", "b"]})
 
         self.assertEqual(before, "Each comment goes to the coding agent as you write it. Switching to Live sends held comments to the coding agent, after asking you.")
         self.assertEqual(after, "Live: 2 held threads were submitted to the coding agent.")
         self.assertEqual(moved, "", "gone once the reviewer moves on")
 
     def test_a_switch_that_submits_nothing_says_what_comments_do_from_now(self):
-        batched = self.run_actions('await m.setMode(use, "batched");', show="page().notice")
-        live = self.run_actions('await m.setMode(use, "live");', show="page().notice", mode=BATCHED)
+        batched = self.run_actions('await m.setMode(use, "batched");', show="noticeOf(page())")
+        live = self.run_actions('await m.setMode(use, "live");', show="noticeOf(page())", mode=BATCHED)
 
         self.assertEqual((batched, live), ("Batched: comments are held until you submit the review.",
                                            "Live: comments go to the coding agent as you write them."))
 
     def test_after_a_checkout_the_other_branchs_review_keeps_its_mode(self):
         calls, problem = self.run_actions(
-            'onBranch = "other-12345678"; await m.setMode(use, "batched");', show="[calls, page().problem]")
+            'onBranch = "other-12345678"; await m.setMode(use, "batched");', show="[calls, problemOf(page())]")
 
         self.assertEqual(calls, [["GET", "/api/review"], "refresh"])
         self.assertEqual(problem, "Another branch is checked out now: nothing was changed.")
@@ -205,13 +205,13 @@ use.api = async (method, path, payload) => {{
   return answer;
 }};
 use.refresh = async () => {{}};
-await m.setMode(use, "batched");""", show="[page().header.branch, page().header.modes[0].current, page().notice]")
+await m.setMode(use, "batched");""", show="[page().header.branch, page().header.modes[0].current, noticeOf(page())]")
 
         self.assertEqual(got, ["other", True, ""])
 
     def test_a_refused_change_says_why_and_the_mode_stays(self):
         problem, modes = self.run_actions(
-            'refuse["PUT /api/mode"] = "no"; await m.setMode(use, "batched");', show="[page().problem, page().header.modes]")
+            'refuse["PUT /api/mode"] = "no"; await m.setMode(use, "batched");', show="[problemOf(page()), page().header.modes]")
 
         self.assertEqual((problem, modes[0]["current"]), ("no", True))
 
@@ -351,7 +351,7 @@ await m.setMode(use, "live");""", show="[calls, page().confirm?.text]", mode=BAT
     def test_when_what_is_held_cant_be_read_nothing_is_sent(self):
         calls, confirm, problem = self.run_actions(
             'refuse["GET /api/review"] = "no"; await m.setMode(use, "live");',
-            show="[calls, page().confirm, page().problem]", mode=BATCHED)
+            show="[calls, page().confirm, problemOf(page())]", mode=BATCHED)
 
         self.assertEqual((calls, confirm, problem), ([["GET", "/api/review"]], None, "no"))
 
@@ -411,7 +411,7 @@ await m.setMode(use, "live");""", show="[calls, page().confirm?.text]", mode=BAT
         self.assertEqual(gone, [None, None, None])
 
     def test_after_a_checkout_that_no_poll_saw_yes_changes_nothing(self):
-        calls, problem = self.live('onBranch = "other-12345678"; await m.confirmLive(use);', show="[calls, page().problem]")
+        calls, problem = self.live('onBranch = "other-12345678"; await m.confirmLive(use);', show="[calls, problemOf(page())]")
 
         self.assertEqual(calls, [["GET", "/api/review"], "refresh"])
         self.assertEqual(problem, "Another branch is checked out now: nothing was changed.")
@@ -429,7 +429,7 @@ class SubmittingTheReview(Actions):
     def test_the_summary_is_posted_as_a_general_thread_then_the_held_threads_are_submitted(self):
         calls, submit, notice, typed = self.submit(
             's = d.typeIn(s, key, " Overall: good "); await m.submitReview(use);',
-            show="[calls, page().header.submit, page().notice, d.boxOf(s, key).text]")
+            show="[calls, page().header.submit, noticeOf(page()), d.boxOf(s, key).text]")
 
         self.assertEqual(calls, [["GET", "/api/review"], self.SUMMARY, ["POST", "/api/submit", {}], "refresh"])
         self.assertEqual(submit, {"text": "Submit review", "count": 0, "off": "", "panel": None})
@@ -476,7 +476,7 @@ delete refuse["POST /api/submit"]; calls.length = 0; await m.submitReview(use);"
         open_still, closed = [self.submit(f"""
 refuse["POST /api/submit"] = "no"; s = d.typeIn(s, key, "Overall: good");
 const sending = m.submitReview(use); {close}
-await sending;""", show="page().problem") for close in ("", "s = st.openSubmit(s, false);")]
+await sending;""", show="problemOf(page())") for close in ("", "s = st.openSubmit(s, false);")]
 
         self.assertEqual(open_still, "", "the panel says why")
         self.assertEqual(closed, "Your summary is posted, but the review isn't submitted: no")
@@ -489,7 +489,7 @@ await sending;""", show="page().problem") for close in ("", "s = st.openSubmit(s
     def test_after_a_checkout_nothing_is_sent_and_the_summary_waits_for_its_branch(self):
         calls, text, problem = self.submit(
             's = d.typeIn(s, key, "Overall: good"); onBranch = "other-12345678"; await m.submitReview(use);',
-            show="[calls, d.boxOf(s, key).text, page().problem]")
+            show="[calls, d.boxOf(s, key).text, problemOf(page())]")
 
         self.assertEqual(calls, [["GET", "/api/review"], "refresh"])
         self.assertEqual((text, problem), ("Overall: good",
@@ -521,7 +521,7 @@ class MarkingTheReviewDone(Actions):
     def test_a_refused_mark_says_why_and_the_review_stays_in_review(self):
         problem, state = self.run_actions(
             'refuse["PUT /api/done"] = "another branch is checked out"; await m.setDone(use, true);',
-            show="[page().problem, page().header.state]", done=UNDONE)
+            show="[problemOf(page()), page().header.state]", done=UNDONE)
 
         self.assertEqual((problem, state), ("another branch is checked out", "In review"))
 

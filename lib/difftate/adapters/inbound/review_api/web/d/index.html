@@ -54,15 +54,12 @@
 </header>
 <div id="waiting" class="flash" role="status" hidden></div>
 </div>
-<div id="problem" class="flash" role="status" hidden></div>
 <div id="warnings" role="status"></div>
 <div id="vim-notice" class="flash vim-notice" role="status" hidden>
   <span id="vim-notice-text"></span>
   <button type="button" id="vim-notice-off" class="link">Turn Vim keys off</button>
   <button type="button" id="vim-notice-seen" class="link">Got it</button>
 </div>
-<div id="why" class="flash why" role="status" hidden></div>
-<div id="notice" class="flash why" role="status" hidden></div>
 <p id="loading" class="blank">Loading the review…</p>
 <main id="files-tab" hidden>
   <div class="toolbar">
@@ -98,6 +95,7 @@
 <div id="path-popover" class="path-popover" popover role="dialog" aria-label="Review path"></div>
 <div id="vim-line" class="vim-line" role="status" hidden></div>
 <div id="which" class="which" role="status" hidden></div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
 <dialog id="live-confirm" class="dialog confirm" aria-labelledby="live-confirm-text">
   <p id="live-confirm-text"></p>
   <div class="dialog-foot"><button type="button" id="live-no" class="btn" autofocus></button><button type="button" id="live-yes" class="btn primary"></button></div>

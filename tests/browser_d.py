@@ -7,14 +7,20 @@ import subprocess
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB = os.path.join(ROOT, "lib", "difftate", "adapters", "inbound", "review_api", "web")
 RELEASED = os.path.join(ROOT, "tests", "fixtures", "review_api_released.json")
+# What the toasts of a page's model say (web/d/toasts.js), "" for nothing: its errors, and what
+# the reviewer's last change did
+TOASTED = """const toastText = (page, which) => page.toasts.filter(which).map((t) => t.text).join(" ");
+const problemOf = (page) => toastText(page, (t) => t.kind === "error");
+const noticeOf = (page) => toastText(page, (t) => t.id === "notice");
+"""
 
 
 def run_js(module, body):
     """Run <body> in node with web/d/<module>.js imported as m; "{DIFF}",
     "{STATE}", "{API}", "{DRAFTS}", "{ACTIONS}", "{PAGE}", "{POLL}", "{FILES}", "{SETTINGS}" and "{PICKER}" in
     it name web/diff.js and web/d/'s state.js, api.js, drafts.js, actions.js, page.js, poll.js,
-    files_changed.js, settings.js and picker.js. <body> prints JSON: what
-    it printed."""
+    files_changed.js, settings.js and picker.js. <body> may use TOASTED's functions, and prints
+    JSON: what it printed."""
     path = "file://" + os.path.join(WEB, "d", module + ".js")
     for name, other in (("DIFF", "diff.js"), ("STATE", os.path.join("d", "state.js")),
                         ("API", os.path.join("d", "api.js")), ("DRAFTS", os.path.join("d", "drafts.js")),
@@ -22,7 +28,7 @@ def run_js(module, body):
                         ("POLL", os.path.join("d", "poll.js")), ("FILES", os.path.join("d", "files_changed.js")),
                         ("SETTINGS", os.path.join("d", "settings.js")), ("PICKER", os.path.join("d", "picker.js"))):
         body = body.replace(f'"{{{name}}}"', json.dumps("file://" + os.path.join(WEB, other)))
-    script = f"import * as m from {json.dumps(path)};\n{body}"
+    script = f"import * as m from {json.dumps(path)};\n{TOASTED}{body}"
     run = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=30)
     if run.returncode:
         raise AssertionError(run.stderr)
