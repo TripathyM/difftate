@@ -253,6 +253,39 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .btn.primary { border-color: transparent; background: var(--bgColor-success-emphasis); color: var(--fgColor-onEmphasis); }
 .btn:disabled { opacity: .6; cursor: default; }
 
+/* The Vim keys: the line cursor, the thread gone to, and what they show */
+.diff tr.code-line { scroll-margin-bottom: 56px; }
+.diff.unified tr:is(.cursor-old, .cursor-new) td,
+.diff.split tr.cursor-old td.old, .diff.split tr.cursor-new td.new { box-shadow: inset 0 2px var(--fgColor-accent), inset 0 -2px var(--fgColor-accent); }
+.thread.focused { outline: 2px solid var(--fgColor-accent); outline-offset: 1px; }
+.columns.no-tree { grid-template-columns: minmax(0, 1fr); }
+.columns.no-tree .sidebar { display: none; }
+.vim-title { margin-top: var(--space-md); }
+.setting-hint { margin: var(--space-xs) 0 0; font-size: 12px; }
+.vim-notice { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-md); }
+.vim-notice span { margin-right: auto; }
+.vim-line, .which { position: fixed; z-index: 19; bottom: var(--space-lg); padding: var(--space-sm) var(--space-md); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); font-size: 12px; }
+.vim-line { left: var(--space-lg); max-width: 50vw; }
+.which { right: var(--space-lg); max-height: 60vh; overflow: auto; }
+.which div { display: flex; gap: var(--space-sm); }
+kbd { min-width: 24px; padding: 0 4px; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-muted); font: 12px var(--fontStack-monospace); text-align: center; }
+.dialog { width: min(640px, calc(100vw - 2 * var(--space-lg))); max-height: 80vh; padding: var(--space-md); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); color: var(--fgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); }
+.dialog.wide { width: min(980px, calc(100vw - 2 * var(--space-lg))); }
+.dialog::backdrop { background: #0006; }
+.dialog-head { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-sm); }
+.dialog-head b { margin-right: auto; }
+.dialog input { height: 32px; padding: 0 var(--space-sm); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); }
+#picker-query { width: 100%; }
+.picker-items { margin-top: var(--space-sm); max-height: 50vh; overflow: auto; }
+.picker-items .menu-item { display: flex; gap: var(--space-md); }
+.picker-items .menu-item span:first-child { margin-right: auto; overflow-wrap: anywhere; }
+.keys-groups { columns: 420px; }
+.keys-groups section { break-inside: avoid; }
+.keys-groups h2 { margin: var(--space-sm) 0 var(--space-xs); font-size: 13px; }
+.key-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px; column-gap: var(--space-sm); align-items: center; padding: 2px 0; font-size: 12px; }
+.key-row input { font: 12px var(--fontStack-monospace); height: 26px; }
+.key-row .key-note { grid-column: 1 / -1; color: var(--fgColor-attention); }
+
 @media (max-width: 800px) {
   .columns { grid-template-columns: minmax(0, 1fr); }
   .sidebar { position: static; max-height: 40vh; }

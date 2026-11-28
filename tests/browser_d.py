@@ -11,14 +11,16 @@ RELEASED = os.path.join(ROOT, "tests", "fixtures", "review_api_released.json")
 
 def run_js(module, body):
     """Run <body> in node with web/d/<module>.js imported as m; "{DIFF}",
-    "{STATE}", "{API}", "{DRAFTS}", "{ACTIONS}", "{PAGE}" and "{POLL}" in it name web/diff.js and
-    web/d/'s state.js, api.js, drafts.js, actions.js, page.js and poll.js. <body> prints JSON: what
+    "{STATE}", "{API}", "{DRAFTS}", "{ACTIONS}", "{PAGE}", "{POLL}", "{FILES}", "{SETTINGS}" and "{PICKER}" in
+    it name web/diff.js and web/d/'s state.js, api.js, drafts.js, actions.js, page.js, poll.js,
+    files_changed.js, settings.js and picker.js. <body> prints JSON: what
     it printed."""
     path = "file://" + os.path.join(WEB, "d", module + ".js")
     for name, other in (("DIFF", "diff.js"), ("STATE", os.path.join("d", "state.js")),
                         ("API", os.path.join("d", "api.js")), ("DRAFTS", os.path.join("d", "drafts.js")),
                         ("ACTIONS", os.path.join("d", "actions.js")), ("PAGE", os.path.join("d", "page.js")),
-                        ("POLL", os.path.join("d", "poll.js"))):
+                        ("POLL", os.path.join("d", "poll.js")), ("FILES", os.path.join("d", "files_changed.js")),
+                        ("SETTINGS", os.path.join("d", "settings.js")), ("PICKER", os.path.join("d", "picker.js"))):
         body = body.replace(f'"{{{name}}}"', json.dumps("file://" + os.path.join(WEB, other)))
     script = f"import * as m from {json.dumps(path)};\n{body}"
     run = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=30)

@@ -21,6 +21,10 @@
   <div id="layouts" class="modes" role="group" aria-labelledby="layouts-title"></div>
   <div class="setting-title">Theme</div>
   <label class="check"><input type="checkbox" id="follow-system"> Follow the system</label>
+  <div class="setting-title vim-title">Keys</div>
+  <label class="check"><input type="checkbox" id="vim-on"> Vim keys, as in the Neovim viewer</label>
+  <button type="button" id="open-keys" class="link">All keys, and change them</button>
+  <p class="muted setting-hint">A Vim browser extension (such as Vimium) takes keys first: turn it off for this page.</p>
   <div id="agent-setting" class="agent-setting" hidden>
     <label class="setting-title" for="agent">Coding agent</label>
     <select id="agent" title="Which coding agent replies in this review. Default: the repository's agent, else the machine's. Pick another to use it for this review only."></select>
@@ -47,6 +51,11 @@
 <div id="problem" class="flash" role="status" hidden></div>
 <div id="waiting" class="flash" role="status" hidden></div>
 <div id="warnings" role="status"></div>
+<div id="vim-notice" class="flash vim-notice" role="status" hidden>
+  <span id="vim-notice-text"></span>
+  <button type="button" id="vim-notice-off" class="link">Turn Vim keys off</button>
+  <button type="button" id="vim-notice-seen" class="link">Got it</button>
+</div>
 <div id="why" class="flash why" role="status" hidden></div>
 <div id="notice" class="flash why" role="status" hidden></div>
 <p id="loading" class="blank">Loading the review…</p>
@@ -81,6 +90,22 @@
   <div id="timeline" class="comments"></div>
   <div id="general" class="comments"></div>
 </main>
+<div id="vim-line" class="vim-line" role="status" hidden></div>
+<div id="which" class="which" role="status" hidden></div>
+<dialog id="picker" class="dialog" aria-labelledby="picker-title">
+  <div class="dialog-head"><b id="picker-title"></b><span class="muted">Enter picks · Ctrl+j and Ctrl+k move · Esc closes</span></div>
+  <input id="picker-query" placeholder="Type to filter" aria-label="Filter the list" autocomplete="off" spellcheck="false">
+  <div id="picker-items" class="picker-items"></div>
+  <p id="picker-none" class="muted" hidden>Nothing matches</p>
+</dialog>
+<dialog id="keys-help" class="dialog wide" aria-label="All keys">
+  <div class="dialog-head"><b>All keys</b>
+    <button type="button" id="keys-reset" class="btn">Reset all</button>
+    <button type="button" id="keys-close" class="btn primary">Close</button></div>
+  <p class="muted">Type in a field to change a key; empty turns it off. &lt;leader&gt; is Space and &lt;C-d&gt; is Ctrl+d, as in Neovim. Changes are kept in this browser, for this watcher's address.</p>
+  <p id="keys-extension"></p>
+  <div id="keys-groups" class="keys-groups"></div>
+</dialog>
 <script type="module" src="/d/main.js"></script>
 </body>
 </html>
