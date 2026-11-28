@@ -86,6 +86,7 @@ select, #commit { padding: 0 var(--space-sm); border: 1px solid var(--borderColo
 .state.done { background: var(--bgColor-neutral-emphasis); }
 .controls { position: relative; display: flex; align-items: center; gap: var(--space-sm); margin-left: auto; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-sm); }
+.still-open { font-size: 12px; }
 .actions .counter { margin-left: var(--space-sm); background: var(--bgColor-default); color: var(--fgColor-default); }
 .modes { display: flex; padding: 2px; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-muted); }
 .modes button { padding: 1px var(--space-md); border: 1px solid transparent; border-radius: var(--borderRadius-medium); color: var(--fgColor-muted); font-size: 12px; }
@@ -122,6 +123,7 @@ select, #commit { padding: 0 var(--space-sm); border: 1px solid var(--borderColo
 button.tree-row:hover { background: var(--control-transparent-bgColor-hover); }
 button.tree-row[aria-current] { background: var(--control-transparent-bgColor-selected); box-shadow: inset 3px 0 var(--fgColor-accent); }
 .tree-row.viewed .name { color: var(--fgColor-muted); }
+.tree-row .counts { margin-left: 0; font-weight: 400; font-size: 11px; }
 .open-threads { display: flex; align-items: center; gap: 2px; color: var(--fgColor-muted); font-size: 12px; }
 .viewed-mark { display: flex; color: var(--fgColor-success); }
 

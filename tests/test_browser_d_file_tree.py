@@ -55,6 +55,17 @@ class TheFileTree(unittest.TestCase):
 
         self.assertEqual([(r["name"], r["viewed"]) for r in rows], [("a.py", False), ("b.py", True)])
 
+    def test_a_file_has_its_added_and_deleted_line_counts_by_folder_and_in_reading_order(self):
+        files = [{"path": "a.py", "status": "modified", "additions": 12, "deletions": 3}]
+        # gone.py: the path names it, the changeset doesn't have it, so there is nothing to count
+        listed = [{"kind": "off", "file": "a.py"}, {"kind": "off", "file": "gone.py"}]
+
+        got = run_js("file_tree", f"""console.log(JSON.stringify([null, {json.dumps(listed)}].map((listed) =>
+  m.treeRows({{ files: {json.dumps(files)}, listed }}).map((r) => [r.path, r.counts]))));""")
+
+        self.assertEqual(got, [[["a.py", {"additions": 12, "deletions": 3}]],
+                               [["a.py", {"additions": 12, "deletions": 3}], ["gone.py", None]]])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -165,10 +165,9 @@ this API like any other, which never sees the token (a coding agent can read the
 browser's history). `difftate` opens it with a single-use launch code:
 GET /?launch=<code>&folder=<path> trades the code for an HttpOnly, SameSite=Strict cookie and
 redirects to /?folder=<path> (the folder the link named: the page names it in every
-API request), after which the code is refused. The page (/) and its scripts
-(/app.js, /diff.js, /warnings.js, /review_path.js) need that cookie, as does a second
-page beside it, layout D (/d?folder=<path>, with /d/style.css and its scripts under /d/):
-the reviewer signs in with the same link, then changes the address. API requests take
+API request), after which the code is refused. The page (/, layout D) and everything it
+loads (/d/style.css, its scripts under /d/, and /diff.js and /review_path.js) need that
+cookie. API requests take
 the cookie instead of the token only with the header "X-Difftate: page" (which another
 site's page can't send without asking) and, when the browser says, the API's own Origin.
 Anything else gets 401.
@@ -199,13 +198,9 @@ MAX_BODY = 1 << 20
 _HERE = os.path.dirname(os.path.abspath(__file__))
 # The browser viewer's files: (path on disk, Content-Type).
 PAGE_FILES = {
-    "/": (os.path.join(_HERE, "web", "index.html"), "text/html; charset=utf-8"),
-    "/app.js": (os.path.join(_HERE, "web", "app.js"), "text/javascript; charset=utf-8"),
+    "/": (os.path.join(_HERE, "web", "d", "index.html"), "text/html; charset=utf-8"),
     "/diff.js": (os.path.join(_HERE, "web", "diff.js"), "text/javascript; charset=utf-8"),
-    "/warnings.js": (os.path.join(_HERE, "web", "warnings.js"), "text/javascript; charset=utf-8"),
     "/review_path.js": (os.path.join(_HERE, "web", "review_path.js"), "text/javascript; charset=utf-8"),
-    # Layout D, beside the viewer above
-    "/d": (os.path.join(_HERE, "web", "d", "index.html"), "text/html; charset=utf-8"),
     "/d/style.css": (os.path.join(_HERE, "web", "d", "style.css"), "text/css; charset=utf-8"),
     **{f"/d/{name}.js": (os.path.join(_HERE, "web", "d", f"{name}.js"), "text/javascript; charset=utf-8")
        for name in ("actions", "api", "banners", "conversation", "diff_rows", "dom", "draw_conversation", "draw_files",

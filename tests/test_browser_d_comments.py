@@ -63,7 +63,8 @@ console.log(JSON.stringify(m.pageModel(s).body));""")
         long = self.file(body, "long.py")
         self.assertEqual(self.below(long), [(7, [], ["Comment on lines 5–7"])])
         box = next(r for r in long["rows"] if r["kind"] == "below")["drafts"][0]
-        self.assertEqual((box["send"], box["tab"], box["text"], box["was"], box["hint"]), ("Comment", "write", "", None, ""))
+        self.assertEqual((box["send"], box["tab"], box["text"], box["was"], box["hint"]), ("Comment", "write", "", None,
+                         "⌘/Ctrl+Enter sends. Shift-click another line number to cover more lines."))
         self.assertEqual(body["loose"], [])
 
     def test_in_a_batched_review_the_box_says_the_comment_is_held(self):
@@ -72,7 +73,8 @@ console.log(JSON.stringify(m.pageModel(s).body));""")
         long = self.file(self.body("pick(spot(5));", poll=poll), "long.py")
 
         box = next(r for r in long["rows"] if r["kind"] == "below")["drafts"][0]
-        self.assertEqual((box["send"], box["hint"]), ("Add review comment", "Held until you submit the review."))
+        self.assertEqual((box["send"], box["hint"]), (
+            "Add review comment", "Held until you submit the review. ⌘/Ctrl+Enter sends. Shift-click another line number to cover more lines."))
 
     def picked(self, body):
         return [(r["old"], r["new"], r["picked"]) for f in body["files"] for r in f["rows"] if r.get("picked")]
