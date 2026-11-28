@@ -5,7 +5,7 @@ import json
 import shutil
 import unittest
 
-from browser_d import run_js
+from browser_d import answers, run_js
 
 
 @unittest.skipUnless(shutil.which("node"), "needs node")
@@ -48,6 +48,53 @@ console.log(JSON.stringify(m.foldTarget({json.dumps(files)}, (path) => was.get(p
 
     def test_a_file_that_was_folded_already_or_that_opens_moves_nothing(self):
         self.assertIsNone(self.target(["a"], a=(True, -10, 30), b=(True, -10, 30)))
+
+# As much of a document as drawing the files needs: a tree of nodes
+DOCUMENT = """
+const node = (tag) => ({
+  tag, children: [], parent: null, className: "", textContent: "", dataset: {},
+  setAttribute() {}, addEventListener() {}, contains: () => false,
+  getBoundingClientRect: () => ({ top: 0, bottom: 0 }),
+  get classList() { return { contains: (name) => this.className.split(" ").includes(name) }; },
+  append(...added) { for (const c of added) if (typeof c !== "string") this.insertBefore(c, null); },
+  insertBefore(c, ref) { c.remove(); c.parent = this; this.children.splice(ref ? this.children.indexOf(ref) : this.children.length, 0, c); },
+  replaceChildren(...added) { for (const c of [...this.children]) c.remove(); this.append(...added); },
+  remove() { if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1); this.parent = null; },
+});
+const byId = new Map();
+globalThis.document = {
+  createElement: node, createElementNS: (_, tag) => node(tag), activeElement: null,
+  getElementById: (id) => byId.get(id) ?? byId.set(id, node("div")).get(id),
+};
+const all = (n) => [n, ...n.children.flatMap(all)];
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "needs node")
+class AFilesHeaderWhileItScrolls(unittest.TestCase):
+    def test_a_header_can_stick_as_long_as_its_file_is_on_screen(self):
+        # A sticky element stays only as long as its parent is on screen: the header's parent has
+        # to be the file's whole card, diff and all. Drawn again with the file viewed too, which
+        # draws the header anew
+        got = run_js("draw_files", f"""
+import * as st from "{{STATE}}";
+import {{ pageModel }} from "{{PAGE}}";
+{DOCUMENT}
+let s = st.polled(st.initialState("files"), {json.dumps(answers())});
+const seen = [];
+const draw = () => {{
+  m.drawFiles(pageModel(s).body, {{}});
+  seen.push(document.getElementById("files").children.map((card) => {{
+    const heads = all(card).filter((n) => n.className === "file-head");
+    return [heads.length, heads[0].parent === card, all(card).some((n) => n.tag === "table")];
+  }}));
+}};
+draw();
+s = st.foldFile(st.viewedAnswered(s, ["app.py"]), "app.py", false);
+draw();
+console.log(JSON.stringify(seen));""")
+
+        self.assertEqual(got, [[[1, True, True]] * 3] * 2)
 
 
 if __name__ == "__main__":
