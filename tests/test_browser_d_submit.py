@@ -62,7 +62,7 @@ const use = {{
     calls.push(payload === undefined ? [method, path] : [method, path, payload]);
     const why = refuse[`${{method}} ${{path}}`];
     if (why) {{ const {{ ApiError }} = await import("{{API}}"); throw new ApiError(409, why); }}
-    if (path === "/api/review") return {{ id: onBranch, waitingForRun: waitsForRun }};
+    if (path === "/api/review") return {{ id: onBranch, waitingForRun: waitsForRun, ...server.mode }};
     // A batched review holds a new thread; a submit sends all that is held
     if (path === "/api/threads" && server.mode.mode === "batched") {{
       server = {{ ...server, mode: {{ ...server.mode, held: [...server.mode.held, "summary"] }} }};
@@ -175,7 +175,7 @@ await m.setMode(use, "live"); await m.confirmLive(use);
 const after = page().notice;
 s = st.showTab(s, "files");""", show="[before, after, page().notice]", mode={"mode": "batched", "held": ["a", "b"]})
 
-        self.assertEqual(before, "Each comment goes to the coding agent as you write it. Switching to Live sends held comments to the coding agent: it asks first.")
+        self.assertEqual(before, "Each comment goes to the coding agent as you write it. Switching to Live sends held comments to the coding agent, after asking you.")
         self.assertEqual(after, "Live: 2 held threads were submitted to the coding agent.")
         self.assertEqual(moved, "", "gone once the reviewer moves on")
 
@@ -339,6 +339,26 @@ class GoingLiveWithHeldComments(Actions):
 
     def live(self, steps, show, threads=THREADS, mode=HELD):
         return self.run_actions(f'await m.setMode(use, "live");\n{steps}', show, threads=threads, mode=mode)
+
+    def test_what_another_viewer_held_since_the_last_poll_is_asked_about_too(self):
+        calls, confirm = self.run_actions(f"""
+server = {{ ...server, threads: {json.dumps(self.THREADS)}, mode: {json.dumps(self.HELD)} }};
+await m.setMode(use, "live");""", show="[calls, page().confirm?.text]", mode=BATCHED)
+
+        self.assertEqual(calls, [["GET", "/api/review"], "refresh"])
+        self.assertEqual(confirm, "Send 3 held comments to the agent now?")
+
+    def test_when_what_is_held_cant_be_read_nothing_is_sent(self):
+        calls, confirm, problem = self.run_actions(
+            'refuse["GET /api/review"] = "no"; await m.setMode(use, "live");',
+            show="[calls, page().confirm, page().problem]", mode=BATCHED)
+
+        self.assertEqual((calls, confirm, problem), ([["GET", "/api/review"]], None, "no"))
+
+    def test_it_never_asks_about_fewer_comments_than_there_are_held_threads(self):
+        confirm = self.live("", show="page().confirm", threads=[])  # held, but not among the threads read yet
+
+        self.assertEqual(confirm["text"], "Send 2 held comments to the agent now?")
 
     def test_it_asks_first_with_the_number_of_held_comments_and_sends_nothing(self):
         calls, confirm, modes = self.live("", show="[calls, page().confirm, page().header.modes]")
