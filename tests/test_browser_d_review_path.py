@@ -1,5 +1,5 @@
-"""The review path in layout D (#260): the file tree in Reading order or by folder, each file's
-stop above its diff, and Viewed, next (the models of web/d/, with the review path model of
+"""The review path in layout D (#260, #276): the file tree in Reading order or by folder, each
+file's header line and the popover it opens, and Viewed, next (the models of web/d/, with the review path model of
 web/review_path.js). Node runs them, with answers shaped like the released transcript."""
 import json
 import shutil
@@ -162,18 +162,93 @@ class AnOutOfDatePath(Pages):
             self.assertEqual(self.page("body().outOfDate", with_path(path)), "")
 
 
-# A file's stop block (web/review_path.js), as the page's model has it: its text, flattened
-BLOCKS = """Object.fromEntries(body().files.map((f) => {
-  const flat = (n) => [n.text ?? "", ...n.kids.map(flat)].join(" ");
-  return [f.path, f.stop && flat(f.stop).replace(/\\s+/g, " ").trim()];
-}))"""
+# A file header's review path line, as the page's model has it
+LINES = "Object.fromEntries(body().files.map((f) => [f.path, f.pathLine]))"
 
 
-class StopBlocks(Pages):
-    def test_each_file_shows_what_the_path_says_of_it_above_its_diff(self):
-        got = self.page(BLOCKS)
+def with_stop(**changes):
+    """The released path, its first stop (app.py) with <changes>."""
+    path = json.loads(json.dumps(PATH))
+    path["stops"][0].update(changes)
+    return with_path(path)
 
-        self.assertEqual(got, {
+
+def questions(*asked):
+    return [{"question": q, "answer": "Because."} for q in asked]
+
+
+class TheHeaderLine(Pages):
+    def line(self, file, given=None):
+        return self.page(f"({LINES})[{json.dumps(file)}]", given)
+
+    def test_a_stop_shows_its_number_its_star_and_its_first_question(self):
+        self.assertEqual(self.line("app.py"), {"badge": "1", "key": True, "text": "What is new?", "more": ""})
+        self.assertEqual(self.line("lib.py"), {"badge": "1.1", "key": False, "text": "Why?", "more": ""})
+
+    def test_and_how_many_questions_follow_the_first(self):
+        given = with_stop(questions=questions("What is new?", "Why now?", "What else?"))
+
+        self.assertEqual(self.line("app.py", given)["more"], "+2")
+
+    def test_a_stop_with_no_questions_shows_its_lines(self):
+        self.assertEqual(self.line("app.py", with_stop(questions=[])),
+                         {"badge": "1", "key": True, "text": "Lines 1-2, 4", "more": ""})
+
+    def test_with_no_lines_either_it_says_it_is_a_stop(self):
+        self.assertEqual(self.line("app.py", with_stop(questions=[], ranges=[]))["text"], "Stop on the review path")
+
+    def test_a_side_file_shows_its_text_and_the_stop_it_goes_with(self):
+        self.assertEqual(self.line("README.md"), {"badge": "with 1", "key": False, "text": "What it says.", "more": ""})
+
+    def test_a_side_file_without_text_names_its_stop(self):
+        side = dict(PATH["stops"][0]["side_files"][0], text="")
+
+        self.assertEqual(self.line("README.md", with_stop(side_files=[side]))["text"], "Side file of app.py")
+
+    def test_a_skipped_file_shows_skipped_and_why(self):
+        self.assertEqual(self.line("long.py"), {"badge": "Skipped", "key": False, "text": "numbers only", "more": ""})
+
+    def test_a_skipped_file_with_no_reason(self):
+        path = dict(PATH, skipped=[dict(PATH["skipped"][0], reason="")])
+
+        self.assertEqual(self.line("long.py", with_path(path))["text"], "no reason given")
+
+    def test_a_file_off_the_path_says_so(self):
+        self.assertEqual(self.line("notes.md"), {"badge": "Not on the path", "key": False, "text": "", "more": ""})
+
+    def test_it_is_one_line_whatever_the_agent_wrote(self):
+        given = with_stop(questions=questions("What is\nnew?"))
+
+        self.assertEqual(self.line("app.py", given)["text"], "What is new?")
+
+    def test_without_a_review_path_no_header_has_the_line(self):
+        self.assertEqual(self.page(LINES, with_path(None)), dict.fromkeys(NAMED))
+
+
+# The open popover (web/review_path.js's stop block), as the page's model has it: its file
+# and its text, flattened, or null while none is open
+SHOWN = """((d) => d && [d.file, ((flat) => flat(d.block).replace(/\\s+/g, " ").trim())(
+  function flat(n) { return [n.text ?? "", ...n.kids.map(flat)].join(" "); })])(body().popover)"""
+# What opens each file's popover in turn
+EVERY = """Object.fromEntries(body().files.map((f) => {
+  s = st.togglePathPopover(s, f.path, "app.py");
+  return [f.path, (SHOWN)?.[1] ?? null];
+}))""".replace("SHOWN", SHOWN)
+
+
+def toggle(file, top="app.py"):
+    """The reviewer presses <file>'s review path line, with <top> the file at the top of the screen."""
+    return f"s = st.togglePathPopover(s, {json.dumps(file)}, {json.dumps(top)});"
+
+
+class ThePopover(Pages):
+    def test_no_popover_shows_until_the_reviewer_asks_for_one(self):
+        got = self.page("[body().popover, body().files.filter((f) => 'stop' in f).length]")
+
+        self.assertEqual(got, [None, 0])
+
+    def test_each_files_line_opens_all_the_path_says_of_it(self):
+        self.assertEqual(self.page(EVERY), {
             "app.py": 'Review path 1 app.py ★ Lines 1-2, 4 What is new? See "Greeting". Spec app.test.py "greets"'
                       ' Side file README.md (lines 1-2): What it says. Greeting It is an f-string.',
             "README.md": "Review path README.md (lines 1-2) Side file of 1 app.py What it says.",
@@ -183,12 +258,107 @@ class StopBlocks(Pages):
             "review-path.md": "Review path Not on the review path: the coding agent named it nowhere.",
         })
 
-    def test_the_blocks_show_by_folder_too(self):
-        self.assertEqual(self.page(BLOCKS, steps='s = st.sortTree(s, "folder");')["lib.py"],
-                         "Review path 1.1 lib.py Why? Because.")
+    def test_it_opens_by_folder_too(self):
+        got = self.page(SHOWN, steps='s = st.sortTree(s, "folder");' + toggle("lib.py"))
 
-    def test_without_a_review_path_no_file_has_a_block(self):
-        self.assertEqual(self.page(BLOCKS, with_path(None)), dict.fromkeys(NAMED))
+        self.assertEqual(got, ["lib.py", "Review path 1.1 lib.py Why? Because."])
+
+    def test_pressing_the_line_again_closes_it(self):
+        self.assertIsNone(self.page(SHOWN, steps=toggle("lib.py") + toggle("lib.py")))
+
+    def test_another_files_line_shows_that_file_instead(self):
+        got = self.page(SHOWN, steps=toggle("lib.py") + toggle("long.py"))
+
+        self.assertEqual(got, ["long.py", "Review path Skipped: numbers only"])
+
+    def test_it_closes(self):
+        self.assertIsNone(self.page(SHOWN, steps=toggle("lib.py") + "s = st.closePathPopover(s);"))
+
+    def test_a_poll_keeps_it_open_with_what_the_path_says_now(self):
+        asked = with_stop(questions=questions("Why now?"))
+
+        got = self.page(SHOWN, steps=toggle("app.py") + f"s = st.polled(s, {json.dumps(asked)});")
+
+        self.assertIn("Why now?", got[1])
+
+    def test_without_a_review_path_there_is_nothing_to_open(self):
+        self.assertIsNone(self.page(SHOWN, with_path(None), toggle("lib.py")))
+
+
+class ClosingThePopover(Pages):
+    def after(self, steps):
+        """What shows once the reviewer, with app.py at the top of the screen, opened lib.py's
+        popover and <steps> happened."""
+        return self.page(f"({SHOWN})?.[0] ?? null", steps=toggle("lib.py") + steps)
+
+    def scrolled(self, top, line_shown=True):
+        """A scroll that leaves <top> at the top of the screen, and lib.py's line on it or not."""
+        return f"s = st.scrolledTo(s, {json.dumps(top)}, {json.dumps(line_shown)});"
+
+    def test_scrolling_with_the_same_file_at_the_top_keeps_it_open(self):
+        self.assertEqual(self.after(self.scrolled("app.py")), "lib.py")
+
+    def test_scrolling_to_another_file_closes_it(self):
+        self.assertIsNone(self.after(self.scrolled("README.md")))
+
+    def test_scrolling_towards_its_own_file_keeps_it_open(self):
+        self.assertEqual(self.after(self.scrolled("lib.py")), "lib.py")
+
+    def test_scrolling_its_line_out_of_sight_closes_it(self):
+        # The file at the top is the same still: the described one left at the window's foot
+        self.assertIsNone(self.after(self.scrolled("app.py", line_shown=False)))
+
+    def test_a_scroll_with_none_open_changes_nothing(self):
+        self.assertTrue(self.page("st.scrolledTo(s, 'lib.py', false) === s"))
+
+    def test_another_tab_closes_it_for_good(self):
+        self.assertIsNone(self.after('s = st.showTab(st.showTab(s, "conversation"), "files");'))
+
+    def test_another_view_closes_it(self):
+        staged = with_path()
+        staged["changeset"] = dict(staged["changeset"], view="staged")
+
+        self.assertIsNone(self.after(f"s = st.polled(s, {json.dumps(staged)});"))
+
+    def test_another_review_closes_it(self):
+        other = with_path()
+        other["review"] = dict(other["review"], id="other-12345678", branch="other")
+
+        self.assertIsNone(self.after(f"s = st.polled(s, {json.dumps(other)});"))
+
+    def test_a_file_that_leaves_the_diff_takes_its_popover_along(self):
+        gone = with_path(PATH, [f for f in NAMED if f != "lib.py"])
+
+        self.assertIsNone(self.after(f"s = st.polled(s, {json.dumps(gone)});"))
+
+
+@unittest.skipUnless(shutil.which("node"), "needs node")
+class WhereThePopoverGoes(unittest.TestCase):
+    def place(self, line, width=1440, height=900):
+        """Where the popover goes for a header line at <line> ({left, top, bottom}) in a window of
+        <width> by <height>."""
+        return run_js("scroll", f"console.log(JSON.stringify(m.popoverPlace({json.dumps(line)},"
+                                f" {{ width: {width}, height: {height} }})));")
+
+    def test_it_goes_under_the_line_down_to_the_windows_foot(self):
+        got = self.place({"left": 450, "top": 244, "bottom": 266})
+
+        self.assertEqual(got, {"left": 450, "width": 560, "top": 272, "bottom": None, "maxHeight": 612})
+
+    def test_it_stays_inside_the_window_at_the_right_edge(self):
+        got = self.place({"left": 1200, "top": 100, "bottom": 122})
+
+        self.assertEqual((got["left"], got["width"]), (864, 560))
+
+    def test_it_is_as_wide_as_a_narrow_window_leaves(self):
+        got = self.place({"left": 120, "top": 100, "bottom": 122}, width=400)
+
+        self.assertEqual((got["left"], got["width"]), (16, 368))
+
+    def test_it_goes_above_a_line_near_the_windows_foot(self):
+        got = self.place({"left": 450, "top": 800, "bottom": 822})
+
+        self.assertEqual((got["top"], got["bottom"], got["maxHeight"]), (None, 106, 778))
 
 
 # Under each file in Reading order: what its Viewed, next says, or null where it has none

@@ -152,8 +152,15 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .tree-row.gone { color: var(--fgColor-muted); }
 .no-diff { color: var(--fgColor-attention); font-size: 12px; white-space: nowrap; }
 
-/* The review path's stop above a file's diff (web/review_path.js builds it): not a thread */
-.review-path-stop { padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--borderColor-default); box-shadow: inset 3px 0 var(--fgColor-accent); overflow-wrap: anywhere; }
+/* What the review path says of a file: one line in its header, in what the path and the note
+   leave of it, and all of it in a popover (draw_files.js places it) */
+.path-slot { display: flex; flex: 1 1 0; min-width: 96px; }
+.path-line { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; padding: 1px var(--space-sm) 1px 2px; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-full); background: var(--bgColor-default); font-size: 12px; white-space: nowrap; }
+.path-line:hover, .path-line[aria-expanded="true"] { border-color: var(--fgColor-accent); }
+.path-badge { flex: none; min-width: 20px; padding: 0 6px; border-radius: var(--borderRadius-full); background: var(--bgColor-neutral-muted); font-weight: 600; text-align: center; }
+.path-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.path-popover { position: fixed; inset: auto; margin: 0; padding: 0; overflow: auto; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); color: var(--fgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); }
+.review-path-stop { padding: var(--space-sm) var(--space-md) var(--space-md); overflow-wrap: anywhere; font-size: 13px; }
 .review-path-stop > .label { padding: 0; border: 0; color: var(--fgColor-accent); }
 .review-path-stop h4 { margin: var(--space-xs) 0 0; font-size: 13px; }
 .review-path-stop h4.head { font-family: var(--fontStack-monospace); }
