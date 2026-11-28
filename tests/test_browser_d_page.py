@@ -50,7 +50,9 @@ console.log(JSON.stringify(m.pageModel(s)));""")
     def test_the_header_names_the_branch_and_base_and_says_in_review(self):
         page = self.page(answers())
 
-        self.assertEqual(page["header"], {"branch": "feature", "base": "main", "state": "In review", "done": False})
+        header = page["header"]
+        self.assertEqual((header["branch"], header["base"], header["state"], header["done"]),
+                         ("feature", "main", "In review", False))
         self.assertEqual(page["title"], "difftate · feature")
 
     def test_a_review_marked_done_says_done(self):

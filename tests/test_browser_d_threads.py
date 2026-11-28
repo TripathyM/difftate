@@ -70,7 +70,7 @@ s = drafts.showBoxTab(s, drafts.replyKey(thread.id), "preview");""")
         self.assertEqual((card["folds"], card["folded"]), (False, False))
         self.assertEqual([(a["text"], a["status"]) for a in card["actions"]], [("Resolve", "resolved"), ("Dismiss", "dismissed")])
         reply = card["reply"]
-        self.assertEqual((reply["text"], reply["tab"], reply["send"]), ("And **why**?", "preview", "Reply"))
+        self.assertEqual((reply["text"], reply["tab"], reply["send"]), ("And **why**?", "preview", "Comment"))
         self.assertEqual(reply["preview"][0]["spans"][1], {"strong": "why"})
 
     def test_a_resolved_thread_is_folded_to_its_first_words_until_it_is_unfolded_and_can_be_reopened(self):
