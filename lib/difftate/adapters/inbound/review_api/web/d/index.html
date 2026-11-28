@@ -30,6 +30,10 @@
     <select id="agent" title="Which coding agent replies in this review. Default: the repository's agent, else the machine's. Pick another to use it for this review only."></select>
   </div>
 </div>
+<!-- Stays at the top of the window while the page scrolls under it. What must not go under it
+     goes by its height: style.css by the CSS variable pinned-height, which draw_header.js keeps,
+     and the scripts by draw_header.js's pinnedHeight() -->
+<div id="pinned" class="pinned">
 <header class="review-head">
   <div class="head-row">
     <div id="review"></div>
@@ -48,8 +52,9 @@
   </div>
   <nav id="tabs" class="tabs"></nav>
 </header>
-<div id="problem" class="flash" role="status" hidden></div>
 <div id="waiting" class="flash" role="status" hidden></div>
+</div>
+<div id="problem" class="flash" role="status" hidden></div>
 <div id="warnings" role="status"></div>
 <div id="vim-notice" class="flash vim-notice" role="status" hidden>
   <span id="vim-notice-text"></span>

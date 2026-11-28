@@ -1,5 +1,6 @@
 -- Which coding agent replies in the review, as text (GLOSSARY.md: Agent override). Pure: no editor, no request.
--- The words are the browser viewer's (lib/difftate/adapters/inbound/review_api/web/app.js). <agent> is what
+-- The words follow the browser viewer's (lib/difftate/adapters/inbound/review_api/web/d/:
+-- settings.js, actions.js setAgent). <agent> is what
 -- GET /api/agent answers: { agent = a name, source = "review" | "repository" | "machine", names = { the machine's list } }.
 local M = {}
 
