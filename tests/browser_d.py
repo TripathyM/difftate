@@ -7,12 +7,11 @@ import subprocess
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB = os.path.join(ROOT, "lib", "difftate", "adapters", "inbound", "review_api", "web")
 RELEASED = os.path.join(ROOT, "tests", "fixtures", "review_api_released.json")
-# What the toasts of a page's model say (web/d/toasts.js), "" for nothing: its errors, what the
-# reviewer's last change did, and why its tab opened
+# What the toasts of a page's model say (web/d/toasts.js), "" for nothing: its errors, and what
+# the reviewer's last change did
 TOASTED = """const toastText = (page, which) => page.toasts.filter(which).map((t) => t.text).join(" ");
 const problemOf = (page) => toastText(page, (t) => t.kind === "error");
 const noticeOf = (page) => toastText(page, (t) => t.id === "notice");
-const whyOf = (page) => toastText(page, (t) => t.id === "why");
 """
 
 

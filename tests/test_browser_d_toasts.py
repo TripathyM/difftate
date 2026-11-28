@@ -103,6 +103,52 @@ s = st.closeToast(s, both[0][0]);""", show="[both, toasts()]", address="files")
         self.assertEqual(both, [["refused", "error", "gone"]])
         self.assertEqual(closed, [])
 
+    def test_a_change_that_succeeds_on_the_other_tab_leaves_the_refusal_unread_on_its_own(self):
+        said = self.toasts("""
+s = st.showTab(st.refused(s, "Could not export"), "conversation");
+await a.setMode(use, "batched");
+s = st.showTab(s, "files");""", address="files")
+
+        self.assertEqual(said, [["refused", "error", "Could not export"]])
+
+    def test_a_change_that_succeeds_on_its_tab_clears_the_refusal(self):
+        said = self.toasts('s = st.refused(s, "no"); await a.setMode(use, "batched");', address="files")
+
+        self.assertEqual([id for id, _, _ in said], ["notice"])
+
+    def test_a_changes_answer_is_no_poll_so_it_brings_back_no_closed_error(self):
+        said = self.toasts("""
+s = st.closeToast(st.pollFailed(s, "boom"), "problem");
+s = st.viewedAnswered(s, ["app.py"]);
+s = st.pollFailed(s, "boom");""", address="files")
+
+        self.assertEqual(said, [])
+
+    def test_closing_the_polls_reason_on_the_other_tab_closes_its_refusal_too(self):
+        said = self.toasts("""
+s = st.refused(st.pollFailed(s, "gone"), "gone");
+s = st.closeToast(st.showTab(s, "conversation"), "problem");
+s = st.showTab(s, "files");""", address="files")
+
+        self.assertEqual(said, [])
+
+    def test_a_refusal_closed_before_the_first_poll_fails_for_it_stays_closed(self):
+        closed, after_a_good_poll = self.toasts("""
+s = st.closeToast(st.refused(s, "gone"), "refused");
+s = st.pollFailed(s, "gone");
+const closed = toasts();
+s = st.pollFailed(st.polled(s, s.server), "gone");""", show="[closed, toasts()]", address="files")
+
+        self.assertEqual(closed, [])
+        self.assertEqual(after_a_good_poll, [["problem", "error", "gone"]])
+
+    def test_closing_another_refusal_leaves_the_closed_poll_error_closed(self):
+        said = self.toasts("""
+s = st.closeToast(st.pollFailed(s, "gone"), "problem");
+s = st.closeToast(st.refused(s, "no such view"), "refused");""", address="files")
+
+        self.assertEqual(said, [])
+
     def timed(self, steps):
         """What happens as the toasts shown change: <steps> calls shown([[id, kind, text]]) and
         pass(ms); gives [[ms, id]] for each toast whose time was up."""

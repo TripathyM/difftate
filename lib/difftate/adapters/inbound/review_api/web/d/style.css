@@ -294,7 +294,8 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .vim-notice span { margin-right: auto; }
 .vim-line, .which { position: fixed; z-index: 19; bottom: var(--space-lg); padding: var(--space-sm) var(--space-md); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); font-size: 12px; }
 .vim-line { left: var(--space-lg); max-width: 50vw; }
-.which { right: var(--space-lg); max-height: 60vh; overflow: auto; }
+/* Over the toasts, as it is read while a key is under way and then goes */
+.which { z-index: 21; right: var(--space-lg); max-height: 60vh; overflow: auto; }
 .which div { display: flex; gap: var(--space-sm); }
 kbd { min-width: 24px; padding: 0 4px; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-muted); font: 12px var(--fontStack-monospace); text-align: center; }
 .dialog { width: min(640px, calc(100vw - 2 * var(--space-lg))); max-height: 80vh; padding: var(--space-md); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); color: var(--fgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); }

@@ -420,8 +420,7 @@ out([calls, files()[0].folded, vim().line]);""", viewed=["a.py"])
     def test_mode_done_and_export_make_the_calls_the_buttons_make_and_say_so(self):
         got = self.run_keys("""
 const said = [];
-const toast = () => page().toasts.find((t) => t.id === "notice")?.text ?? "";
-for (const key of ["M", "D", "E"]) { await leader(key); said.push([vim().line, toast()]); }
+for (const key of ["M", "D", "E"]) { await leader(key); said.push([vim().line, noticeOf(page())]); }
 out([calls.map((c) => c.slice(0, 2)), calls[0][2], calls[1][2], said, did.filter((d) => d[0] === "copy")]);""")
 
         calls, mode, done, said, copied = got
