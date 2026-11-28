@@ -166,9 +166,12 @@ browser's history). `difftate` opens it with a single-use launch code:
 GET /?launch=<code>&folder=<path> trades the code for an HttpOnly, SameSite=Strict cookie and
 redirects to /?folder=<path> (the folder the link named: the page names it in every
 API request), after which the code is refused. The page (/) and its scripts
-(/app.js, /diff.js, /warnings.js, /review_path.js) need that cookie; API requests take it instead of the token only
-with the header "X-Difftate: page" (which another site's page can't send without
-asking) and, when the browser says, the API's own Origin. Anything else gets 401.
+(/app.js, /diff.js, /warnings.js, /review_path.js) need that cookie, as does a second
+page beside it, layout D (/d?folder=<path>, with /d/style.css and its scripts under /d/):
+the reviewer signs in with the same link, then changes the address. API requests take
+the cookie instead of the token only with the header "X-Difftate: page" (which another
+site's page can't send without asking) and, when the browser says, the API's own Origin.
+Anything else gets 401.
 """
 import hashlib
 import hmac
@@ -201,6 +204,12 @@ PAGE_FILES = {
     "/diff.js": (os.path.join(_HERE, "web", "diff.js"), "text/javascript; charset=utf-8"),
     "/warnings.js": (os.path.join(_HERE, "web", "warnings.js"), "text/javascript; charset=utf-8"),
     "/review_path.js": (os.path.join(_HERE, "web", "review_path.js"), "text/javascript; charset=utf-8"),
+    # Layout D, beside the viewer above
+    "/d": (os.path.join(_HERE, "web", "d", "index.html"), "text/html; charset=utf-8"),
+    "/d/style.css": (os.path.join(_HERE, "web", "d", "style.css"), "text/css; charset=utf-8"),
+    **{f"/d/{name}.js": (os.path.join(_HERE, "web", "d", f"{name}.js"), "text/javascript; charset=utf-8")
+       for name in ("actions", "api", "diff_rows", "dom", "draw_files", "draw_header", "draw_tree", "file_tree",
+                    "files_changed", "main", "page", "poll", "state")},
 }
 # The core's errors, as HTTP statuses. A bad view is the request's fault (400),
 # though the code reader says it isn't found: see a_view below.
