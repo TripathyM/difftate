@@ -96,8 +96,12 @@ console.log(JSON.stringify({show}));""")
         self.assertIn("staged.py", tree)
         self.assertEqual(threads, [])
 
-    def test_picking_the_view_shown_asks_nothing(self):
-        self.assertEqual(self.run_actions('const took = await m.setView(use, "");', show="[took, calls]"), [True, []])
+    def test_the_view_the_page_still_shows_is_put_too_as_another_may_be_on_its_way(self):
+        watcher, shown = self.run_actions("""
+const slow = m.setView(use, "staged"), back = m.setView(use, "");
+await Promise.all([slow, back]);""", show='[view, page().body.picker.text]')
+
+        self.assertEqual((watcher, shown), ("", "All changes"))
 
     def test_a_view_that_is_not_one_changes_nothing_and_says_why(self):
         why = released("PUT", "/api/view", bool)  # the transcript's first answer that took

@@ -56,13 +56,13 @@ const calls = [];
 const refuse = {{}};
 let s = st.polled(st.initialState("conversation"), {json.dumps(first)});
 let server = s.server;
-let onBranch = server.review.id;
+let onBranch = server.review.id, waitsForRun = false;
 const use = {{
   api: async (method, path, payload) => {{
     calls.push(payload === undefined ? [method, path] : [method, path, payload]);
     const why = refuse[`${{method}} ${{path}}`];
     if (why) {{ const {{ ApiError }} = await import("{{API}}"); throw new ApiError(409, why); }}
-    if (path === "/api/review") return {{ id: onBranch }};
+    if (path === "/api/review") return {{ id: onBranch, waitingForRun: waitsForRun }};
     // A batched review holds a new thread; a submit sends all that is held
     if (path === "/api/threads" && server.mode.mode === "batched") {{
       server = {{ ...server, mode: {{ ...server.mode, held: [...server.mode.held, "summary"] }} }};
@@ -103,6 +103,15 @@ class StartAReview(Actions):
             ["GET", "/api/review"], ["PUT", "/api/mode", {"mode": "batched"}],
             ["POST", "/api/threads", {"anchor": None, "body": "Why?", "view": "HEAD"}], "refresh"])
         self.assertEqual((box["text"], box["send"], box["start"]), ("", "Add review comment", None))
+
+    def test_while_the_review_waits_for_a_run_it_changes_nothing_the_mode_neither(self):
+        calls, box = self.run_actions(
+            'waitsForRun = true; s = d.typeIn(s, general, "Why?"); await m.send(use, general, { start: true });',
+            show="[calls, page().body.general]")
+
+        self.assertEqual(calls, [["GET", "/api/review"], "refresh"])
+        self.assertEqual((box["text"], box["send"], box["sending"]), ("Why?", "Comment", False))
+        self.assertEqual(box["error"], "Another branch is checked out now: the draft waits for its own branch.")
 
     def test_what_the_last_change_said_goes(self):
         notice = self.run_actions("""

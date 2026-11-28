@@ -12,7 +12,7 @@ EXPORT = released("GET", "/api/export")
 
 @unittest.skipUnless(shutil.which("node"), "needs node")
 class Exporting(unittest.TestCase):
-    def export(self, reply=None, copies=True):
+    def export(self, reply=None, copies=True, on_branch=None):
         """(whether it was taken, the URLs asked for, what was copied, the page's notice and
         problem) after an export of a review whose folder is /home/me/my repo, with the API
         answering <reply> and a clipboard that <copies>, or refuses."""
@@ -25,6 +25,10 @@ import {{ pageModel }} from "{{PAGE}}";
 import {{ reviewApi }} from "{{API}}";
 const reply = {json.dumps(reply)}, asked = [], copied = [];
 const api = reviewApi(async (url) => {{
+  if (url.startsWith("/api/review?")) {{
+    const review = {{ id: {json.dumps(on_branch or poll["review"]["id"])} }};
+    return {{ ok: true, status: 200, headers: new Headers({{ "Content-Type": "application/json" }}), text: async () => JSON.stringify(review) }};
+  }}
   asked.push(url);
   return {{ ok: reply.status < 400, status: reply.status, headers: new Headers({{ "Content-Type": reply.type }}), text: async () => reply.text }};
 }}, "/home/me/my repo");
@@ -43,6 +47,12 @@ console.log(JSON.stringify([took, asked, copied, pageModel(s).notice, pageModel(
         self.assertTrue(copied[0].startswith("# Review export"))
         self.assertEqual(copied, [EXPORT], "the whole text, as it came")
         self.assertEqual((took, notice, problem), (True, "Export copied: paste it into an agent session.", ""))
+
+    def test_after_a_checkout_the_other_branchs_review_is_not_copied_for_this_one(self):
+        took, asked, copied, notice, problem = self.export(on_branch="other-12345678")
+
+        self.assertEqual((took, asked, copied, notice), (False, [], [], ""))
+        self.assertEqual(problem, "Could not export: another branch is checked out now.")
 
     def test_a_refused_export_copies_nothing_and_says_why(self):
         took, _, copied, notice, problem = self.export(

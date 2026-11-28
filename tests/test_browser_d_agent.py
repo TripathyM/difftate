@@ -77,7 +77,7 @@ console.log(JSON.stringify({show}));""")
         calls, notice = self.run_actions('await m.setAgent(use, "");', show="[calls, page().notice]", agent=CHOSEN)
 
         self.assertEqual(calls[1], ["PUT", "/api/agent", {"agent": None}])
-        self.assertEqual(notice, "This review has no agent of its own now: personal (machine) replies, from the next run.")
+        self.assertEqual(notice, "This review's agent override is cleared: personal (machine) replies, from the next run.")
 
     def test_picking_what_is_chosen_asks_nothing(self):
         self.assertEqual(self.run_actions('const took = await m.setAgent(use, "");', show="[took, calls]"), [True, []])
