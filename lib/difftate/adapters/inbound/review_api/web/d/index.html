@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>difftate</title>
+<!-- Layout D, difftate's browser viewer-to-be, beside today's (../index.html): a client of the
+     review API (../../server.py). Each part's model is a DOM-free module; the draw_*.js modules
+     only draw them, and main.js starts it all. -->
+<link rel="stylesheet" href="/d/style.css">
+</head>
+<body>
+<div class="appbar">difftate</div>
+<header class="review-head">
+  <div id="review"></div>
+  <nav id="tabs" class="tabs"></nav>
+</header>
+<div id="problem" class="flash" role="status" hidden></div>
+<p id="loading" class="blank">Loading the review…</p>
+<main id="files-tab" hidden>
+  <div class="toolbar">
+    <span id="progress" class="progress"></span>
+  </div>
+  <div class="columns">
+    <aside class="sidebar">
+      <input id="filter" type="search" placeholder="Filter files…" aria-label="Filter files">
+      <p id="filtered" class="muted" hidden></p>
+      <nav id="tree" aria-label="Changed files"></nav>
+    </aside>
+    <div class="diffs">
+      <p id="empty" class="blank" hidden></p>
+      <div id="files"></div>
+    </div>
+  </div>
+</main>
+<script type="module" src="/d/main.js"></script>
+</body>
+</html>
