@@ -62,7 +62,7 @@ const use = {{
     calls.push(payload === undefined ? [method, path] : [method, path, payload]);
     const why = refuse[`${{method}} ${{path}}`];
     if (why) {{ const {{ ApiError }} = await import("{{API}}"); throw new ApiError(409, why); }}
-    if (path === "/api/review") return {{ id: onBranch, waitingForRun: waitsForRun }};
+    if (path === "/api/review") return {{ id: onBranch, waitingForRun: waitsForRun, ...server.mode }};
     // A batched review holds a new thread; a submit sends all that is held
     if (path === "/api/threads" && server.mode.mode === "batched") {{
       server = {{ ...server, mode: {{ ...server.mode, held: [...server.mode.held, "summary"] }} }};
@@ -115,7 +115,7 @@ class StartAReview(Actions):
 
     def test_what_the_last_change_said_goes(self):
         notice = self.run_actions("""
-await m.setMode(use, "live");
+await m.setMode(use, "live"); await m.confirmLive(use);
 s = d.typeIn(s, general, "Why?"); await m.send(use, general, { start: true });""",
                                   show="page().notice", mode={"mode": "batched", "held": ["a"]})
 
@@ -171,11 +171,11 @@ class TheReviewMode(Actions):
     def test_going_live_with_held_threads_says_they_were_submitted(self):
         before, after, moved = self.run_actions("""
 const before = page().header.modes[0].title;
-await m.setMode(use, "live");
+await m.setMode(use, "live"); await m.confirmLive(use);
 const after = page().notice;
 s = st.showTab(s, "files");""", show="[before, after, page().notice]", mode={"mode": "batched", "held": ["a", "b"]})
 
-        self.assertEqual(before, "Each comment goes to the coding agent as you write it. Switching submits the 2 held threads.")
+        self.assertEqual(before, "Each comment goes to the coding agent as you write it. Switching to Live sends held comments to the coding agent, after asking you.")
         self.assertEqual(after, "Live: 2 held threads were submitted to the coding agent.")
         self.assertEqual(moved, "", "gone once the reviewer moves on")
 
@@ -231,8 +231,12 @@ LINES = {"file": "app.py", "side": "new", "startLine": 5, "endLine": 7, "code": 
 
 @unittest.skipUnless(shutil.which("node"), "needs node")
 class TheSubmitReviewButtonAndPanel(Actions):
-    def test_a_live_review_has_no_submit_review_button(self):
-        self.assertIsNone(self.run_actions("s = st.openSubmit(s, true);", show="page().header.submit"))
+    def test_in_a_live_review_the_button_stays_off_and_says_why_with_no_panel(self):
+        submit = self.run_actions("s = st.openSubmit(s, true);", show="page().header.submit")
+
+        self.assertEqual(submit, {
+            "text": "Submit review", "count": 0, "panel": None,
+            "off": "Live: comments go to the coding agent as you write them, so there is nothing to submit."})
 
     def test_in_a_batched_review_it_shows_the_number_held_that_get_api_mode_gives(self):
         threads = [held_thread("a", None, ("comment", "One")), held_thread("b", LINES, ("comment", "Two"))]
@@ -243,7 +247,7 @@ class TheSubmitReviewButtonAndPanel(Actions):
                                  show="page().header.submit", threads=threads,
                                  mode={"mode": "batched", "held": ["b", "a"]})
 
-        self.assertEqual(submit, {"text": "Submit review", "count": 2, "panel": None})
+        self.assertEqual(submit, {"text": "Submit review", "count": 2, "off": "", "panel": None})
         self.assertEqual(later["count"], 0)
 
     def test_its_panel_lists_the_held_threads_in_get_api_modes_order_with_their_held_comments(self):
@@ -326,6 +330,94 @@ s = st.openSubmit(s, true);""", show="[closed, page().header.submit.panel.box.te
 
 
 @unittest.skipUnless(shutil.which("node"), "needs node")
+class GoingLiveWithHeldComments(Actions):
+    # Two held threads with three comments that wait
+    THREADS = [held_thread("a", None, ("comment", "One"), ("comment", "And this")),
+               held_thread("b", LINES, ("comment", "Sent"), ("progress", "Finished"), ("reply", "Done that"),
+                           ("comment", "Not quite"))]
+    HELD = {"mode": "batched", "held": ["a", "b"]}
+
+    def live(self, steps, show, threads=THREADS, mode=HELD):
+        return self.run_actions(f'await m.setMode(use, "live");\n{steps}', show, threads=threads, mode=mode)
+
+    def test_what_another_viewer_held_since_the_last_poll_is_asked_about_too(self):
+        calls, confirm = self.run_actions(f"""
+server = {{ ...server, threads: {json.dumps(self.THREADS)}, mode: {json.dumps(self.HELD)} }};
+await m.setMode(use, "live");""", show="[calls, page().confirm?.text]", mode=BATCHED)
+
+        self.assertEqual(calls, [["GET", "/api/review"], "refresh"])
+        self.assertEqual(confirm, "Send 3 held comments to the agent now?")
+
+    def test_when_what_is_held_cant_be_read_nothing_is_sent(self):
+        calls, confirm, problem = self.run_actions(
+            'refuse["GET /api/review"] = "no"; await m.setMode(use, "live");',
+            show="[calls, page().confirm, page().problem]", mode=BATCHED)
+
+        self.assertEqual((calls, confirm, problem), ([["GET", "/api/review"]], None, "no"))
+
+    def test_it_never_asks_about_fewer_comments_than_there_are_held_threads(self):
+        confirm = self.live("", show="page().confirm", threads=[])  # held, but not among the threads read yet
+
+        self.assertEqual(confirm["text"], "Send 2 held comments to the agent now?")
+
+    def test_it_asks_first_with_the_number_of_held_comments_and_sends_nothing(self):
+        calls, confirm, modes = self.live("", show="[calls, page().confirm, page().header.modes]")
+
+        self.assertEqual(calls, [])
+        self.assertEqual(confirm, {"text": "Send 3 held comments to the agent now?", "yes": "Send and go live", "no": "Cancel"})
+        self.assertEqual([m["current"] for m in modes], [False, True])
+
+    def test_with_one_it_says_one_comment(self):
+        confirm = self.live("", show="page().confirm", threads=[held_thread("a", None, ("comment", "One"))],
+                            mode={"mode": "batched", "held": ["a"]})
+
+        self.assertEqual(confirm["text"], "Send 1 held comment to the agent now?")
+
+    def test_yes_changes_to_live_which_sends_them(self):
+        calls, current, confirm = self.live(
+            "await m.confirmLive(use);", show="[calls, page().header.modes.map((m) => m.current), page().confirm]")
+
+        self.assertEqual(calls, [["GET", "/api/review"], ["PUT", "/api/mode", {"mode": "live"}], "refresh"])
+        self.assertEqual((current, confirm), ([True, False], None))
+
+    def test_a_second_yes_sends_nothing_more(self):
+        calls = self.live("await Promise.all([m.confirmLive(use), m.confirmLive(use)]);", show="calls")
+
+        self.assertEqual(calls.count(["PUT", "/api/mode", {"mode": "live"}]), 1)
+
+    def test_cancel_keeps_the_review_batched_and_sends_nothing(self):
+        calls, current, count, confirm = self.live(
+            "s = st.closeAskLive(s); await m.confirmLive(use);",
+            show="[calls, page().header.modes.map((m) => m.current), page().header.submit.count, page().confirm]")
+
+        self.assertEqual(calls, [])
+        self.assertEqual((current, count, confirm), ([False, True], 2, None))
+
+    def test_a_poll_keeps_the_question_with_the_number_held_now(self):
+        confirm = self.live('server = { ...server, mode: { mode: "batched", held: ["a"] } }; await use.refresh();',
+                            show="page().confirm")
+
+        self.assertEqual(confirm["text"], "Send 2 held comments to the agent now?")
+
+    def test_the_question_goes_once_there_is_nothing_left_for_it_to_ask(self):
+        other = answers(mode=self.HELD, threads=self.THREADS)
+        other["review"] = dict(other["review"], id="other-12345678", branch="other")
+
+        gone = [self.live(f"{poll} await use.refresh();", show="page().confirm") for poll in (
+            'server = { ...server, mode: { mode: "batched", held: [] } };',  # submitted in another viewer
+            'server = { ...server, mode: { mode: "live", held: [] } };',
+            f"server = {json.dumps(other)};")]  # a checkout
+
+        self.assertEqual(gone, [None, None, None])
+
+    def test_after_a_checkout_that_no_poll_saw_yes_changes_nothing(self):
+        calls, problem = self.live('onBranch = "other-12345678"; await m.confirmLive(use);', show="[calls, page().problem]")
+
+        self.assertEqual(calls, [["GET", "/api/review"], "refresh"])
+        self.assertEqual(problem, "Another branch is checked out now: nothing was changed.")
+
+
+@unittest.skipUnless(shutil.which("node"), "needs node")
 class SubmittingTheReview(Actions):
     HELD = {"mode": "batched", "held": ["a", "b"]}
     SUMMARY = ["POST", "/api/threads", {"anchor": None, "body": "Overall: good", "view": "HEAD"}]
@@ -340,7 +432,7 @@ class SubmittingTheReview(Actions):
             show="[calls, page().header.submit, page().notice, d.boxOf(s, key).text]")
 
         self.assertEqual(calls, [["GET", "/api/review"], self.SUMMARY, ["POST", "/api/submit", {}], "refresh"])
-        self.assertEqual(submit, {"text": "Submit review", "count": 0, "panel": None})
+        self.assertEqual(submit, {"text": "Submit review", "count": 0, "off": "", "panel": None})
         self.assertEqual(notice, "Submitted 3 held threads to the coding agent.")
         self.assertEqual(typed, "")
 

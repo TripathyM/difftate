@@ -433,7 +433,7 @@ out([calls.map((c) => c.slice(0, 2)), calls[0][2], calls[1][2], said, did.filter
 
     def test_submit_opens_the_panel_of_a_batched_review_and_a_live_one_has_nothing_held(self):
         got = self.run_keys("""
-await leader("S"); const live = [vim().line, page().header.submit];
+await leader("S"); const live = [vim().line, page().header.submit.panel];
 await leader("M"); await leader("S");
 out([live, Boolean(page().header.submit.panel), did.at(-1), calls.length]);""")
 
@@ -441,6 +441,28 @@ out([live, Boolean(page().header.submit.panel), did.at(-1), calls.length]);""")
         self.assertEqual(got[1], True)
         self.assertEqual(got[2], ["focusBox", "summary:" + answers()["review"]["id"]])
         self.assertEqual(got[3], 1)  # only the mode: nothing is submitted until the reviewer sends
+
+    HELD = {"mode": "batched", "held": ["t1"]}
+
+    def test_the_mode_key_asks_before_it_sends_what_is_held_and_leaves_presses_alone_meanwhile(self):
+        got = self.run_keys("""
+await leader("M"); took.length = 0;
+await press("j"); await leader("M");
+out([calls, page().confirm.text, took, cursor()]);""", threads=[thread("t1")], mode=self.HELD)
+
+        self.assertEqual(got, [[], "Send 1 held comment to the agent now?", [False] * 4, []])
+
+    def test_after_yes_the_key_says_what_was_sent_at_the_bottom_and_a_click_does_not(self):
+        said = [self.run_keys(f"""
+const {{ confirmLive, setMode }} = await import("{{ACTIONS}}");
+{asked}
+await confirmLive(use);
+out([calls, vim().line, page().notice]);""", threads=[thread("t1")], mode=self.HELD)
+                for asked in ('await leader("M");', 'await setMode(use, "live");')]
+
+        sent = [["PUT", "/api/mode", {"mode": "live"}]]
+        notice = "Live: comments go to the coding agent as you write them."
+        self.assertEqual(said, [[sent, notice, notice], [sent, "", notice]])
 
     def test_split_or_unified_the_file_tree_and_a_general_thread(self):
         got = self.run_keys("""

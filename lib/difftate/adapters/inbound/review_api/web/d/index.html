@@ -98,6 +98,10 @@
 <div id="path-popover" class="path-popover" popover role="dialog" aria-label="Review path"></div>
 <div id="vim-line" class="vim-line" role="status" hidden></div>
 <div id="which" class="which" role="status" hidden></div>
+<dialog id="live-confirm" class="dialog confirm" aria-labelledby="live-confirm-text">
+  <p id="live-confirm-text"></p>
+  <div class="dialog-foot"><button type="button" id="live-no" class="btn" autofocus></button><button type="button" id="live-yes" class="btn primary"></button></div>
+</dialog>
 <dialog id="picker" class="dialog" aria-labelledby="picker-title">
   <div class="dialog-head"><b id="picker-title"></b><span class="muted">Enter picks · Ctrl+j and Ctrl+k move · Esc closes</span></div>
   <input id="picker-query" placeholder="Type to filter" aria-label="Filter the list" autocomplete="off" spellcheck="false">
