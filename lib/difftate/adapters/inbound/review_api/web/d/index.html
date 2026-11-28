@@ -21,12 +21,20 @@
   <div id="layouts" class="modes" role="group" aria-labelledby="layouts-title"></div>
   <div class="setting-title">Theme</div>
   <label class="check"><input type="checkbox" id="follow-system"> Follow the system</label>
+  <div id="agent-setting" class="agent-setting" hidden>
+    <label class="setting-title" for="agent">Coding agent</label>
+    <select id="agent" title="Which coding agent replies in this review. Default: the repository's agent, else the machine's. Pick another to use it for this review only."></select>
+  </div>
 </div>
 <header class="review-head">
   <div class="head-row">
     <div id="review"></div>
     <div id="controls" class="controls">
       <div id="actions" class="actions"></div>
+      <button type="button" id="open-more" class="btn" popovertarget="more" title="More actions" aria-label="More actions" hidden>⋯</button>
+      <div id="more" class="menu" popover aria-label="More actions">
+        <button type="button" id="export" class="menu-item" title="Copy the review (commit messages, every thread, how to reply) to paste into an agent session you start">Export</button>
+      </div>
       <section id="submit-panel" class="submit-panel" tabindex="-1" aria-label="Submit review" hidden>
         <div class="panel-head"><b>Submit review</b><button type="button" id="submit-close" class="link" data-focus="submit-close">Close</button></div>
         <div id="held" class="held-list"></div>
@@ -37,18 +45,27 @@
   <nav id="tabs" class="tabs"></nav>
 </header>
 <div id="problem" class="flash" role="status" hidden></div>
+<div id="waiting" class="flash" role="status" hidden></div>
+<div id="warnings" role="status"></div>
 <div id="why" class="flash why" role="status" hidden></div>
 <div id="notice" class="flash why" role="status" hidden></div>
 <p id="loading" class="blank">Loading the review…</p>
 <main id="files-tab" hidden>
   <div class="toolbar">
+    <button type="button" id="view-button" class="btn" popovertarget="view-menu" title="Choose the view (c)"></button>
+    <div id="view-menu" class="menu" popover aria-label="Choose the view">
+      <div id="view-choices"></div>
+      <label class="setting-title" for="commit">The commits after a commit</label>
+      <input id="commit" placeholder="A commit, then Enter" autocomplete="off" spellcheck="false">
+    </div>
+    <span id="comments-hidden" class="muted" hidden>Comments are hidden <button type="button" id="show-comments" class="link" title="i">Show</button></span>
     <span id="progress" class="progress"></span>
   </div>
   <div class="columns">
     <aside class="sidebar">
       <div id="sort" class="sort" role="group" aria-label="Sort files"></div>
       <p id="outdated" class="outdated" role="status" hidden></p>
-      <input id="filter" type="search" placeholder="Filter files…" aria-label="Filter files">
+      <input id="filter" type="search" placeholder="Filter files…" aria-label="Filter files" title="t">
       <p id="filtered" class="muted" hidden></p>
       <nav id="tree" aria-label="Changed files"></nav>
     </aside>
