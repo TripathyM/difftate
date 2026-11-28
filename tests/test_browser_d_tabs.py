@@ -34,7 +34,7 @@ class TheFirstTab(unittest.TestCase):
 
         self.assertEqual(got, {"tab": "files", "why": "Opened on Files changed: no open thread is replied or failed."})
 
-    def test_the_tab_the_address_names_wins_with_no_note(self):
+    def test_the_tab_the_address_names_wins_saying_nothing(self):
         self.assertEqual(self.first("files", thread("replied")), {"tab": "files", "why": ""})
         self.assertEqual(self.first("conversation"), {"tab": "conversation", "why": ""})
 

@@ -74,10 +74,10 @@ console.log(JSON.stringify(m.pageModel(s)));""")
     def tabs(self, page):
         return [(t["text"], t["count"], t["current"], t["needs"]) for t in page["tabs"]]
 
-    def test_a_review_with_a_reply_opens_on_conversation_with_a_note_saying_why(self):
+    def test_a_review_with_a_reply_opens_on_conversation_saying_why(self):
         page = self.page(answers(threads=[thread("replied")]))
 
-        self.assertEqual((page["body"]["kind"], page["note"]),
+        self.assertEqual((page["body"]["kind"], page["why"]),
                          ("conversation", "Opened on Conversation: 1 thread needs you (replied or failed)."))
         self.assertEqual(self.tabs(page), [("Conversation", 1, True, "1 needs you"), ("Files changed", 3, False, "")])
 
@@ -85,19 +85,27 @@ console.log(JSON.stringify(m.pageModel(s)));""")
         page = self.page(answers(threads=[thread("working")]), steps="s = st.polled(s, later);",
                          later=answers(threads=[thread("replied"), dict(thread("failed"), id="other")]))
 
-        self.assertEqual((page["body"]["kind"], page["note"]),
+        self.assertEqual((page["body"]["kind"], page["why"]),
                          ("files", "Opened on Files changed: no open thread is replied or failed."))
         self.assertEqual(self.tabs(page)[0], ("Conversation", 2, False, "2 need you"))
 
-    def test_the_tab_the_address_names_is_the_one_shown_with_no_note(self):
+    def test_the_tab_the_address_names_is_the_one_shown_saying_nothing(self):
         page = self.page(answers(threads=[thread("replied")]), address="files")
 
-        self.assertEqual((page["body"]["kind"], page["tab"], page["note"]), ("files", "files", ""))
+        self.assertEqual((page["body"]["kind"], page["tab"], page["why"]), ("files", "files", ""))
 
-    def test_the_note_goes_once_the_reviewer_changes_tab(self):
+    def test_why_it_opened_goes_once_the_reviewer_changes_tab(self):
         page = self.page(answers(threads=[]), steps='s = st.showTab(s, "conversation");')
 
-        self.assertEqual((page["body"]["kind"], page["note"]), ("conversation", ""))
+        self.assertEqual((page["body"]["kind"], page["why"]), ("conversation", ""))
+
+    def test_after_a_checkout_the_tab_stays_and_the_other_reviews_reason_for_it_goes(self):
+        other = answers(threads=[])
+        other["review"] = dict(other["review"], id="other-12345678", branch="other")
+
+        page = self.page(answers(threads=[thread("replied")]), steps="s = st.polled(s, other);", other=other)
+
+        self.assertEqual((page["tab"], page["why"]), ("conversation", ""))
 
     def test_before_the_first_answers_the_page_has_no_tab_to_put_in_its_address(self):
         self.assertIsNone(self.page()["tab"])

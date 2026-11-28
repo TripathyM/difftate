@@ -215,6 +215,18 @@ s = st.polled(s, {json.dumps(other)});""", show="[...early, pageModel(s).body.ge
         self.assertEqual(got, [0, "Another branch is checked out now: the draft waits for its own branch.",
                                "", "For this branch"])
 
+    def test_the_page_still_says_why_once_the_other_branchs_empty_box_has_taken_its_place(self):
+        other = answers(threads=[])
+        other["review"] = dict(other["review"], id="other-12345678", branch="other")
+
+        got = self.sent(f"""
+s = m.typeIn(s, key, "For this branch");
+onBranch = "other-12345678";
+use.refresh = async () => {{ s = st.polled(s, {json.dumps(other)}); }};
+await send(use, key);""", show="[calls.length, pageModel(s).body.general.text, pageModel(s).problem]")
+
+        self.assertEqual(got, [0, "", "Another branch is checked out now: the draft waits for its own branch."])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -49,7 +49,7 @@ console.log(JSON.stringify(m.pageModel(s).body));""")
             self.assertIn("Outdated", [label["text"] for label in card["labels"]])
         # at the file's top, the outdated ones only
         self.assertEqual({t["id"] for t in app["top"]["threads"]}, outdated)
-        # one thread's line 4 isn't in this diff of two lines: it is left to the Conversation tab
+        # one thread's only line, 4, isn't in this diff of two lines: it is left to the Conversation tab
         shown = under + [t["id"] for t in app["top"]["threads"]]
         self.assertEqual(sorted(shown), sorted(t["id"] for t in threads if t["anchor"] and t["anchor"]["file"] == "app.py"
                                                and (t["outdated"] or t["anchor"]["endLine"] <= 2)))
@@ -64,7 +64,7 @@ console.log(JSON.stringify(m.pageModel(s).body));""")
         self.assertEqual(self.below(long), [(7, [], ["Comment on lines 5–7"])])
         box = next(r for r in long["rows"] if r["kind"] == "below")["drafts"][0]
         self.assertEqual((box["send"], box["tab"], box["text"], box["was"], box["hint"]), ("Comment", "write", "", None, ""))
-        self.assertEqual(body["loose"], {"drafts": []})
+        self.assertEqual(body["loose"], [])
 
     def test_in_a_batched_review_the_box_says_the_comment_is_held(self):
         poll = answers(threads=[], mode={"mode": "batched", "held": []})
@@ -103,7 +103,7 @@ console.log(JSON.stringify(m.pageModel(s).body));""")
 
         body = self.body('const key = pick(spot(5)); s = drafts.typeIn(s, key, "Why?"); s = st.polled(s, later);', later=later)
 
-        self.assertEqual([(d["title"], d["text"], d["was"]["code"]) for d in body["loose"]["drafts"]],
+        self.assertEqual([(d["title"], d["text"], d["was"]["code"]) for d in body["loose"]],
                          [("Comment on long.py, line 5", "Why?", "line_5 = 5")])
 
     def test_threads_without_a_line_here_are_left_to_the_conversation_tab(self):
@@ -117,7 +117,7 @@ console.log(JSON.stringify(m.pageModel(s).body));""")
         shown = [t["id"] for f in body["files"] for t in f["top"]["threads"]]
         shown += [i for f in body["files"] for _, ids, _ in self.below(f) for i in ids]
         self.assertEqual(shown, [])
-        self.assertEqual(body["loose"], {"drafts": []})
+        self.assertEqual(body["loose"], [])
 
 
 if __name__ == "__main__":

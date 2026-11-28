@@ -64,6 +64,11 @@ console.log(JSON.stringify([ids(top), rows.filter((r) => r.kind !== "hunk").map(
 
         self.assertEqual(got, [[], ["1,1", "2,", ["on-old"], ",2", ["on-new"]]])
 
+    def test_a_thread_whose_last_lines_the_diff_leaves_out_sits_under_the_last_one_it_shows(self):
+        got = self.placed([thread("partly", "new", 2, 4)])
+
+        self.assertEqual(got, [[], ["1,1", "2,", ",2", ["partly"]]])
+
     def test_an_outdated_thread_goes_to_its_files_top_never_to_the_line_that_is_there_now(self):
         got = self.placed([thread("old-code", "new", 2, 2, outdated=True)])
 
