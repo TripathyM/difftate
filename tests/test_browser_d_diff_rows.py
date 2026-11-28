@@ -56,6 +56,12 @@ console.log(JSON.stringify(rows.filter((r) => r.kind === "line" && r.type !== "c
         self.assertEqual(self.marked("-total = add(first, second, 10)", "+count = add(first, second, 20)"),
                          [("-", ["total", "10"]), ("+", ["count", "20"])])
 
+    def test_a_letter_and_the_marks_written_on_it_are_one_word(self):
+        # an e with a combining accent; a Devanagari word with a vowel sign and a virama
+        self.assertEqual(self.marked("-say cafe now", "+say cafe\u0301 now"), [("-", ["cafe"]), ("+", ["cafe\u0301"])])
+        self.assertEqual(self.marked("-say \u0928\u092e now", "+say \u0928\u092e\u0938\u094d\u0924\u0947 now"),
+                         [("-", ["\u0928\u092e"]), ("+", ["\u0928\u092e\u0938\u094d\u0924\u0947"])])
+
     def test_changed_words_with_only_blanks_between_them_are_one_highlight(self):
         self.assertEqual(self.marked("-if the old name is here:", "+if a new name is here:"),
                          [("-", ["the old"]), ("+", ["a new"])])

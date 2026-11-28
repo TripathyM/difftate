@@ -19,7 +19,7 @@ const storage = {
 };
 const open = (kept = m.readSettings(storage)) => st.initialState("files", kept);
 let s = open();
-const change = (next) => { s = next; m.keepSettings(storage, s.own.settings); };
+const change = (next) => { m.keepSettings(storage, s.own.settings, next.own.settings); s = next; };
 const reload = () => { s = open(); };
 const shown = () => page.pageModel(s).settings;
 const theme = () => { const t = shown(); return [t.theme, t.follows, t.flip.to, t.flip.icon]; };
@@ -88,6 +88,16 @@ reload();""", show="theme().slice(0, 2)")
 
         self.assertEqual(got, [None, True])
 
+    def test_a_choice_in_one_tab_does_not_undo_what_another_tab_chose(self):
+        got = self.run_page("""
+const first = s;                     // two tabs, both opened before either chose
+change(m.switchTheme(s));            // the second tab picks dark
+s = first;
+change(st.setLayout(s, "split"));    // then the first one picks split
+reload();""", show="[theme()[0], layout()]")
+
+        self.assertEqual(got, ["dark", "split"])
+
     def test_with_nothing_kept_or_something_unknown_the_diff_is_unified_and_the_theme_follows(self):
         got = self.run_page("""
 const nothing = [layout(), theme()[0]];
@@ -104,8 +114,9 @@ const none = { getItem: refuses, setItem: refuses, removeItem: refuses };
 const got = [];
 for (const broken of [none, null]) {
   s = open(m.readSettings(broken));
+  const before = s.own.settings;
   s = m.switchTheme(st.setLayout(s, "split"));
-  m.keepSettings(broken, s.own.settings);
+  m.keepSettings(broken, before, s.own.settings);
   got.push([layout(), theme()[0]]);
 }""", show="got")
 
