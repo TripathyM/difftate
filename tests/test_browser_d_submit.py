@@ -1,5 +1,5 @@
 """Layout D's review mode, Submit review and Mark as Done (#261): what a comment box's buttons are,
-the pending list, and the calls each control makes, in order (web/d/page.js and actions.js). Node
+the list of what is held, and the calls each control makes, in order (web/d/page.js and actions.js). Node
 runs it, with API answers shaped like the released transcript's and a fake review API."""
 import json
 import shutil
@@ -104,6 +104,14 @@ class StartAReview(Actions):
             ["POST", "/api/threads", {"anchor": None, "body": "Why?", "view": "HEAD"}], "refresh"])
         self.assertEqual((box["text"], box["send"], box["start"]), ("", "Add review comment", None))
 
+    def test_what_the_last_change_said_goes(self):
+        notice = self.run_actions("""
+await m.setMode(use, "live");
+s = d.typeIn(s, general, "Why?"); await m.send(use, general, { start: true });""",
+                                  show="page().notice", mode={"mode": "batched", "held": ["a"]})
+
+        self.assertEqual(notice, "")
+
     def test_in_a_reply_box_it_asks_which_review_is_on_before_it_switches_the_mode(self):
         thread = open_thread()
 
@@ -169,6 +177,22 @@ s = st.showTab(s, "files");""", show="[before, after, page().notice]", mode={"mo
         self.assertEqual(calls, [["GET", "/api/review"], "refresh"])
         self.assertEqual(problem, "Another branch is checked out now: nothing was changed.")
 
+    def test_an_answer_that_comes_after_a_checkout_changes_nothing_of_the_other_branchs_review(self):
+        other = answers(mode={"mode": "live", "held": []})
+        other["review"] = dict(other["review"], id="other-12345678", branch="other")
+
+        got = self.run_actions(f"""
+const ask = use.api;
+use.api = async (method, path, payload) => {{
+  const answer = await ask(method, path, payload);
+  if (method === "PUT") {{ server = {json.dumps(other)}; s = st.polled(s, server); }}
+  return answer;
+}};
+use.refresh = async () => {{}};
+await m.setMode(use, "batched");""", show="[page().header.branch, page().header.modes[0].current, page().notice]")
+
+        self.assertEqual(got, ["other", True, ""])
+
     def test_a_refused_change_says_why_and_the_mode_stays(self):
         problem, modes = self.run_actions(
             'refuse["PUT /api/mode"] = "no"; await m.setMode(use, "batched");', show="[page().problem, page().header.modes]")
@@ -206,30 +230,59 @@ class TheSubmitReviewButtonAndPanel(Actions):
         self.assertEqual(submit, {"text": "Submit review", "count": 2, "panel": None})
         self.assertEqual(later["count"], 0)
 
-    def test_its_panel_lists_the_held_threads_in_get_api_modes_order_with_what_is_pending(self):
+    def test_its_panel_lists_the_held_threads_in_get_api_modes_order_with_their_held_comments(self):
         threads = [
             held_thread("other", None, ("comment", "Not held")),
             held_thread("a", None, ("comment", "One"), ("queued", "Queued"), ("comment", "And this")),
-            held_thread("b", LINES, ("comment", "Sent"), ("progress", "Failed"), ("comment", "Again"),
-                        ("reply", "Done that"), ("comment", "Not quite")),
+            held_thread("b", LINES, ("comment", "Sent"), ("progress", "Finished"), ("reply", "Done that"),
+                        ("comment", "Not quite")),
         ]
 
         panel = self.run_actions("s = st.openSubmit(s, true);", show="page().header.submit.panel", threads=threads,
                                  mode={"mode": "batched", "held": ["b", "a"]})
 
-        self.assertEqual(panel["pending"], [
+        self.assertEqual(panel["held"], [
             {"id": "b", "where": "app.py, lines 5–7", "comments": ["Not quite"]},
             {"id": "a", "where": "On the whole changeset", "comments": ["One", "And this"]}])
         self.assertEqual(panel["none"], "")
 
+    def held_comments(self, *comments):
+        threads = [held_thread("a", None, *comments)]
+        panel = self.run_actions("s = st.openSubmit(s, true);", show="page().header.submit.panel", threads=threads,
+                                 mode={"mode": "batched", "held": ["a"]})
+        return panel["held"][0]["comments"]
+
+    def test_a_reply_posted_outside_a_run_answers_what_was_held(self):
+        self.assertEqual(self.held_comments(("comment", "Asked"), ("reply", "Answered"), ("comment", "New")), ["New"])
+
+    def test_a_comment_written_during_a_run_stays_listed_after_the_runs_reply(self):
+        during = (("comment", "Sent"), ("progress", "Working"), ("comment", "Also this"), ("reply", "Done that"))
+
+        self.assertEqual(self.held_comments(*during), ["Also this"])
+        self.assertEqual(self.held_comments(*during, ("comment", "And that")), ["Also this", "And that"])
+
+    def test_a_held_thread_never_lists_no_comment(self):
+        comments = self.held_comments(("comment", "Sent"), ("progress", "Working"), ("comment", "Also this"),
+                                      ("reply", "Part one"), ("reply", "Part two"))
+
+        self.assertEqual(comments, ["Also this"])
+
+    def test_a_change_to_live_closes_the_panel_so_that_batched_again_starts_with_it_closed(self):
+        panel = self.run_actions("""
+s = st.openSubmit(s, true);
+await m.setMode(use, "live");
+await m.setMode(use, "batched");""", show="page().header.submit.panel", mode=BATCHED)
+
+        self.assertIsNone(panel)
+
     def test_with_nothing_held_the_panel_says_so_and_has_the_summary_box(self):
         panel = self.run_actions("s = st.openSubmit(s, true);", show="page().header.submit.panel", mode=BATCHED)
 
-        self.assertEqual((panel["pending"], panel["none"]), ([], "No comment is held."))
+        self.assertEqual((panel["held"], panel["none"]), ([], "No comment is held."))
         box = panel["box"]
         self.assertEqual((box["title"], box["send"], box["start"], box["cancels"], box["text"]),
                          ("Summary (optional)", "Submit review", None, False, ""))
-        self.assertEqual(box["hint"], "A summary is posted as a general comment, then all that is held is submitted.")
+        self.assertEqual(box["hint"], "A summary is posted as a general thread, then all that is held is submitted.")
 
     def test_a_poll_keeps_the_panel_and_what_is_typed_in_it_and_a_checkout_closes_it(self):
         other = answers(mode=BATCHED)
@@ -310,6 +363,15 @@ delete refuse["POST /api/submit"]; calls.length = 0; await m.submitReview(use);"
         self.assertEqual(calls, [["GET", "/api/review"], ["POST", "/api/submit", {}], "refresh"])
         self.assertEqual(error, "Your summary is posted, but the review isn't submitted: no")
         self.assertIsNone(closed)
+
+    def test_a_failure_after_the_panel_was_closed_is_said_on_the_page(self):
+        open_still, closed = [self.submit(f"""
+refuse["POST /api/submit"] = "no"; s = d.typeIn(s, key, "Overall: good");
+const sending = m.submitReview(use); {close}
+await sending;""", show="page().problem") for close in ("", "s = st.openSubmit(s, false);")]
+
+        self.assertEqual(open_still, "", "the panel says why")
+        self.assertEqual(closed, "Your summary is posted, but the review isn't submitted: no")
 
     def test_a_second_press_while_it_is_being_sent_sends_nothing(self):
         calls = self.submit('await Promise.all([m.submitReview(use), m.submitReview(use)]);', show="calls")
