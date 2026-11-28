@@ -11,7 +11,17 @@
 <link rel="stylesheet" href="/d/style.css">
 </head>
 <body>
-<div class="appbar">difftate</div>
+<div class="appbar">
+  <span>difftate</span>
+  <button type="button" id="flip-theme" class="tool"></button>
+  <button type="button" id="open-settings" class="tool" popovertarget="settings" title="Settings" aria-label="Settings"></button>
+</div>
+<div id="settings" class="settings" popover aria-label="Settings">
+  <div class="setting-title" id="layouts-title">Diff layout</div>
+  <div id="layouts" class="modes" role="group" aria-labelledby="layouts-title"></div>
+  <div class="setting-title">Theme</div>
+  <label class="check"><input type="checkbox" id="follow-system"> Follow the system</label>
+</div>
 <header class="review-head">
   <div class="head-row">
     <div id="review"></div>

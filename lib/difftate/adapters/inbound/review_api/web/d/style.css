@@ -1,24 +1,47 @@
 /* Layout D's styles: colours, radius and spacing from Primer's tokens (@primer/primitives
-   11.10.0, the light theme). */
+   11.10.0, the light and dark themes). light-dark() takes the system's theme, unless the page
+   forces one (data-theme, from the settings). */
 :root {
-  color-scheme: light;
-  --fgColor-default: #1f2328; --fgColor-muted: #59636e; --fgColor-onEmphasis: #ffffff; --fgColor-accent: #0969da;
-  --fgColor-success: #1a7f37; --fgColor-danger: #d1242f;
-  --bgColor-default: #ffffff; --bgColor-muted: #f6f8fa; --bgColor-neutral-muted: #818b981f;
-  --bgColor-accent-emphasis: #0969da; --bgColor-done-emphasis: #8250df; --bgColor-attention-muted: #fff8c5;
-  --borderColor-default: #d1d9e0; --borderColor-muted: #d1d9e0b3;
-  --underlineNav-borderColor-active: #fd8c73; --control-transparent-bgColor-hover: #818b981a;
-  --control-transparent-bgColor-selected: #818b9826; --progressBar-track-bgColor: #d1d9e0;
-  --diffBlob-additionLine-bgColor: #dafbe1; --diffBlob-additionNum-bgColor: #aceebb;
-  --diffBlob-deletionLine-bgColor: #ffebe9; --diffBlob-deletionNum-bgColor: #ffcecb;
-  --diffBlob-hunkLine-bgColor: #ddf4ff;
-  --fgColor-attention: #9a6700; --borderColor-attention-emphasis: #9a6700; --bgColor-attention-emphasis-muted: #fae17d;
-  --bgColor-success-emphasis: #1f883d;
+  color-scheme: light dark;
+  --fgColor-default: light-dark(#1f2328, #f0f6fc);
+  --fgColor-muted: light-dark(#59636e, #9198a1);
+  --fgColor-onEmphasis: #ffffff;
+  --fgColor-accent: light-dark(#0969da, #4493f8);
+  --fgColor-success: light-dark(#1a7f37, #3fb950);
+  --fgColor-danger: light-dark(#d1242f, #f85149);
+  --fgColor-attention: light-dark(#9a6700, #d29922);
+  --fgColor-done: light-dark(#8250df, #ab7df8);
+  --bgColor-default: light-dark(#ffffff, #0d1117);
+  --bgColor-muted: light-dark(#f6f8fa, #151b23);
+  --bgColor-neutral-muted: light-dark(#818b981f, #656c7633);
+  --bgColor-neutral-emphasis: light-dark(#59636e, #656c76);
+  --bgColor-accent-emphasis: light-dark(#0969da, #1f6feb);
+  --bgColor-success-emphasis: light-dark(#1f883d, #238636);
+  --bgColor-attention-muted: light-dark(#fff8c5, #bb800926);
+  --bgColor-attention-emphasis-muted: light-dark(#fae17d, #bb800966);
+  --borderColor-default: light-dark(#d1d9e0, #3d444d);
+  --borderColor-muted: light-dark(#d1d9e0b3, #3d444db3);
+  --borderColor-attention-emphasis: light-dark(#9a6700, #9e6a03);
+  --underlineNav-borderColor-active: light-dark(#fd8c73, #f78166);
+  --control-transparent-bgColor-hover: light-dark(#818b981a, #656c7633);
+  --control-transparent-bgColor-selected: light-dark(#818b9826, #656c7633);
+  --progressBar-track-bgColor: light-dark(#d1d9e0, #3d444d);
+  --shadowColor-floating: light-dark(#25292e33, #010409cc);
+  --diffBlob-additionLine-bgColor: light-dark(#dafbe1, #2ea04326);
+  --diffBlob-additionNum-bgColor: light-dark(#aceebb, #3fb9504d);
+  --diffBlob-additionWord-bgColor: light-dark(#aceebb, #2ea04366);
+  --diffBlob-deletionLine-bgColor: light-dark(#ffebe9, #f851491a);
+  --diffBlob-deletionNum-bgColor: light-dark(#ffcecb, #f851494d);
+  --diffBlob-deletionWord-bgColor: light-dark(#ffcecb, #f8514966);
+  --diffBlob-hunkLine-bgColor: light-dark(#ddf4ff, #388bfd1a);
+  --diffBlob-emptyLine-bgColor: light-dark(#f6f8fa, #151b23);
   --fontStack-sansSerif: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
   --fontStack-monospace: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --borderRadius-medium: 6px; --borderRadius-full: 999px;
   --space-xs: 4px; --space-sm: 8px; --space-md: 12px; --space-lg: 16px;
 }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--bgColor-default); color: var(--fgColor-default); font: 14px/1.5 var(--fontStack-sansSerif); }
@@ -31,14 +54,23 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .blank { margin: var(--space-lg); padding: 32px var(--space-lg); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); text-align: center; color: var(--fgColor-muted); }
 .flash { margin: var(--space-md) var(--space-lg) 0; padding: var(--space-sm) var(--space-md); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-attention-muted); }
 
-.appbar { padding: var(--space-sm) var(--space-lg); background: var(--bgColor-muted); border-bottom: 1px solid var(--borderColor-default); font-weight: 600; }
+.appbar { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs) var(--space-lg); background: var(--bgColor-muted); border-bottom: 1px solid var(--borderColor-default); font-weight: 600; }
+.appbar span { margin-right: auto; }
+.tool { display: flex; padding: var(--space-sm); border-radius: var(--borderRadius-medium); color: var(--fgColor-muted); }
+.tool:hover { background: var(--control-transparent-bgColor-hover); }
+/* The browser opens it over the page (popover), and closes it on Escape or a click elsewhere */
+.settings { position: fixed; inset: 44px var(--space-lg) auto auto; margin: 0; width: 220px; padding: var(--space-md); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); color: var(--fgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); }
+.setting-title { margin-bottom: var(--space-xs); color: var(--fgColor-muted); font-size: 12px; font-weight: 600; }
+.settings .modes { margin-bottom: var(--space-md); }
+.settings .modes button { flex: 1; }
+.check { display: flex; align-items: center; gap: var(--space-sm); font-size: 12px; cursor: pointer; }
 .review-head { box-shadow: inset 0 -1px var(--borderColor-muted); }
 .head-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; column-gap: var(--space-md); padding: var(--space-md) var(--space-lg) 0; }
 #review { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-md); min-height: 40px; }
 #review h1 { margin: 0; font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
 .state { padding: var(--space-xs) var(--space-md); border-radius: var(--borderRadius-full); background: var(--bgColor-accent-emphasis); color: var(--fgColor-onEmphasis); font-size: 12px; font-weight: 600; }
 /* Done is a state, not an approval: neither the green nor the purple of a pull request's */
-.state.done { background: var(--fgColor-muted); }
+.state.done { background: var(--bgColor-neutral-emphasis); }
 .controls { position: relative; margin-left: auto; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-sm); }
 .actions .counter { margin-left: var(--space-sm); background: var(--bgColor-default); color: var(--fgColor-default); }
@@ -46,7 +78,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .modes button { padding: 1px var(--space-md); border: 1px solid transparent; border-radius: var(--borderRadius-medium); color: var(--fgColor-muted); font-size: 12px; }
 .modes button[aria-pressed="true"] { border-color: var(--borderColor-default); background: var(--bgColor-default); color: var(--fgColor-default); font-weight: 600; }
 /* Anchored under the header's buttons, over the page, which goes on scrolling */
-.submit-panel { position: absolute; top: calc(100% + var(--space-sm)); right: 0; z-index: 3; width: min(460px, calc(100vw - 2 * var(--space-lg))); max-height: 75vh; overflow: auto; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); box-shadow: 0 8px 24px #25292e33; }
+.submit-panel { position: absolute; top: calc(100% + var(--space-sm)); right: 0; z-index: 3; width: min(460px, calc(100vw - 2 * var(--space-lg))); max-height: 75vh; overflow: auto; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); }
 .panel-head { display: flex; justify-content: space-between; align-items: center; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--borderColor-default); }
 .held-list { padding: 0 var(--space-md); }
 .held-list ul { margin: 0; padding: 0; list-style: none; }
@@ -92,26 +124,33 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .viewed-box { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs) var(--space-sm); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); font-size: 12px; cursor: pointer; }
 
 .diff { width: 100%; table-layout: fixed; border-collapse: collapse; font: 12px/20px var(--fontStack-monospace); }
+.diff .word { border-radius: 3px; }
 .diff col.number { width: 48px; }
 .diff td { padding: 0 var(--space-sm); vertical-align: top; }
 .diff td.number { text-align: right; color: var(--fgColor-muted); user-select: none; }
 .diff td.code { padding-left: 24px; text-indent: -16px; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
 /* The marker is drawn, not text, so copied code has none */
 .diff td.code::before { content: " "; display: inline-block; width: 16px; text-indent: 0; white-space: pre; user-select: none; }
-.diff tr.add td.code::before { content: "+"; }
-.diff tr.delete td.code::before { content: "−"; }
-.diff tr.add td { background: var(--diffBlob-additionLine-bgColor); }
-.diff tr.add td.number { background: var(--diffBlob-additionNum-bgColor); color: var(--fgColor-default); }
-.diff tr.delete td { background: var(--diffBlob-deletionLine-bgColor); }
-.diff tr.delete td.number { background: var(--diffBlob-deletionNum-bgColor); color: var(--fgColor-default); }
+/* A changed line is its whole row when unified (tr), and one side's two cells when split (td) */
+.diff tr.add td.code::before, .diff td.code.add::before { content: "+"; }
+.diff tr.delete td.code::before, .diff td.code.delete::before { content: "−"; }
+.diff tr.add td, .diff td.add { background: var(--diffBlob-additionLine-bgColor); }
+.diff tr.add td.number, .diff td.number.add { background: var(--diffBlob-additionNum-bgColor); color: var(--fgColor-default); }
+.diff tr.add .word, .diff td.add .word { background: var(--diffBlob-additionWord-bgColor); }
+.diff tr.delete td, .diff td.delete { background: var(--diffBlob-deletionLine-bgColor); }
+.diff tr.delete td.number, .diff td.number.delete { background: var(--diffBlob-deletionNum-bgColor); color: var(--fgColor-default); }
+.diff tr.delete .word, .diff td.delete .word { background: var(--diffBlob-deletionWord-bgColor); }
+.diff.split td.empty { background: var(--diffBlob-emptyLine-bgColor); }
+.diff.split tr > td:nth-child(3), .diff.split tr.below > td + td { border-left: 1px solid var(--borderColor-default); }
 .diff tr.hunk td { background: var(--diffBlob-hunkLine-bgColor); color: var(--fgColor-muted); padding-block: var(--space-xs); }
 .diff tr.note td { padding: var(--space-md); color: var(--fgColor-muted); }
 
 .diff td.number button { display: block; width: calc(100% + 2 * var(--space-sm)); margin: 0 calc(-1 * var(--space-sm)); padding: 0 var(--space-sm); text-align: right; font: inherit; color: inherit; }
 .diff td.number button:hover { background: var(--bgColor-accent-emphasis); color: var(--fgColor-onEmphasis); }
-.diff tr.picked-old td.old, .diff tr.picked-new td.new { background: var(--bgColor-attention-emphasis-muted); color: var(--fgColor-default); }
-.diff tr.picked-old td.code, .diff tr.picked-new td.code { background: var(--bgColor-attention-muted); }
-.diff tr.below > td { padding: 0; border-block: 1px solid var(--borderColor-default); }
+.diff tr.picked-old td.number.old, .diff tr.picked-new td.number.new { background: var(--bgColor-attention-emphasis-muted); color: var(--fgColor-default); }
+.diff.unified tr.picked-old td.code, .diff.unified tr.picked-new td.code,
+.diff.split tr.picked-old td.code.old, .diff.split tr.picked-new td.code.new { background: var(--bgColor-attention-muted); }
+.diff tr.below > td { vertical-align: top; padding: 0; border-block: 1px solid var(--borderColor-default); }
 
 .comments { display: flex; flex-direction: column; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); font: 14px/1.5 var(--fontStack-sansSerif); white-space: normal; }
 .file-top { border-bottom: 1px solid var(--borderColor-default); }
@@ -127,7 +166,7 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .thread-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-md); background: var(--bgColor-muted); border-radius: var(--borderRadius-medium); }
 .label { padding: 0 var(--space-sm); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-full); font-size: 12px; font-weight: 600; }
 .label.tone-held, .label.tone-outdated { border-color: var(--borderColor-attention-emphasis); color: var(--fgColor-attention); }
-.label.tone-queued, .label.tone-resolved { border-color: var(--bgColor-done-emphasis); color: var(--bgColor-done-emphasis); }
+.label.tone-queued, .label.tone-resolved { border-color: var(--fgColor-done); color: var(--fgColor-done); }
 .label.tone-working { border-color: var(--fgColor-accent); color: var(--fgColor-accent); }
 .label.tone-replied { border-color: var(--fgColor-success); color: var(--fgColor-success); }
 .label.tone-failed { border-color: var(--fgColor-danger); color: var(--fgColor-danger); }
