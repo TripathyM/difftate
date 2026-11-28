@@ -33,11 +33,12 @@ const filter = (query) => { state = filterPicker(state, query); };
 const poll = POLL;
 let state = polled(initialState("TAB", KEPT), poll);
 const calls = [], did = [];
-let FIRST = { file: "a.py", row: 1 }, OFF = false, REFUSE = null;
+let FIRST = { file: "a.py", row: 1 }, OFF = false, SCROLLED_AWAY = false, REFUSE = null;
 const note = (...what) => did.push(what);
 const screen = {
   firstShown: () => FIRST,
   isShown: () => !OFF,
+  isThreadShown: () => !SCROLLED_AWAY,
   fileInView: () => "a.py",
   halfScreen: () => 3,
   reveal: (target) => note("reveal", target),
@@ -206,6 +207,27 @@ out([drafts(), vim().line]);""")
 
         self.assertEqual(got, [[], "Those lines aren't all in one piece of the diff: select fewer"])
 
+    def test_a_cursor_whose_line_a_poll_took_away_takes_no_comment(self):
+        got = self.run_keys(f"""
+await press("j"); await leader("c");
+FIRST = {{ file: "b.py", row: 1 }}; OFF = true;
+await press("j");
+state = polled(state, {{ ...state.server, changeset: {{ ...state.server.changeset, diff: {json.dumps(A)} }} }});
+did.length = 0;
+await leader("c");
+out([did, vim().line]);""")
+
+        self.assertEqual(got, [[], "Put the cursor on a line first (j)"])
+
+    def test_nor_does_one_in_a_file_that_is_folded_now(self):
+        got = self.run_keys("""
+FIRST = { file: "b.py", row: 1 };
+await press("j"); await leader("v"); // the last file: it folds, with the cursor in it
+await leader("c");
+out([Object.keys(state.own.boxes), vim().line]);""")
+
+        self.assertEqual(got, [[], "Put the cursor on a line first (j)"])
+
     def test_with_no_cursor_Space_r_c_says_how_to_get_one(self):
         got = self.run_keys("""
 await leader("c");
@@ -311,6 +333,25 @@ out(said);""")
 
         self.assertEqual(got, ["Put the cursor on a line first (j), or go to a thread with ]r", "No open thread on this line",
                                "No resolved or dismissed thread on this line", "No thread on this line"])
+
+    def test_a_thread_or_line_out_of_sight_is_not_acted_on(self):
+        got = self.run_keys("""
+await press("]", "r");
+SCROLLED_AWAY = true; OFF = true;
+await leader("R");
+out([calls, vim().line]);""", threads=[thread("t1")])
+
+        self.assertEqual(got, [[], "Put the cursor on a line first (j), or go to a thread with ]r"])
+
+    def test_with_the_thread_gone_to_out_of_sight_the_cursors_line_counts(self):
+        got = self.run_keys("""
+FIRST = { file: "a.py", row: 4 };
+await press("j", "[", "r"); // back to the outdated thread at the file's top, which moves no cursor
+SCROLLED_AWAY = true;
+await leader("R");
+out(calls.map((c) => c[1]));""", threads=[thread("old", line=9, outdated=True), thread("near", line=3)])
+
+        self.assertEqual(got, ["/api/threads/near/status"])
 
     def test_with_several_threads_on_the_line_it_asks_which(self):
         got = self.run_keys("""
@@ -449,9 +490,20 @@ m.pickerKey(use, { key: "Escape" });
 out([items, vim().picker, did]);""", threads=[thread("closed", line=1, status="resolved"), thread("late", "b.py", 1),
                                               thread("early", line=3), thread("g", file=None)])
 
-        self.assertEqual(got, [[["On the whole changeset: about g", "replied"], ["a.py, line 3: about early", "replied"],
-                                ["b.py, line 1: about late", "replied"], ["a.py, line 1: about closed", "resolved"]],
+        # each with the labels its card has
+        self.assertEqual(got, [[["On the whole changeset: about g", "Replied"], ["a.py, line 3: about early", "Replied"],
+                                ["b.py, line 1: about late", "Replied"], ["a.py, line 1: about closed", "Resolved"]],
                                None, []])
+
+
+class InThePicker(Keys):
+    def test_Enter_on_an_item_the_keyboard_went_to_is_that_items(self):
+        got = self.run_keys("""
+await leader("V");
+const mine = m.pickerKey(use, { key: "Enter", target: { tagName: "BUTTON" } });
+out([mine, calls, vim().picker.title]);""")
+
+        self.assertEqual(got, [False, [], "Choose the view"])
 
 
 class InACommentBox(Keys):
@@ -529,6 +581,28 @@ await leader("c");
 out([closed, drafts().map((d) => d.text)]);""")
 
         self.assertEqual(got, [[0, [], "Draft kept: comment on those lines again to get it back"], ["Why?"]])
+
+    def test_q_says_so_when_the_draft_has_to_stay_in_sight(self):
+        got = self.run_keys(self.BOX + f"""
+type("Why?");
+state = polled(state, {{ ...state.server, changeset: {{ ...state.server.changeset, diff: {json.dumps(B)} }} }});
+state = m.escapedBox(state, key);
+await press("q");
+out([vim().line, page().body.loose.length]);""")
+
+        self.assertEqual(got, ["The draft stays in sight: the diff no longer shows the lines you picked", 1])
+
+    def test_sent_after_Esc_there_is_no_box_to_go_back_to(self):
+        got = self.run_keys(self.BOX + """
+type("Why?");
+state = m.escapedBox(state, key);
+await press("C-s");
+took.length = 0;
+const line = vim().line;
+await press("i");
+out([line, took]);""")
+
+        self.assertEqual(got, ["", [False]])
 
     def test_a_closed_draft_shows_again_once_the_diff_no_longer_has_its_lines(self):
         got = self.run_keys(self.BOX + f"""

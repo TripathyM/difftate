@@ -60,6 +60,14 @@ console.log(JSON.stringify({json.dumps(keys)}.map((token) => {{
         self.assertEqual(got, [None, None, None, "…"])
 
 
+    def test_a_bracket_typed_with_Option_or_AltGr_is_a_bracket(self):
+        got = run_js("keymap", """
+console.log(JSON.stringify([{ key: "[", altKey: true }, { key: "]", altKey: true, ctrlKey: true },
+  { key: "j", altKey: true }, { key: "d", ctrlKey: true }, { key: "[", metaKey: true }].map(m.tokenOf)));""")
+
+        self.assertEqual(got, ["[", "]", None, "C-d", None])
+
+
 @unittest.skipUnless(shutil.which("node"), "needs node")
 class WhichKeyAndAllKeys(unittest.TestCase):
     def test_which_key_lists_what_can_follow_a_group_where_several_actions_share_it(self):
@@ -94,6 +102,15 @@ console.log(JSON.stringify(m.allKeys({json.dumps(changes)})));""")
         self.assertEqual(rows["down"]["note"], "off: t is one of the page's own keys")
         self.assertEqual((rows["up"]["note"], rows["last"]["note"]), ("clashes with last", "clashes with up"))
         self.assertIn("clashes with", rows["comment"]["note"])
+
+    def test_all_keys_says_when_it_cannot_read_a_key_which_then_is_off(self):
+        rows = self.rows({"down": "<CR>", "up": "<S-j>", "first": "Space x", "last": "<C-g>", "visual": "<<"})
+
+        unread = "off: write keys as Neovim does; of the <…> names only <leader> and <C-d>'s kind work"
+        self.assertEqual([rows[n]["note"] for n in ("down", "up", "first", "last", "visual")],
+                         [unread, unread, unread, "", ""])
+        self.assertEqual(run_js("keymap", """
+console.log(JSON.stringify(m.bindingsOf({ down: "<CR>" }).some((b) => b.name === "down")));"""), False)
 
 
 if __name__ == "__main__":
