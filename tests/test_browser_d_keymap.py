@@ -39,6 +39,13 @@ console.log(JSON.stringify({json.dumps(keys)}.map((token) => {{
         self.assertEqual(self.typed(["]", "h", "[", "h", "]", "f", "[", "f"]),
                          ["…", "next_hunk", "…", "previous_hunk", "…", "next_file", "…", "previous_file"])
 
+    def test_p_shows_the_review_path_and_no_default_key_clashes(self):
+        got = run_js("keymap", """
+console.log(JSON.stringify([m.step(m.bindingsOf({}), [], "p").action,
+  m.allKeys({}).flatMap((g) => g.rows).filter((r) => r.note).map((r) => r.name)]));""")
+
+        self.assertEqual(got, ["review_path", []])
+
     def test_a_key_that_ends_no_sequence_ends_it_and_does_nothing(self):
         self.assertEqual(self.typed([" ", "x", "j"]), ["…", "swallowed", "down"])
 

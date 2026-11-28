@@ -1,5 +1,5 @@
 """The browser's side of the review path (#186): its file list follows the path like
-<leader>rf, and a selected file shows its stop above the diff. The drawing is one module
+<leader>rf, and a file's stop block has all the path says of it. The drawing is one module
 (web/review_path.js) that node runs; no browser, no watcher, no files written."""
 import json
 import os
@@ -73,7 +73,7 @@ class TheBrowserDrawsTheReviewPath(unittest.TestCase):
                                "notes.txt", "src/extra.py"])
 
     def stop_text(self, file, written=WRITTEN):
-        """The text of the block shown above a file's diff, flattened, and its class names."""
+        """The text of a file's block, flattened, and its class names."""
         return self.run_js(f"""
 const el = (tag, props = {{}}, ...kids) => ({{ tag, class: props.class ?? "", text: props.text ?? "", kids: kids.flat().filter((k) => k !== null && k !== false && k !== undefined) }});
 const flat = (n) => typeof n === "string" ? n : [n.text, ...n.kids.map(flat)].join(" ");

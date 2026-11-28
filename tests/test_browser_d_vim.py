@@ -714,5 +714,80 @@ out([kept, reset.keys ?? null, broken.keys ?? null, odd, state.own.settings.keys
         self.assertEqual((back, stored), ({}, False))
 
 
+# A review path with one stop, a.py: b.py is on no list, so it is not on the path
+PATH = {"stops": [{"number": "1", "file": "a.py", "key": False, "viewed": False, "questions": [],
+                   "ranges": [], "specs": [], "see": [], "side_files": [], "children": []}],
+        "skipped": [], "not_on_the_path": ["b.py"], "sections": []}
+# The file whose description is open, or null
+OPEN = "const shown = () => page().body.description?.file ?? null;"
+
+
+class TheReviewPathDescription(Keys):
+    def described(self, body, **more):
+        return self.run_keys(OPEN + body, reviewPath=PATH, **more)
+
+    def test_p_opens_the_description_of_the_cursors_file_and_p_again_closes_it(self):
+        got = self.described("""
+await press("]", "f"); await press("p"); const opened = shown();
+await press("p");
+out([opened, shown(), took.at(-1)]);""")
+
+        self.assertEqual(got, ["b.py", None, True])
+
+    def test_with_the_cursor_off_screen_it_is_the_file_at_the_top(self):
+        got = self.described("""
+await press("]", "f"); OFF = true; await press("p");
+out(shown());""")
+
+        self.assertEqual(got, "a.py")
+
+    def test_it_stays_open_while_the_same_file_is_at_the_top(self):
+        # The file at the top is a.py, whichever file's description is open
+        got = self.described("""
+const { scrolledTo } = await import("{STATE}");
+await press("]", "f"); await press("p");
+state = scrolledTo(state, "a.py");
+out(shown());""")
+
+        self.assertEqual(got, "b.py")
+
+    def test_Esc_closes_it_before_it_stops_a_selection(self):
+        got = self.described("""
+await press("j", "V", "p"); await press("Esc"); const first = [shown(), picked().length > 0, took.at(-1)];
+await press("Esc");
+out([first, picked()]);""")
+
+        self.assertEqual(got, [[None, True, True], []])
+
+    def test_without_a_review_path_it_says_so(self):
+        got = self.run_keys(OPEN + """
+await press("p");
+out([shown(), vim().line]);""")
+
+        self.assertEqual(got, [None, "There is no review path"])
+
+    def test_on_a_file_the_path_does_not_know_it_says_so(self):
+        path = dict(PATH, not_on_the_path=[])
+        got = self.run_keys(OPEN + """
+await press("]", "f"); await press("p");
+out([shown(), vim().line]);""", reviewPath=path)
+
+        self.assertEqual(got, [None, "The review path says nothing of b.py"])
+
+    def test_on_the_conversation_tab_there_is_no_file(self):
+        got = self.described("""
+await press("p");
+out([shown(), vim().line]);""", tab="conversation")
+
+        self.assertEqual(got, [None, "No file on screen"])
+
+    def test_with_the_Vim_keys_off_p_is_not_taken(self):
+        got = self.described("""
+await press("p");
+out([shown(), took]);""", kept={"vim": "off"})
+
+        self.assertEqual(got, [None, [False]])
+
+
 if __name__ == "__main__":
     unittest.main()
