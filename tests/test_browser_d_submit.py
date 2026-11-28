@@ -179,6 +179,13 @@ s = st.showTab(s, "files");""", show="[before, after, page().notice]", mode={"mo
         self.assertEqual(after, "Live: 2 held threads were submitted to the coding agent.")
         self.assertEqual(moved, "", "gone once the reviewer moves on")
 
+    def test_a_switch_that_submits_nothing_says_what_comments_do_from_now(self):
+        batched = self.run_actions('await m.setMode(use, "batched");', show="page().notice")
+        live = self.run_actions('await m.setMode(use, "live");', show="page().notice", mode=BATCHED)
+
+        self.assertEqual((batched, live), ("Batched: comments are held until you submit the review.",
+                                           "Live: comments go to the coding agent as you write them."))
+
     def test_after_a_checkout_the_other_branchs_review_keeps_its_mode(self):
         calls, problem = self.run_actions(
             'onBranch = "other-12345678"; await m.setMode(use, "batched");', show="[calls, page().problem]")
@@ -430,6 +437,13 @@ class MarkingTheReviewDone(Actions):
         calls = self.run_actions('onBranch = "other-12345678"; await m.setDone(use, true);', show="calls", done=UNDONE)
 
         self.assertEqual(calls, [["GET", "/api/review"], "refresh"])
+
+    def test_beside_done_the_header_says_what_is_still_open_and_running_done_or_not(self):
+        said = [self.run_actions("", show="page().header.stillOpen", done=dict(was, openThreads=threads, runsInFlight=runs))
+                for was, threads, runs in ((UNDONE, 2, 1), (DONE, 1, 0), (UNDONE, 0, 3), (UNDONE, 0, 0))]
+
+        self.assertEqual(said, ["2 threads still open · 1 run still working", "1 thread still open",
+                                "3 runs still working", ""])
 
 
 if __name__ == "__main__":

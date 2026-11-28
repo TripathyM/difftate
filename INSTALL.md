@@ -194,7 +194,7 @@ First, open a new terminal (or run `source ~/.zshrc`). Then `cd` into a git repo
 - Each diff except `unstaged` and `staged` also includes uncommitted changes: it compares the given commit with the files on disk.
 - The diff opens in the browser (`difftate --open nvim` opens the Neovim viewer instead; with `DT_OPEN=nvim` it is the other way round, and `--open browser` opens the browser). In Neovim, `<leader>rr` opens and closes the review. Comment on a line, and the agent replies in the same thread.
 - New changes show up by themselves, in the browser and in Neovim.
-- To look at a different view, run the new command: it switches the folder's view and opens the viewer again. Every view is the same review, so threads stay. The browser's **View** menu and Neovim's `<leader>rV` switch views too.
+- To look at a different view, run the new command: it switches the folder's view and opens the viewer again. Every view is the same review, so threads stay. The browser's view picker and Neovim's `<leader>rV` switch views too.
 - Use `difftate agent <name>` in a repository to change which listed agent replies there (no restart); `difftate agent` says which it uses.
 
 ## Questions

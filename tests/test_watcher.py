@@ -881,8 +881,8 @@ class WatcherTest(Harness, unittest.TestCase):
         self.assertNotIn(self.token, html)
         scripts = re.findall(r'<script[^>]* src="([^"]+)"', html)
         self.assertTrue(scripts, html)
-        for src in [*scripts, "diff.js", "review_path.js"]:
-            status, headers, _ = self.page("/" + src, cookie)
+        for src in [*scripts, "/diff.js", "/review_path.js"]:
+            status, headers, _ = self.page(src, cookie)
             self.assertEqual((status, headers["Content-Type"]), (200, "text/javascript; charset=utf-8"), src)
         # The page calls the API with its cookie, and a header no other site's page can send
         status, _, body = self.page(with_folder("/api/view", self.repo), cookie, {"X-Difftate": "page"})
@@ -961,7 +961,7 @@ class WatcherTest(Harness, unittest.TestCase):
         cookie = self.launch_page(wait_for("the browser to open", self.opened_urls)[0])
         name = cookie.split("=")[0]
 
-        for path in ("/", "/?launch=wrong", f"/?token={self.token}", "/app.js", "/diff.js", "/review_path.js"):
+        for path in ("/", "/?launch=wrong", f"/?token={self.token}", "/d/main.js", "/diff.js", "/review_path.js"):
             for given in (None, f"{name}=wrong"):
                 status, headers, body = self.page(path, given)
                 self.assertEqual(status, 401, (path, given))

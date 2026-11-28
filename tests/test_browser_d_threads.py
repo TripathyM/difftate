@@ -52,6 +52,13 @@ console.log(JSON.stringify({show}));""")
         self.assertEqual(card["comments"][2]["more"], [])
         self.assertEqual(card["comments"][3]["body"], [{"kind": "paragraph", "spans": [{"text": "It reads better."}]}])
 
+    def test_a_reviewer_shown_by_name_says_it_is_a_reviewer_on_hover(self):
+        card = self.card(a_thread())
+        unnamed = self.card(a_thread(comments=[dict(a_thread()["comments"][0], by=None)]))["comments"][0]
+
+        self.assertEqual([c.get("title") for c in card["comments"]], ["Reviewer", "Reviewer", None, "", "Reviewer"])
+        self.assertEqual((unnamed["who"], unnamed["title"]), ("Reviewer", ""))
+
     def test_a_note_of_many_lines_shows_its_first_and_unfolds_the_rest(self):
         note = {"id": "n1", "author": "difftate", "by": None, "kind": "progress",
                 "body": "❌ **Failed** after 3s\n- ✅ `Read app.py`\n\nThe agent stopped.", "time": "<time>"}

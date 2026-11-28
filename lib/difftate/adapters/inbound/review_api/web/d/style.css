@@ -53,6 +53,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .counter { margin-left: var(--space-sm); padding: 2px 6px; border-radius: var(--borderRadius-full); background: var(--bgColor-neutral-muted); font-size: 12px; font-weight: 600; line-height: 1; }
 .blank { margin: var(--space-lg); padding: 32px var(--space-lg); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); text-align: center; color: var(--fgColor-muted); }
 .flash { margin: var(--space-md) var(--space-lg) 0; padding: var(--space-sm) var(--space-md); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-attention-muted); }
+/* Why a change was refused, or a poll failed: pinned, so it is read however far down the reviewer
+   is. Its tint is see-through, so the page's colour goes under it */
+#problem { position: fixed; z-index: 20; left: var(--space-lg); right: var(--space-lg); bottom: var(--space-lg); margin: 0 auto; width: fit-content; max-width: calc(100% - 2 * var(--space-lg));
+  background: linear-gradient(var(--bgColor-attention-muted), var(--bgColor-attention-muted)), var(--bgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); }
 
 .appbar { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs) var(--space-lg); background: var(--bgColor-muted); border-bottom: 1px solid var(--borderColor-default); font-weight: 600; }
 .appbar span { margin-right: auto; }
@@ -86,6 +90,7 @@ select, #commit { padding: 0 var(--space-sm); border: 1px solid var(--borderColo
 .state.done { background: var(--bgColor-neutral-emphasis); }
 .controls { position: relative; display: flex; align-items: center; gap: var(--space-sm); margin-left: auto; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-sm); }
+.still-open { font-size: 12px; }
 .actions .counter { margin-left: var(--space-sm); background: var(--bgColor-default); color: var(--fgColor-default); }
 .modes { display: flex; padding: 2px; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-muted); }
 .modes button { padding: 1px var(--space-md); border: 1px solid transparent; border-radius: var(--borderRadius-medium); color: var(--fgColor-muted); font-size: 12px; }
@@ -122,6 +127,7 @@ select, #commit { padding: 0 var(--space-sm); border: 1px solid var(--borderColo
 button.tree-row:hover { background: var(--control-transparent-bgColor-hover); }
 button.tree-row[aria-current] { background: var(--control-transparent-bgColor-selected); box-shadow: inset 3px 0 var(--fgColor-accent); }
 .tree-row.viewed .name { color: var(--fgColor-muted); }
+.tree-row .counts { margin-left: 0; font-weight: 400; font-size: 11px; }
 .open-threads { display: flex; align-items: center; gap: 2px; color: var(--fgColor-muted); font-size: 12px; }
 .viewed-mark { display: flex; color: var(--fgColor-success); }
 
@@ -238,6 +244,7 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .preview { resize: none; }
 .box-foot { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-sm); }
 .hint { margin-right: auto; font-size: 12px; }
+.box-foot .btn { flex: none; }
 .box-error { margin: 0; color: var(--fgColor-danger); font-size: 12px; }
 /* A reply box with nothing in it and no focus is one line */
 .box.reply.writing:not(:focus-within):has(textarea:placeholder-shown) > :is(.box-tabs, .box-foot) { display: none; }

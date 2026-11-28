@@ -1,4 +1,4 @@
-"""Layout D's calls to the review API (#257): signed in as today's viewer is (the cookie, with the
+"""Layout D's calls to the review API (#257): signed in by the launch link (the cookie, with the
 page's header, naming the folder), what it says when a call fails (web/d/api.js), and marking a
 file viewed through the existing call (web/d/actions.js). Node runs it with a fake fetch."""
 import json

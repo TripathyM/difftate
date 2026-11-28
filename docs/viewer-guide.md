@@ -77,7 +77,7 @@ A thread, as every call returns it:
 **Rules.**
 
 - Place a thread on its anchor's side and lines in the view you show. Place it on a line only when your view shows that file (it is in the changeset's `versions`) and that line; show every other thread, and each `inView: false` one, in a list.
-- An outdated thread keeps the lines it was written on, and they may now hold other code. Show it with its own `code`, marked outdated, either only in the list (the browser viewer) or on its kept lines (the Neovim viewer, under "code when written"). Never show it as if it were about the code now on those lines.
+- An outdated thread keeps the lines it was written on, and they may now hold other code. Show it with its own `code`, marked outdated, either off the lines (the browser viewer: at the top of its file, and on its Conversation tab) or on its kept lines (the Neovim viewer, under "code when written"). Never show it as if it were about the code now on those lines.
 - A viewer writes comments only (`kind` left out): the reviewer answers a thread, or a reply in it, by adding a comment. Replies come from the coding agent, notes from difftate.
 - Show the thread state: it tells the reviewer whether the coding agent has the thread (`queued`, `working`), answered (`replied`) or failed (`failed`: its run ended with no reply; a new comment sends it again).
 - Resolving or dismissing a thread is the reviewer's. Offer reopening (`open`) too.
@@ -240,4 +240,4 @@ What the demo doesn't show: no file is **not on the path** (the review path name
 Two clients of this API ship with difftate, in the folder `difftate` runs from (`bin/difftate` there; on GitHub, `TripathyM/difftate`):
 
 - The Neovim viewer's API client, `lua/difftate/api.lua`: finding the watcher, the token through `curl -K -`, naming the folder. The rest of `lua/difftate/` places threads, the review path and the other capabilities in Neovim.
-- The browser viewer, `lib/difftate/adapters/inbound/review_api/web/` (`app.js`, `diff.js`, `review_path.js`): every capability, polling every 1.5 s. It signs in with a cookie instead of the token; your viewer uses the token.
+- The browser viewer, `lib/difftate/adapters/inbound/review_api/web/`: every capability, polling every 1.5 s, in two tabs, Files changed and Conversation. It signs in with a cookie instead of the token; your viewer uses the token. `d/main.js` starts it. `d/poll.js` holds the calls of one poll, and `d/actions.js` the calls that change something. What each part shows is made by a module that draws nothing (`d/page.js` for the whole page, from `d/files_changed.js`, `d/conversation.js`, `d/threads.js`, `d/file_tree.js` and `d/diff_rows.js`), and the `d/draw_*.js` modules draw it. `diff.js` reads the unified diff; `review_path.js` orders the files by the review path and builds a stop.

@@ -1,5 +1,6 @@
-"""Layout D at its own address (#257), beside today's viewer: /d, with today's sign-in cookie. The
-review API serves it in this process, with its own folder as home; no watcher, no browser."""
+"""The browser viewer's files (#265): / serves layout D and everything it loads, for the sign-in
+link's cookie; the page it replaced is gone. The review API serves it in this process, with its own
+folder as home; no watcher, no browser."""
 import http.client
 import re
 import os
@@ -18,7 +19,7 @@ from difftate.adapters.inbound.review_api.server import ReviewApi
 TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 
 
-class LayoutDIsServed(unittest.TestCase):
+class TheBrowserViewerIsServed(unittest.TestCase):
     def setUp(self):
         home = tempfile.mkdtemp(prefix="difftate-d-")
         self.addCleanup(shutil.rmtree, home)
@@ -42,10 +43,10 @@ class LayoutDIsServed(unittest.TestCase):
 
     def test_the_page_and_everything_it_loads_are_served_for_the_usual_cookie(self):
         cookie = self.signed_in()
-        status, headers, html = self.get("/d?folder=%2Fsome%2Frepo", cookie)
+        status, headers, html = self.get("/?folder=%2Fsome%2Frepo", cookie)
         self.assertEqual((status, headers["Content-Type"]), (200, "text/html; charset=utf-8"))
 
-        todo = [urllib.parse.urljoin("/d", src) for src in re.findall(r'<(?:script|link)\b[^>]*?(?:src|href)="([^"]+)"', html)]
+        todo = [urllib.parse.urljoin("/", src) for src in re.findall(r'<(?:script|link)\b[^>]*?(?:src|href)="([^"]+)"', html)]
         self.assertIn("/d/main.js", todo)
         self.assertIn("/d/style.css", todo)
         loaded = set()
@@ -59,10 +60,15 @@ class LayoutDIsServed(unittest.TestCase):
             self.assertEqual((status, headers["Content-Type"]), (200, TYPES[kind]), path)
             todo += [normpath(join(dirname(path), other)) for other in re.findall(r'^(?:import|export)\b[^;]*?from "([^"]+)"', body, re.M)]
             self.assertEqual(self.get(path)[0], 401, f"{path} without the cookie")
-        self.assertIn("/diff.js", loaded, "D reads the diff with today's parser")
+        self.assertIn("/diff.js", loaded, "the page reads the diff with its parser")
 
     def test_the_page_needs_the_cookie(self):
-        self.assertEqual(self.get("/d")[0], 401)
+        self.assertEqual(self.get("/")[0], 401)
+
+    def test_the_page_it_replaced_and_its_own_address_beside_it_are_gone(self):
+        cookie = self.signed_in()
+
+        self.assertEqual([self.get(path, cookie)[0] for path in ("/d", "/app.js", "/warnings.js")], [404, 404, 404])
 
 
 if __name__ == "__main__":

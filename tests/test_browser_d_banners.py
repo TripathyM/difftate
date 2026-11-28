@@ -32,7 +32,8 @@ console.log(JSON.stringify({show}));""")
         waiting, files = self.page(answers(review=WAITING), show="[page().waiting, page().body.files.length]")
 
         self.assertEqual(waiting, "other is checked out: you can go on reading, but this review takes no new thread, "
-                                  "viewed mark or Done. The watcher moves to that branch's review once the run in progress ends.")
+                                  "viewed mark or Done, and its threads aren't placed in that branch's code. "
+                                  "The watcher moves to that branch's review once the run in progress ends.")
         self.assertEqual(files, 3, "the diff is still there")
 
     def test_a_checkout_it_cannot_name_is_another_branch(self):

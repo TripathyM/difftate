@@ -101,18 +101,10 @@ console.log(JSON.stringify(block && {{ class: block.class, text: flat(block).rep
         self.assertIsNone(self.stop_text("src/other.py"))
 
     def test_the_stop_has_its_own_style_unlike_a_thread(self):
-        with open(os.path.join(WEB, "index.html")) as f:
-            page = f.read()
-        self.assertIn(".review-path-stop", page)
-        self.assertNotIn("review-path-stop thread", page)
-
-    def test_the_page_asks_for_the_path_in_the_shown_view_and_draws_it_with_the_module(self):
-        with open(os.path.join(WEB, "app.js")) as f:
-            source = f.read()
-        self.assertIn('from "./review_path.js"', source)
-        self.assertIn("/api/review-path?view=", source)
-        self.assertIn("stopBlock(", source)
-        self.assertIn("orderFiles(", source)
+        with open(os.path.join(WEB, "d", "style.css")) as f:
+            styles = f.read()
+        self.assertIn(".review-path-stop", styles)
+        self.assertNotIn("review-path-stop thread", styles)
 
 
 if __name__ == "__main__":
