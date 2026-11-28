@@ -11,10 +11,11 @@ RELEASED = os.path.join(ROOT, "tests", "fixtures", "review_api_released.json")
 
 def run_js(module, body):
     """Run <body> in node with web/d/<module>.js imported as m; "{DIFF}",
-    "{STATE}" and "{API}" in it name web/diff.js, web/d/state.js and web/d/api.js. <body> prints JSON: what it printed."""
+    "{STATE}", "{API}" and "{DRAFTS}" in it name web/diff.js and web/d/'s state.js, api.js and
+    drafts.js. <body> prints JSON: what it printed."""
     path = "file://" + os.path.join(WEB, "d", module + ".js")
     for name, other in (("DIFF", "diff.js"), ("STATE", os.path.join("d", "state.js")),
-                        ("API", os.path.join("d", "api.js"))):
+                        ("API", os.path.join("d", "api.js")), ("DRAFTS", os.path.join("d", "drafts.js"))):
         body = body.replace(f'"{{{name}}}"', json.dumps("file://" + os.path.join(WEB, other)))
     script = f"import * as m from {json.dumps(path)};\n{body}"
     run = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=30)

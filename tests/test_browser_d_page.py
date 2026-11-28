@@ -21,7 +21,7 @@ if (poll) s = st.polled(s, poll);
 console.log(JSON.stringify(m.pageModel(s)));""")
 
     def test_a_review_opens_on_files_changed_with_its_tree_and_every_files_rows(self):
-        page = self.page(answers())
+        page = self.page(answers(threads=[]))
 
         self.assertEqual(page["tabs"], [{"id": "files", "text": "Files changed", "count": 3, "current": True}])
         body = page["body"]
