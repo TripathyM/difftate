@@ -21,7 +21,7 @@ import * as st from "{{STATE}}";
 const s = st.polled(st.initialState("files"), {json.dumps(in_view(view))});
 console.log(JSON.stringify(m.pageModel(s).body.picker));""")
 
-    def test_it_offers_todays_views_with_the_one_shown_current_and_on_its_button(self):
+    def test_it_offers_the_fixed_views_with_the_one_shown_current_and_on_its_button(self):
         picker = self.picker("staged")
 
         self.assertEqual([(c["view"], c["text"]) for c in picker["choices"]], [

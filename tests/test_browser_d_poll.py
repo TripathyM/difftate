@@ -1,4 +1,4 @@
-"""How layout D reads the review (#257): the calls of a poll, which are today's viewer's, and that
+"""How layout D reads the review (#257): what one poll asks, and that
 only the newest poll counts (web/d/poll.js). Node runs it with a fake review API."""
 import json
 import shutil
@@ -33,7 +33,7 @@ for (const route of {json.dumps(list(broken))}) broken.add(route);
 const got = await m.readReview(api, {json.dumps(last)});
 console.log(JSON.stringify([calls, got]));""")
 
-    def test_a_poll_makes_todays_viewers_calls_with_the_view_the_watcher_shows(self):
+    def test_a_poll_asks_for_all_it_shows_in_the_view_the_watcher_shows(self):
         calls, got = self.read(view="HEAD~2")
 
         self.assertEqual(calls[0], "GET /api/review", "first: the watcher follows the checked-out branch")
