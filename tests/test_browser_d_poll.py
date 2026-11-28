@@ -69,5 +69,31 @@ console.log(JSON.stringify(seen));""")
         self.assertEqual(got, ["newest", "failed: now"])
 
 
+    def test_an_overtaken_refresh_ends_only_once_the_newer_news_is_on_the_page(self):
+        # What awaits it (showing a thread in the view just picked) reads the page next
+        got = run_js("poll", """
+const waiting = [], seen = [];
+const refresh = m.newestOnly(() => new Promise((resolve) => waiting.push(resolve)), (a) => seen.push(a), () => {});
+let sawAtEnd = null;
+const mine = refresh().then(() => { sawAtEnd = [...seen]; });
+refresh(); // the poll's, started while mine reads
+waiting[0]("overtaken");
+await new Promise((r) => setTimeout(r, 5));
+const early = sawAtEnd;
+waiting[1]("newest");
+await mine;
+console.log(JSON.stringify([early, sawAtEnd]));""")
+
+        self.assertEqual(got, [None, ["newest"]])
+
+    def test_a_failed_review_path_call_never_keeps_another_reviews_path(self):
+        last = answers(reviewPath={"stops": ["the other branch's"]})
+        last["review"] = dict(last["review"], id="other-12345678")
+
+        _, got = self.read(broken=["/api/review-path"], last=last)
+
+        self.assertIsNone(got["reviewPath"])
+
+
 if __name__ == "__main__":
     unittest.main()

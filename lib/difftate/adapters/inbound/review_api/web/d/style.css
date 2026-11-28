@@ -45,7 +45,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--bgColor-default); color: var(--fgColor-default); font: 14px/1.5 var(--fontStack-sansSerif); }
-button, input, textarea { font: inherit; color: inherit; }
+button, input, textarea, select { font: inherit; color: inherit; }
 button { background: none; border: 0; padding: 0; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--fgColor-accent); outline-offset: -2px; }
 .muted { color: var(--fgColor-muted); }
@@ -64,6 +64,19 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .settings .modes { margin-bottom: var(--space-md); }
 .settings .modes button { flex: 1; }
 .check { display: flex; align-items: center; gap: var(--space-sm); font-size: 12px; cursor: pointer; }
+.agent-setting { margin-top: var(--space-md); }
+.agent-setting select { width: 100%; height: 32px; font-size: 12px; }
+select, #commit { padding: 0 var(--space-sm); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); color: var(--fgColor-default); }
+/* A menu under a button (popover): main.js says where */
+.menu { position: fixed; inset: auto; margin: 0; width: 240px; max-height: calc(100vh - 80px); overflow: auto; padding: var(--space-xs); border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-default); color: var(--fgColor-default); box-shadow: 0 8px 24px var(--shadowColor-floating); }
+.menu-item { display: block; width: 100%; padding: var(--space-xs) var(--space-sm); border-radius: var(--borderRadius-medium); text-align: left; font-size: 12px; }
+.menu-item:hover { background: var(--control-transparent-bgColor-hover); }
+.menu-item[aria-current] { background: var(--control-transparent-bgColor-selected); font-weight: 600; box-shadow: inset 3px 0 var(--fgColor-accent); }
+.menu .setting-title { display: block; margin: var(--space-sm) var(--space-sm) var(--space-xs); }
+#commit { width: 100%; height: 32px; font-size: 12px; }
+.view-shown { display: flex; align-items: center; gap: var(--space-xs); }
+.warning { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); overflow-wrap: anywhere; }
+.off-screen { position: fixed; opacity: 0; }
 .review-head { box-shadow: inset 0 -1px var(--borderColor-muted); }
 .head-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; column-gap: var(--space-md); padding: var(--space-md) var(--space-lg) 0; }
 #review { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-md); min-height: 40px; }
@@ -71,7 +84,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .state { padding: var(--space-xs) var(--space-md); border-radius: var(--borderRadius-full); background: var(--bgColor-accent-emphasis); color: var(--fgColor-onEmphasis); font-size: 12px; font-weight: 600; }
 /* Done is a state, not an approval: neither the green nor the purple of a pull request's */
 .state.done { background: var(--bgColor-neutral-emphasis); }
-.controls { position: relative; margin-left: auto; }
+.controls { position: relative; display: flex; align-items: center; gap: var(--space-sm); margin-left: auto; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-sm); }
 .actions .counter { margin-left: var(--space-sm); background: var(--bgColor-default); color: var(--fgColor-default); }
 .modes { display: flex; padding: 2px; border: 1px solid var(--borderColor-default); border-radius: var(--borderRadius-medium); background: var(--bgColor-muted); }
@@ -93,7 +106,8 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .tab[aria-current] { font-weight: 600; }
 .tab[aria-current]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -8px; height: 2px; background: var(--underlineNav-borderColor-active); }
 
-.toolbar { display: flex; justify-content: flex-end; align-items: center; padding: var(--space-sm) var(--space-lg); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-md); padding: var(--space-sm) var(--space-lg); }
+.toolbar .progress { margin-left: auto; }
 .progress { display: flex; align-items: center; gap: var(--space-sm); color: var(--fgColor-muted); font-size: 12px; }
 .progress progress { appearance: none; width: 80px; height: 8px; border: 0; border-radius: 3px; overflow: hidden; background: var(--progressBar-track-bgColor); }
 .progress progress::-webkit-progress-bar { background: var(--progressBar-track-bgColor); }
