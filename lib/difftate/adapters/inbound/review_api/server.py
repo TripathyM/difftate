@@ -204,10 +204,10 @@ PAGE_FILES = {
     "/d/style.css": (os.path.join(_HERE, "web", "d", "style.css"), "text/css; charset=utf-8"),
     **{f"/d/{name}.js": (os.path.join(_HERE, "web", "d", f"{name}.js"), "text/javascript; charset=utf-8")
        for name in ("actions", "api", "banners", "conversation", "cursor", "diff_rows", "dom", "draw_conversation",
-                    "draw_files", "draw_header", "draw_markdown", "draw_settings", "draw_threads", "draw_tree",
-                    "draw_views", "draw_vim", "drafts", "file_tree", "files_changed", "keymap", "keys", "main",
+                    "draw_files", "draw_header", "draw_markdown", "draw_settings", "draw_threads", "draw_toasts",
+                    "draw_tree", "draw_views", "draw_vim", "drafts", "file_tree", "files_changed", "keymap", "keys", "main",
                     "markdown", "page", "picker", "poll", "scroll", "settings", "state", "submit", "tabs", "threads",
-                    "views", "vim", "words")},
+                    "toasts", "views", "vim", "words")},
 }
 # The core's errors, as HTTP statuses. A bad view is the request's fault (400),
 # though the code reader says it isn't found: see a_view below.

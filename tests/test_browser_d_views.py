@@ -109,7 +109,7 @@ await Promise.all([slow, back]);""", show='[view, page().body.picker.text]')
 
         took, shown, problem = self.run_actions(
             'refuse["PUT /api/view"] = "no view \'nope\'"; const took = await m.setView(use, "nope");',
-            show="[took, page().body.picker.text, page().problem]")
+            show="[took, page().body.picker.text, problemOf(page())]")
 
         self.assertEqual((took, shown, problem), (False, "All changes", "no view 'nope'"))
 

@@ -451,7 +451,7 @@ await done;""", "[scrolls, folded(), marked]")
         got = self.act("""
 const done = next("app.py");
 puts[0].reject(new ApiError(404, "no such file in the changeset"));
-const taken = await done;""", "[taken, scrolls.map((x) => x.target.file), folded(), m.pageModel(s).problem.includes('no such file')]")
+const taken = await done;""", "[taken, scrolls.map((x) => x.target.file), folded(), problemOf(m.pageModel(s)).includes('no such file')]")
 
         self.assertEqual(got, [False, ["README.md", "app.py"], [], True])
 

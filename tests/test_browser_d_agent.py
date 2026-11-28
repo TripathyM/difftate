@@ -67,14 +67,14 @@ console.log(JSON.stringify({show}));""")
 
     def test_it_puts_the_name_and_says_it_replies_from_the_next_run(self):
         took, calls, value, notice = self.run_actions(
-            'const took = await m.setAgent(use, "work");', show="[took, calls, page().settings.agent.value, page().notice]")
+            'const took = await m.setAgent(use, "work");', show="[took, calls, page().settings.agent.value, noticeOf(page())]")
 
         self.assertTrue(took)
         self.assertEqual(calls, [["GET", "/api/review"], ["PUT", "/api/agent", {"agent": "work"}], "refresh"])
         self.assertEqual((value, notice), ("work", "work replies in this review, from the next run."))
 
     def test_default_clears_the_reviews_choice(self):
-        calls, notice = self.run_actions('await m.setAgent(use, "");', show="[calls, page().notice]", agent=CHOSEN)
+        calls, notice = self.run_actions('await m.setAgent(use, "");', show="[calls, noticeOf(page())]", agent=CHOSEN)
 
         self.assertEqual(calls[1], ["PUT", "/api/agent", {"agent": None}])
         self.assertEqual(notice, "This review's agent override is cleared: personal (machine) replies, from the next run.")
@@ -85,7 +85,7 @@ console.log(JSON.stringify({show}));""")
     def test_a_refused_choice_leaves_the_review_as_it_was_and_says_why(self):
         took, value, problem = self.run_actions(
             'refuse["PUT /api/agent"] = "no agent \'work\' in the agent list"; const took = await m.setAgent(use, "work");',
-            show="[took, page().settings.agent.value, page().problem]")
+            show="[took, page().settings.agent.value, problemOf(page())]")
 
         self.assertEqual((took, value, problem), (False, "", "no agent 'work' in the agent list"))
 
