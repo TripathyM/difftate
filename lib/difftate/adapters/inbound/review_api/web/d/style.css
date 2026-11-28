@@ -119,7 +119,7 @@ button.tree-row[aria-current] { background: var(--control-transparent-bgColor-se
 .stop-number { min-width: 16px; color: var(--fgColor-muted); font: 600 12px var(--fontStack-monospace); text-align: center; }
 .key-stop { color: var(--fgColor-attention); }
 .tree-row.gone { color: var(--fgColor-muted); }
-.tree-mark { color: var(--fgColor-attention); font-size: 12px; white-space: nowrap; }
+.no-diff { color: var(--fgColor-attention); font-size: 12px; white-space: nowrap; }
 
 /* The review path's stop above a file's diff (web/review_path.js builds it): not a thread */
 .review-path-stop { padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--borderColor-default); box-shadow: inset 3px 0 var(--fgColor-accent); overflow-wrap: anywhere; }

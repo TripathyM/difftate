@@ -93,6 +93,14 @@ const again = () => {{ s = st.sortTree(s, "order"); return {ORDER}.slice(0, 3); 
 
         self.assertEqual(got, [["- Reading order", "> Folders"], BY_FOLDER, BY_FOLDER])
 
+    def test_pressing_folders_without_a_review_path_chooses_nothing(self):
+        got = self.page(f"[unchanged, {ORDER}.slice(0, 3)]", with_path(None), f"""
+const unchanged = st.sortTree(s, "folder") === s;
+s = st.polled(st.sortTree(s, "folder"), {json.dumps(with_path())});""")
+
+        # A review path written later is followed
+        self.assertEqual(got, [True, ["app.py", "README.md", "lib.py"]])
+
     def test_a_poll_and_another_branch_keep_the_sort_the_reviewer_chose(self):
         other = with_path()
         other["review"] = dict(other["review"], id="other-12345678", branch="other")
@@ -121,6 +129,14 @@ class AnOutOfDatePath(Pages):
         self.assertEqual(self.page("body().outOfDate", stale("lib.py")),
                          "The review path is out of date: 1 file it names has no changes.")
 
+    def test_a_file_the_path_lists_twice_counts_once(self):
+        given = stale("lib.py")
+        gone = {"file": "lib.py", "reason": "listed twice", "in_changeset": False}
+        given["reviewPath"]["skipped"].append(gone)
+
+        self.assertEqual(self.page("body().outOfDate", given),
+                         "The review path is out of date: 1 file it names has no changes.")
+
     def test_it_says_so_by_folder_too(self):
         got = self.page("body().outOfDate", stale("lib.py"), steps='s = st.sortTree(s, "folder");')
 
@@ -128,7 +144,7 @@ class AnOutOfDatePath(Pages):
 
     def test_the_files_with_no_changes_are_marked_and_the_others_are_not(self):
         # A stop, a side file and a skipped file can each be out of date
-        got = self.page("body().tree.filter((r) => r.kind === 'file').map((r) => [r.path, r.mark])",
+        got = self.page("body().tree.filter((r) => r.kind === 'file').map((r) => [r.path, r.noDiff])",
                         stale("README.md", "lib.py", "long.py"))
 
         self.assertEqual(got, [["app.py", ""], ["README.md", "no changes"], ["lib.py", "no changes"],
@@ -136,7 +152,7 @@ class AnOutOfDatePath(Pages):
 
     def test_a_file_the_diff_does_not_show_yet_is_marked_as_not_in_this_view(self):
         # The path and the changeset are two calls: the diff can be the older one
-        got = self.page("body().tree.filter((r) => r.mark).map((r) => [r.path, r.mark])",
+        got = self.page("body().tree.filter((r) => r.noDiff).map((r) => [r.path, r.noDiff])",
                         with_path(PATH, [f for f in NAMED if f != "lib.py"]))
 
         self.assertEqual(got, [["lib.py", "not in this view"]])
